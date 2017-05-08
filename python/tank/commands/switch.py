@@ -29,11 +29,11 @@ class SwitchAppAction(Action):
     
     def run_interactive(self, log, args):
 
-        if len(args) < 4:
+        if len(args) < 3:
             
-            log.info("This command allows you to easily switch an app between different "
+            log.info("This command allows you to easily switch an app/engine/framework between different "
                      "locations. A location defines where toolkit picks and synchrononizes "
-                     "App versions. It can be either the Toolkit App Store, a version control "
+                     "App/Engine/Framework versions. It can be either the Toolkit App Store, a version control "
                      "system such as Git or a location on disk.")
             log.info("")
             
@@ -100,11 +100,17 @@ class SwitchAppAction(Action):
         # get parameters
         env_name = args[0]
         engine_instance_name = args[1]
-        app_instance_name = args[2]
+
+        app_instance_name = None
+        fourth_param = None
+        if len(args) >= 4:
+            app_instance_name = args[2]
+            fourth_param = args[3]
+        else:
+            fourth_param = args[2]
+
         path = None
         mode = None
-        
-        fourth_param = args[3]
         
         if fourth_param == "app_store":
             mode = "app_store"
@@ -122,11 +128,190 @@ class SwitchAppAction(Action):
         except Exception, e:
             raise TankError("Environment '%s' could not be loaded! Error reported: %s" % (env_name, e))
     
-        # make sure the engine exists in the environment
-        if engine_instance_name not in env.get_engines():
+        # make sure the engine/framework exists in the environment
+        is_engine = False
+        if engine_instance_name in env.get_engines():
+            is_engine = True
+        elif engine_instance_name in env.get_frameworks():
+            is_engine = False
+        else:
             raise TankError("Environment %s has no engine named %s!" % (env_name, engine_instance_name))
-    
+
         # and the app
+        if app_instance_name is not None:
+            self._update_app_instance(mode, path, env, log, env_name, app_instance_name, engine_instance_name)
+        elif is_engine:
+            self._update_engine_instance(mode, path, env, log, env_name, engine_instance_name)
+        else:
+            self._update_framework_instance(mode, path, env, log, env_name, engine_instance_name)
+
+
+    def _update_framework_instance(self, mode, path, env, log, env_name, framework_instance_name):
+        """
+        """
+
+        # get the descriptor
+        descriptor = env.get_framework_descriptor(framework_instance_name)
+        
+        log.info("")
+        
+        if mode == "app_store":
+            new_descriptor = self.tk.pipeline_configuration.get_latest_framework_descriptor(
+                {"type": "app_store", "name": descriptor.system_name}
+            )
+        
+        elif mode == "dev":
+            if not os.path.exists(path):
+                raise TankError("Cannot find path '%s' on disk!" % path)
+
+            # run descriptor factory method
+            new_descriptor = self.tk.pipeline_configuration.get_framework_descriptor(
+                {"type": "dev", "path": path}
+            )
+
+        elif mode == "git":
+            # run descriptor factory method
+            new_descriptor = self.tk.pipeline_configuration.get_latest_framework_descriptor(
+                {"type": "git", "path": path}
+            )
+        
+        else:
+            raise TankError("Unknown mode!")
+
+
+        # prompt user!
+        log.info("")
+        log.info("")
+        log.info("Current version")
+        log.info("------------------------------------")
+        for (k,v) in descriptor.get_dict().items():
+            log.info(" - %s: %s" % (k.capitalize(), v))
+        
+        log.info("")
+        log.info("New version")
+        log.info("------------------------------------")
+        for (k,v) in new_descriptor.get_dict().items():
+            log.info(" - %s: %s" % (k.capitalize(), v))
+        
+        log.info("")
+        if not console_utils.ask_yn_question("Okay to switch?"):
+            log.info("Switch aborted!")
+            return
+
+        if not new_descriptor.exists_local():
+            log.info("Downloading %s..." % new_descriptor)
+            new_descriptor.download_local()
+    
+        # create required shotgun fields
+        new_descriptor.ensure_shotgun_fields_exist(self.tk)
+    
+        # run post install hook
+        new_descriptor.run_post_install(self.tk)
+    
+        # ensure that all required frameworks have been installed
+        # find the file where our item is being installed
+        (_, yml_file) = env.find_location_for_framework(framework_instance_name)
+        
+        console_utils.ensure_frameworks_installed(log, self.tk, yml_file, new_descriptor, env, suppress_prompts=False)
+    
+        # find the name of the framework
+        framework_system_name = new_descriptor.system_name
+    
+        # now get data for all new settings values in the config
+        params = console_utils.get_configuration(log, self.tk, new_descriptor, descriptor, False, framework_system_name)
+    
+        # next step is to add the new configuration values to the environment
+        env.update_framework_settings(framework_instance_name,
+                                params, 
+                                new_descriptor.get_dict())
+        
+        log.info("Switch complete!")
+
+    def _update_engine_instance(self, mode, path, env, log, env_name, engine_instance_name):
+        """
+        """
+
+        # get the descriptor
+        descriptor = env.get_engine_descriptor(engine_instance_name)
+        
+        log.info("")
+        
+        if mode == "app_store":
+            new_descriptor = self.tk.pipeline_configuration.get_latest_engine_descriptor(
+                {"type": "app_store", "name": descriptor.system_name}
+            )
+        
+        elif mode == "dev":
+            if not os.path.exists(path):
+                raise TankError("Cannot find path '%s' on disk!" % path)
+
+            # run descriptor factory method
+            new_descriptor = self.tk.pipeline_configuration.get_engine_descriptor(
+                {"type": "dev", "path": path}
+            )
+
+        elif mode == "git":
+            # run descriptor factory method
+            new_descriptor = self.tk.pipeline_configuration.get_latest_engine_descriptor(
+                {"type": "git", "path": path}
+            )
+        
+        else:
+            raise TankError("Unknown mode!")
+
+
+        # prompt user!
+        log.info("")
+        log.info("")
+        log.info("Current version")
+        log.info("------------------------------------")
+        for (k,v) in descriptor.get_dict().items():
+            log.info(" - %s: %s" % (k.capitalize(), v))
+        
+        log.info("")
+        log.info("New version")
+        log.info("------------------------------------")
+        for (k,v) in new_descriptor.get_dict().items():
+            log.info(" - %s: %s" % (k.capitalize(), v))
+        
+        log.info("")
+        if not console_utils.ask_yn_question("Okay to switch?"):
+            log.info("Switch aborted!")
+            return
+
+        if not new_descriptor.exists_local():
+            log.info("Downloading %s..." % new_descriptor)
+            new_descriptor.download_local()
+    
+        # create required shotgun fields
+        new_descriptor.ensure_shotgun_fields_exist(self.tk)
+    
+        # run post install hook
+        new_descriptor.run_post_install(self.tk)
+    
+        # ensure that all required frameworks have been installed
+        # find the file where our item is being installed
+        (_, yml_file) = env.find_location_for_engine(engine_instance_name)
+        
+        console_utils.ensure_frameworks_installed(log, self.tk, yml_file, new_descriptor, env, suppress_prompts=False)
+    
+        # find the name of the engine
+        engine_system_name = new_descriptor.system_name
+    
+        # now get data for all new settings values in the config
+        params = console_utils.get_configuration(log, self.tk, new_descriptor, descriptor, False, engine_system_name)
+    
+        # next step is to add the new configuration values to the environment
+        env.update_engine_settings(engine_instance_name,
+                                params, 
+                                new_descriptor.get_dict())
+        
+        log.info("Switch complete!")
+
+
+    def _update_app_instance(self, mode, path, env, log, env_name, app_instance_name, engine_instance_name):
+        """
+        """
         apps_for_engine = env.get_apps(engine_instance_name)
         if app_instance_name not in apps_for_engine:
             raise TankError("Environment %s, engine %s has no app named '%s'! "

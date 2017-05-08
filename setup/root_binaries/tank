@@ -9,6 +9,9 @@
 # agreement to the Shotgun Pipeline Toolkit Source Code License. All rights 
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
+# get the current working directory
+CURR_PATH=`pwd -P`
+
 # get absolute location of this script
 SELF_PATH=$(cd -P -- "$(dirname -- "$0")" && pwd -P) && SELF_PATH=$SELF_PATH/$(basename -- "$0")
 
@@ -26,6 +29,19 @@ done
 # chop off the file name
 SELF_PATH=$(dirname "$SELF_PATH")
 
+export STUDIO_TANK_PATH=$SELF_PATH
+export SHOTGUN_SERVER="http://shotgun-dev.d2.com"
+
+# set up an env var to track the current pipeline configuration
+# this is to help the tank core API figure out for example tank.tank_from_path()
+# when using multiple work dev areas.
+# since we are recursing upwards, only set it if it is not already set.
+# we only set this when it is a pipeline location. Check this by looking for
+# the roots.yml file
+ROOTS_FILE="$CURR_PATH/config/core/roots.yml"
+if [ -z "$TANK_CURRENT_PC" ] && [ -f "$ROOTS_FILE" ]; then
+    export TANK_CURRENT_PC=$CURR_PATH
+fi
 
 # first of all, for performance, check if the command is shotgun_get_actions
 # syntax ./tank shotgun_get_actions cache_file_name env_yml_file_name
@@ -34,8 +50,8 @@ SELF_PATH=$(dirname "$SELF_PATH")
 # returns 2 if the yml file does not exist
 if [ -n "$1" ] && [ "$1" = "shotgun_get_actions" ]; then
 
-    CACHE_FILE="$SELF_PATH/cache/$2"
-    ENV_FILE="$SELF_PATH/config/env/$3"
+    CACHE_FILE="$TANK_CURRENT_PC/cache/$2"
+    ENV_FILE="$TANK_CURRENT_PC/config/env/$3"
 
     # return 2 if the yml file does not exist
     if [ ! -f "$ENV_FILE" ];
@@ -52,7 +68,6 @@ if [ -n "$1" ] && [ "$1" = "shotgun_get_actions" ]; then
     fi
 fi
 
-
 # if we have a local install of the core, this is the script to dispatch to
 LOCAL_SCRIPT="$SELF_PATH/install/core/scripts/tank_cmd.sh"
 
@@ -60,18 +75,6 @@ LOCAL_SCRIPT="$SELF_PATH/install/core/scripts/tank_cmd.sh"
 if [ -n "$1" ] && ( [ "$1" = "shotgun_run_action" ] || [ "$1" = "shotgun_cache_actions" ] ); then
     LOCAL_SCRIPT="$SELF_PATH/install/core/scripts/tank_cmd_login.sh"
 fi
-
-# set up an env var to track the current pipeline configuration
-# this is to help the tank core API figure out for example tank.tank_from_path()
-# when using multiple work dev areas.
-# since we are recursing upwards, only set it if it is not already set.
-# we only set this when it is a pipeline location. Check this by looking for
-# the roots.yml file
-ROOTS_FILE="$SELF_PATH/config/core/roots.yml"
-if [ -z "$TANK_CURRENT_PC" ] && [ -f "$ROOTS_FILE" ]; then
-    export TANK_CURRENT_PC=$SELF_PATH
-fi
-
 
 if [ -f "$LOCAL_SCRIPT" ];
 then
@@ -87,7 +90,7 @@ else
    then
        curr_platform="Windows"
    fi
-   parent_config_file="$SELF_PATH/install/core/core_${curr_platform}.cfg"
+   parent_config_file="$TANK_CURRENT_PC/install/core/core_${curr_platform}.cfg"
 
    if [ ! -f "$parent_config_file" ];
    then
@@ -108,8 +111,5 @@ else
    fi
 
    # all good, execute tank script in parent location
-   "$parent_location/tank" "$@" --pc="$SELF_PATH"
-
+   "$parent_location/tank" "$@" --pc="$TANK_CURRENT_PC"
 fi
-
-

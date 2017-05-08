@@ -189,11 +189,12 @@ def do_localize(log, pc_root_path, suppress_prompts):
         log.info("Backing up existing Core API...")
         backup_folder_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = os.path.join(backup_location, backup_folder_name)
-        src_files = filesystem.copy_folder(target_core, backup_path)
+        if os.path.exists(backup_path):
+            src_files = filesystem.copy_folder(target_core, backup_path)
 
-        log.debug("Clearing out core target location...")
-        for f in src_files:
-            filesystem.safe_delete_file(f)
+            log.debug("Clearing out core target location...")
+            for f in src_files:
+                filesystem.safe_delete_file(f)
 
         log.info("Copying Core %s \nto %s" % (source_core, target_core))
         filesystem.copy_folder(source_core, target_core)

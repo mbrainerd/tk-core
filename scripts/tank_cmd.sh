@@ -49,7 +49,7 @@ then
 fi
 
 # now get path to python interpreter by reading config file
-interpreter=`cat "$interpreter_config_file"`
+interpreter=$( eval echo $( cat "$interpreter_config_file" ) )
 
 # Convert windows interpreter paths to forward-slash
 if [[ "$uname_os_str" == CYGWIN_NT* ]];

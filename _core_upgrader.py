@@ -107,7 +107,7 @@ def _copy_folder(log, src, dst):
     
     if not os.path.exists(dst):
         log.debug("mkdir 0777 %s" % dst)
-        os.mkdir(dst, 0777)
+        os.makedirs(dst, 0777)
 
     names = os.listdir(src) 
     for name in names:
@@ -234,8 +234,9 @@ def upgrade_tank(sgtk_install_root, log):
             log.error("The specified sgtk install root '%s' doesn't look valid!\n"
                       "Typically the install root path ends with /install." % sgtk_install_root)
             return
+
         # - check for expected folders: core, engines, apps, etc.
-        dirs_to_check = ["engines", "core", "core.backup", "apps"]
+        dirs_to_check = ["engines", "core", "frameworks", "apps"]
         for dir in dirs_to_check:
             if not os.path.exists(os.path.join(sgtk_install_root, dir)):
                 log.error("The specified sgtk install root '%s' doesn't look valid - "
