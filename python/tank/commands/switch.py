@@ -97,53 +97,91 @@ class SwitchAppAction(Action):
         (use_legacy_parser, args) = util.should_use_legacy_yaml_parser(args)
         preserve_yaml = not use_legacy_parser
 
-        # get parameters
-        env_name = args[0]
-        engine_instance_name = args[1]
-
-        app_instance_name = None
+        app_filter = None
         fourth_param = None
-        if len(args) >= 4:
-            app_instance_name = args[2]
-            fourth_param = args[3]
-        else:
-            fourth_param = args[2]
 
-        path = None
-        mode = None
+        env_filter = args[0]
+        if env_filter == "ALL":
+            log.info("- Switch will check all environments.")
+            env_filter = None
+        else:
+            log.info("- Switch will only check the %s environment." % env_filter)
         
-        if fourth_param == "app_store":
+        engine_filter = args[1]
+        if engine_filter == "ALL":
+            log.info("- Switch will check all engines.")
+            engine_filter = None
+        else:
+            log.info("- Switch will only check the %s engine." % engine_filter)
+
+
+        if len(args) < 4:
+            app_filter = None
+            path = args[2]
+        else:
+            app_filter = args[2]
+            path = args[3]
+            if app_filter == "ALL":
+                log.info("- Switch will check all apps.")
+                app_filter = None
+            else:
+                log.info("- Switch will only check the %s app." % app_filter)
+
+        mode = None        
+        if path == "app_store":
             mode = "app_store"
-        elif fourth_param.endswith(".git"):
+        elif path.endswith(".git"):
             mode = "git"
-            path = fourth_param
         else:
             mode = "dev"
-            path = fourth_param
-        
-        # find descriptor
-        try:
+
+        # process non-external config 
+        if env_filter is None:
+            env_names_to_process = self.tk.pipeline_configuration.get_environments()
+        else:
+            env_names_to_process = [env_filter]
+    
+        for env_name in env_names_to_process:
             env = self.tk.pipeline_configuration.get_environment(env_name, writable=True)
             env.set_yaml_preserve_mode(preserve_yaml)
-        except Exception, e:
-            raise TankError("Environment '%s' could not be loaded! Error reported: %s" % (env_name, e))
-    
-        # make sure the engine/framework exists in the environment
-        is_engine = False
-        if engine_instance_name in env.get_engines():
-            is_engine = True
-        elif engine_instance_name in env.get_frameworks():
-            is_engine = False
-        else:
-            raise TankError("Environment %s has no engine named %s!" % (env_name, engine_instance_name))
 
-        # and the app
-        if app_instance_name is not None:
-            self._update_app_instance(mode, path, env, log, env_name, app_instance_name, engine_instance_name)
-        elif is_engine:
-            self._update_engine_instance(mode, path, env, log, env_name, engine_instance_name)
-        else:
-            self._update_framework_instance(mode, path, env, log, env_name, engine_instance_name)
+            engines_to_process = []
+            frameworks_to_process = []
+            if engine_filter is None:
+                # process all engines and frameworks
+                engines_to_process = env.get_engines()
+                frameworks_to_process = env.get_frameworks()
+
+            else:
+                # there is a filter! Ensure the filter matches something
+                # in this environment
+                if engine_filter in env.get_engines():
+                    # the filter matches something in this environment
+                    engines_to_process = [engine_filter]
+                elif engine_filter in env.get_frameworks():
+                    frameworks_to_process = [engine_filter]
+
+            # Process engines
+            for engine_instance_name in engines_to_process:
+                self._update_engine_instance(mode, path, env, log, env_name, engine_instance_name)
+
+                apps_to_process = []
+                if app_filter is None:
+                    # no filter - process all apps
+                    apps_to_process = env.get_apps(engine_instance_name)
+                else:
+                    # there is a filter! Ensure the filter matches
+                    # something in the current engine apps listing
+                    if app_filter in env.get_apps(engine_instance_name):
+                        # the filter matches something!
+                        apps_to_process = [app_filter]
+
+                for app_instance_name in apps_to_process:
+                    self._update_app_instance(mode, path, env, log, env_name, app_instance_name, engine_instance_name)
+
+            # Process frameworks
+            for framework_instance_name in frameworks_to_process:
+                self._update_framework_instance(mode, path, env, log, env_name, engine_instance_name)
 
 
     def _update_framework_instance(self, mode, path, env, log, env_name, framework_instance_name):
