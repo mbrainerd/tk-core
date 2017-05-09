@@ -77,6 +77,8 @@ class CoreUpdateAction(Action):
         # this method can be executed via the API
         self.supports_api = True
 
+        self._backup_core = False
+
         ret_val_doc = "Returns a dictionary with keys status (str) optional keys. The following status codes "
         ret_val_doc += "are returned: 'up_to_date' if no update was needed, 'updated' if an update was "
         ret_val_doc += "applied and 'update_blocked' if an update was available but could not be applied. "
@@ -97,11 +99,13 @@ class CoreUpdateAction(Action):
         parser = TkOptParse()
         parser.set_usage(optparse.SUPPRESS_USAGE)
         parser.add_option("-v", "--version", type="string", default=None)
+        parser.add_option("-s", "--source", type="string", default=None)
+        parser.add_option("-b", "--backup", type="bool", default=False)
         options, args = parser.parse_args(parameters)
 
         if options.version is not None and not options.version.startswith("v"):
             parser.error("version string should always start with 'v'")
-        return options.version
+        return (options.version, options.source, options.backup)
 
     def run_noninteractive(self, log, parameters):
         """
@@ -111,7 +115,11 @@ class CoreUpdateAction(Action):
         :param log: std python logger
         :param parameters: dictionary with tank command parameters
         """
-        return self._run(log, True, parameters[0] if len(parameters) else None)
+        core_version = parameters[0] if len(parameters) else None
+        core_source = parameters[1] if len(parameters) > 1 else None
+        self._backup_core = parameters[2] if len(parameters) > 2 else False
+
+        return self._run(log, True, core_version, core_source)
 
     def run_interactive(self, log, args):
         """
@@ -120,11 +128,11 @@ class CoreUpdateAction(Action):
         :param log: std python logger
         :param args: command line args
         """
-        core_version = self._parse_arguments(args)
+        (core_version, core_source, self._backup_core) = self._parse_arguments(args)
 
-        self._run(log, False, core_version)
+        self._run(log, False, core_version, core_source)
 
-    def _run(self, log, suppress_prompts, core_version):
+    def _run(self, log, suppress_prompts, core_version, core_source):
         """
         Actual execution payload.
 
@@ -155,7 +163,7 @@ class CoreUpdateAction(Action):
         log.info("https://support.shotgunsoftware.com/entries/96142347")
         log.info("")
 
-        installer = TankCoreUpdater(code_install_root, log, core_version)
+        installer = TankCoreUpdater(code_install_root, log, core_version, core_source)
         current_version = installer.get_current_version_number()
         new_version = installer.get_update_version_number()
         log.info("You are currently running version %s of the Shotgun Pipeline Toolkit" % current_version)
@@ -236,7 +244,7 @@ class TankCoreUpdater(object):
         UPDATE_BLOCKED_BY_SG          # more recent version exists but SG version is too low.
     ) = range(3)
 
-    def __init__(self, install_folder_root, logger, core_version=None):
+    def __init__(self, install_folder_root, logger, core_version=None, core_source='app_store'):
         """
         Constructor
 
@@ -255,12 +263,23 @@ class TankCoreUpdater(object):
 
         self._local_sg = shotgun.get_sg_connection()
 
-        if not core_version:
-            uri = "sgtk:descriptor:app_store?name=tk-core"
-            self._new_core_descriptor = create_descriptor(self._local_sg, Descriptor.CORE, uri, resolve_latest=True)
+        descriptor_dict = { 'name' : 'tk-core' }
+        if core_source == 'app_store':
+            descriptor_dict['type'] = 'app_store'
+        elif core_source.endswith(".git"):
+            descriptor_dict['type'] = 'git'
+            descriptor_dict['path'] = core_source
         else:
-            uri = "sgtk:descriptor:app_store?name=tk-core&version=%s" % core_version
-            self._new_core_descriptor = create_descriptor(self._local_sg, Descriptor.CORE, uri)
+            if not os.path.exists(core_source):
+                raise TankError("Cannot find path '%s' on disk!" % core_source)
+            descriptor_dict['type'] = 'dev'
+            descriptor_dict['path'] = core_source
+
+        if core_version:
+            descriptor_dict['version'] = core_version
+            self._new_core_descriptor = create_descriptor(self._local_sg, Descriptor.CORE, descriptor_dict)
+        else:
+            self._new_core_descriptor = create_descriptor(self._local_sg, Descriptor.CORE, descriptor_dict, resolve_latest=True)
 
         self._install_root = os.path.join(install_folder_root, "install")
 
@@ -353,7 +372,7 @@ class TankCoreUpdater(object):
         sys.path.insert(0, self._new_core_descriptor.get_path())
         try:
             import _core_upgrader
-            _core_upgrader.upgrade_tank(self._install_root, self._log)
+            _core_upgrader.upgrade_tank(self._install_root, self._log, self._backup_core)
         except Exception, e:
             self._log.exception(e)
             raise Exception("Could not run update script! Error reported: %s" % e)

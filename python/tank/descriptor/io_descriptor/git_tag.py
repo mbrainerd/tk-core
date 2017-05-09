@@ -151,7 +151,8 @@ class IODescriptorGitTag(IODescriptorGit):
 
         try:
             # clone the repo, checkout the given tag
-            commands = ["checkout -q \"%s\"" % self._version]
+            commands = ["checkout -q \"%s\"" % self._version,
+                        "ls-files info.yml | xargs sed -i \"s/HEAD/%s/g\"" % self._version]
             self._clone_then_execute_git_commands(target, commands)
 
         except Exception, e:

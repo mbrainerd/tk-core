@@ -201,7 +201,7 @@ def __copy_tank_cmd_binaries(src_dir, dst_dir, tank_scripts, log):
         shutil.copy(src_tank_script, dst_tank_script)
         os.chmod(dst_tank_script, 0775)
 
-def upgrade_tank(sgtk_install_root, log):
+def upgrade_tank(sgtk_install_root, log, backup_core):
     """
     Upgrades the sgtk core API located in sgtk_install_root
     based on files located locally to this script
@@ -235,21 +235,11 @@ def upgrade_tank(sgtk_install_root, log):
                       "Typically the install root path ends with /install." % sgtk_install_root)
             return
 
-        # - check for expected folders: core, engines, apps, etc.
-        dirs_to_check = ["engines", "core", "frameworks", "apps"]
-        for dir in dirs_to_check:
-            if not os.path.exists(os.path.join(sgtk_install_root, dir)):
-                log.error("The specified sgtk install root '%s' doesn't look valid - "
-                          "an expected sub-directory '/%s' couldn't be found!\n"
-                          "Typically the install root path ends with /install." 
-                          % (sgtk_install_root, dir))
-                return                
-        
         # get target locations
         core_install_location = os.path.join(sgtk_install_root, "core")
         core_backup_location = os.path.join(sgtk_install_root, "core.backup")
         
-        if os.path.exists(core_install_location):
+        if backup_core and os.path.exists(core_install_location):
             # move this into backup location
             backup_folder_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = os.path.join(core_backup_location, backup_folder_name)
