@@ -99,8 +99,8 @@ class CoreUpdateAction(Action):
         parser = TkOptParse()
         parser.set_usage(optparse.SUPPRESS_USAGE)
         parser.add_option("-v", "--version", type="string", default=None)
-        parser.add_option("-s", "--source", type="string", default=None)
-        parser.add_option("-b", "--backup", type="bool", default=False)
+        parser.add_option("-s", "--source", type="string", default='app_store')
+        parser.add_option("-b", "--backup", action="store_true")
         options, args = parser.parse_args(parameters)
 
         if options.version is not None and not options.version.startswith("v"):
@@ -244,7 +244,7 @@ class TankCoreUpdater(object):
         UPDATE_BLOCKED_BY_SG          # more recent version exists but SG version is too low.
     ) = range(3)
 
-    def __init__(self, install_folder_root, logger, core_version=None, core_source='app_store'):
+    def __init__(self, install_folder_root, logger, core_version=None, core_source=None):
         """
         Constructor
 
