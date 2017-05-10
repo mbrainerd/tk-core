@@ -129,6 +129,18 @@ class IODescriptorGitTag(IODescriptorGit):
         """
         return self._version
 
+    def get_changelog(self):
+        """
+        Returns information about the changelog for this item.
+
+        :returns: A tuple (changelog_summary, changelog_url). Values may be None
+                  to indicate that no changelog exists.
+        """
+        summary = "foobar"
+        url = "myass"
+
+        return (summary, url)
+
     def download_local(self):
         """
         Retrieves this version to local repo.

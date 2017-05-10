@@ -77,8 +77,6 @@ class CoreUpdateAction(Action):
         # this method can be executed via the API
         self.supports_api = True
 
-        self._backup_core = False
-
         ret_val_doc = "Returns a dictionary with keys status (str) optional keys. The following status codes "
         ret_val_doc += "are returned: 'up_to_date' if no update was needed, 'updated' if an update was "
         ret_val_doc += "applied and 'update_blocked' if an update was available but could not be applied. "
@@ -117,9 +115,9 @@ class CoreUpdateAction(Action):
         """
         core_version = parameters[0] if len(parameters) else None
         core_source = parameters[1] if len(parameters) > 1 else None
-        self._backup_core = parameters[2] if len(parameters) > 2 else False
+        backup_core = parameters[2] if len(parameters) > 2 else False
 
-        return self._run(log, True, core_version, core_source)
+        return self._run(log, True, core_version, core_source, backup_core)
 
     def run_interactive(self, log, args):
         """
@@ -128,11 +126,11 @@ class CoreUpdateAction(Action):
         :param log: std python logger
         :param args: command line args
         """
-        (core_version, core_source, self._backup_core) = self._parse_arguments(args)
+        (core_version, core_source, backup_core) = self._parse_arguments(args)
 
-        self._run(log, False, core_version, core_source)
+        self._run(log, False, core_version, core_source, backup_core)
 
-    def _run(self, log, suppress_prompts, core_version, core_source):
+    def _run(self, log, suppress_prompts, core_version, core_source, backup_core):
         """
         Actual execution payload.
 
@@ -163,7 +161,7 @@ class CoreUpdateAction(Action):
         log.info("https://support.shotgunsoftware.com/entries/96142347")
         log.info("")
 
-        installer = TankCoreUpdater(code_install_root, log, core_version, core_source)
+        installer = TankCoreUpdater(code_install_root, log, core_version, core_source, backup_core)
         current_version = installer.get_current_version_number()
         new_version = installer.get_update_version_number()
         log.info("You are currently running version %s of the Shotgun Pipeline Toolkit" % current_version)
@@ -244,7 +242,7 @@ class TankCoreUpdater(object):
         UPDATE_BLOCKED_BY_SG          # more recent version exists but SG version is too low.
     ) = range(3)
 
-    def __init__(self, install_folder_root, logger, core_version=None, core_source=None):
+    def __init__(self, install_folder_root, logger, core_version=None, core_source=None, backup_core=False):
         """
         Constructor
 
@@ -258,6 +256,7 @@ class TankCoreUpdater(object):
                              version. Defaults to None.
         """
         self._log = logger
+        self._backup_core = backup_core
 
         from ..descriptor import Descriptor, create_descriptor
 
