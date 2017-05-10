@@ -38,9 +38,16 @@ else
 	export PYTHONPATH="$core_install_root/python":${PYTHONPATH}
 fi
 
+# get the current working directory
+CURR_PATH=`pwd -P`
+
 # now figure out which interpreter to use for Tank
 # this is stored in a config file
-interpreter_config_file="$1/config/core/interpreter_${curr_platform}.cfg"
+interpreter_config_file="$CURR_PATH/config/core/interpreter_${curr_platform}.cfg"
+if [ ! -f "$interpreter_config_file" ];
+then
+    interpreter_config_file="$1/config/core/interpreter_${curr_platform}.cfg"
+fi
 
 if [ ! -f "$interpreter_config_file" ];
 then
@@ -54,7 +61,7 @@ interpreter=$( eval echo $( cat "$interpreter_config_file" ) )
 # Convert windows interpreter paths to forward-slash
 if [[ "$uname_os_str" == CYGWIN_NT* ]];
 then
-	interpreter=$( cygpath -u $interpreter )
+    interpreter=$( cygpath -u $interpreter )
 fi
 
 # and check that it exists...
@@ -63,7 +70,6 @@ then
     echo "Cannot find interpreter $interpreter defined in config file $interpreter_config_file!"
     exit 1
 fi
-
 
 # execute the python script which does the actual work
 exec $interpreter "$core_install_root/scripts/tank_cmd.py" "$@"
