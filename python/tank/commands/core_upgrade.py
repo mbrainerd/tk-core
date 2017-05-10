@@ -140,8 +140,12 @@ class CoreUpdateAction(Action):
         """
         return_status = {"status": "unknown"}
 
-        # get the core api root of this installation by looking at the relative location of the running code.
-        code_install_root = pipelineconfig_utils.get_path_to_current_core()
+        # get the core api root of this installation by looking at the cwd first
+        # then at the relative location of the running code.
+        if pipelineconfig_utils.is_core_install_root(os.getcwd()):
+            code_install_root = os.getcwd()
+        else:
+            code_install_root = pipelineconfig_utils.get_path_to_current_core()
 
         log.info("")
         log.info("Welcome to the Shotgun Pipeline Toolkit update checker!")
@@ -280,6 +284,7 @@ class TankCoreUpdater(object):
         else:
             self._new_core_descriptor = create_descriptor(self._local_sg, Descriptor.CORE, descriptor_dict, resolve_latest=True)
 
+        self._core_root = install_folder_root
         self._install_root = os.path.join(install_folder_root, "install")
 
         # now also extract the version of shotgun currently running
@@ -299,7 +304,7 @@ class TankCoreUpdater(object):
         """
         Returns the currently installed version of the Toolkit API
         """
-        return pipelineconfig_utils.get_currently_running_api_version()
+        return pipelineconfig_utils.get_core_api_version(self._core_root)
 
     def get_required_sg_version_for_update(self):
         """

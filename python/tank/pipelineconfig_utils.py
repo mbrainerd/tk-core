@@ -46,8 +46,13 @@ def is_localized(pipeline_config_path):
     if not is_pipeline_config(pipeline_config_path):
         return False
 
+    return is_core_install_root(pipeline_config_path)
+
+def is_core_install_root(path):
+    """
+    """
     # look for a localized API by searching for a _core_upgrader.py file
-    api_file = os.path.join(pipeline_config_path, "install", "core", "_core_upgrader.py")
+    api_file = os.path.join(path, "install", "core", "_core_upgrader.py")
     return os.path.exists(api_file)
 
 def is_pipeline_config(pipeline_config_path):
