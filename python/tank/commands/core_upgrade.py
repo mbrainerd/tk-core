@@ -97,8 +97,8 @@ class CoreUpdateAction(Action):
         parser = TkOptParse()
         parser.set_usage(optparse.SUPPRESS_USAGE)
         parser.add_option("-v", "--version", type="string", default=None)
-        parser.add_option("-s", "--source", type="string", default='app_store')
-        parser.add_option("-b", "--backup", action="store_true")
+        parser.add_option("-s", "--source", type="string", default=None)
+        parser.add_option("-b", "--backup", action="store_true", default=False)
         options, args = parser.parse_args(parameters)
 
         if options.version is not None and not options.version.startswith("v"):
@@ -138,98 +138,146 @@ class CoreUpdateAction(Action):
         :param suppress_prompts: If False, user will be prompted to accept or reject the core update.
         :param core_version: Version to update the core to. If None, updates the core to the latest version.
         """
-        return_status = {"status": "unknown"}
 
         # get the core api root of this installation by looking at the cwd first
         # then at the relative location of the running code.
         if pipelineconfig_utils.is_core_install_root(os.getcwd()):
-            code_install_root = os.getcwd()
+            self._core_install_root = os.getcwd()
         else:
-            code_install_root = pipelineconfig_utils.get_path_to_current_core()
+            self._core_install_root = pipelineconfig_utils.get_path_to_current_core()
 
-        log.info("")
-        log.info("Welcome to the Shotgun Pipeline Toolkit update checker!")
-        log.info("This script will check if the Toolkit Core API installed")
-        log.info("in %s" % code_install_root)
-        log.info("is up to date.")
-        log.info("")
-        log.info("")
+        self._log = log
+        self._log.info("")
+        self._log.info("Welcome to the Shotgun Pipeline Toolkit update checker!")
+        self._log.info("This script will check if the Toolkit Core API installed")
+        self._log.info("in %s" % self._core_install_root)
+        self._log.info("is up to date.")
+        self._log.info("")
+        self._log.info("")
 
-        log.info("Please note that if this is a shared Toolkit Core used by more than one project, "
+        self._log.info("Please note that if this is a shared Toolkit Core used by more than one project, "
                  "this will affect all of the projects that use it. If you want to test a Core API "
                  "update in isolation, prior to rolling it out to multiple projects, we recommend "
                  "creating a special *localized* pipeline configuration.")
-        log.info("")
-        log.info("For more information, please see the Toolkit documentation:")
-        log.info("https://support.shotgunsoftware.com/entries/96141707")
-        log.info("https://support.shotgunsoftware.com/entries/96142347")
-        log.info("")
+        self._log.info("")
+        self._log.info("For more information, please see the Toolkit documentation:")
+        self._log.info("https://support.shotgunsoftware.com/entries/96141707")
+        self._log.info("https://support.shotgunsoftware.com/entries/96142347")
+        self._log.info("")
 
-        installer = TankCoreUpdater(code_install_root, log, core_version, core_source, backup_core)
-        current_version = installer.get_current_version_number()
-        new_version = installer.get_update_version_number()
-        log.info("You are currently running version %s of the Shotgun Pipeline Toolkit" % current_version)
+        self._current_core_desc = TankCoreUpdater.get_current_core_descriptor(self._log, self._core_install_root)
+        current_source = self._current_core_desc.get_dict()['type']
+        current_version = self._current_core_desc.version
+        self._log.info("You are currently running SGTK Core %s from '%s'" % (current_version, current_source))
+
+        # if core_source not specified, assume it is the same as current source
+        check_app_store = False
+        if core_source is None:
+            if current_source == 'app_store':
+                core_source = current_source
+            else:
+                core_source = self._current_core_desc.get_dict()['path']
+
+            # if core_version is not specified and current_source
+            # is not 'app_store', also check 'app_store'
+            if core_version is None and \
+               current_source is not 'app_store':
+                check_app_store = True
+
+        return self._upgrade_core(core_version, core_source, suppress_prompts, backup_core, check_app_store)
+
+
+    def _upgrade_core(self, core_version, core_source, suppress_prompts, backup_core, check_app_store):
+        """
+        Internal method for running the upgrade
+        """
+        return_status = {"status": "unknown"}
+
+        upgrade_core_desc = TankCoreUpdater.get_upgrade_core_descriptor(self._log, core_version, core_source)
+        if upgrade_core_desc is None:
+            raise TankError("Cannot determine descriptor for specified upgrade version!")
+        upgrade_source = upgrade_core_desc.get_dict()['type']
+        upgrade_version = upgrade_core_desc.version
+
+        installer = TankCoreUpdater(self._core_install_root, 
+                                    self._log,
+                                    self._current_core_desc,
+                                    upgrade_core_desc,
+                                    backup_core)
 
         status = installer.get_update_status()
-
         if status == TankCoreUpdater.UP_TO_DATE:
-            log.info("No need to update the Toolkit Core API at this time!")
+
+            # If we don't have a newer local version, check the app_store
+            if check_app_store:
+                self._log.info("Could not find newer version in '%s'. Checking app_store..." % core_source)
+                return self._upgrade_core(None, 'app_store', suppress_prompts, backup_core, False)
+
+            self._log.info("No need to update the Toolkit Core API at this time!")
             return_status = {"status": "up_to_date"}
 
-        elif status == TankCoreUpdater.UPDATE_BLOCKED_BY_SG:
-            req_sg = installer.get_required_sg_version_for_update()
-            msg = (
-                "%s version of core requires a more recent version (%s) of Shotgun!" % (
-                    "The newest" if core_version is None else "The requested",
-                    req_sg
+        elif status == TankCoreUpdater.UPDATE_IS_OLDER:
+            self._log.info("Requested version %s found in '%s' is older than current version." % (upgrade_version, upgrade_source))
+
+        elif status == TankCoreUpdater.UPDATE_IS_NEWER:
+            self._log.info("Newer version %s found in '%s'!" % (upgrade_version, upgrade_source))
+
+        (summary, url) = upgrade_core_desc.changelog
+        self._log.info("")
+        self._log.info("Change Summary:")
+        for x in textwrap.wrap(summary, width=60):
+            self._log.info(x)
+        self._log.info("")
+        self._log.info("Detailed Release Notes:")
+        self._log.info("%s" % url)
+        self._log.info("")
+        self._log.info("Please note that if this is a shared core used by more than one project, "
+                 "this will affect the other projects as well.")
+        self._log.info("")
+
+        if suppress_prompts or console_utils.ask_yn_question("Update to this version of the Core API?"):
+
+            # Check we meet the required minimum shotgun version for this update
+            status = installer.check_sg_version_req()
+            if status == TankCoreUpdater.UPDATE_BLOCKED_BY_SG:
+                req_sg = upgrade_core_desc.version_constraints["min_sg"]
+                msg = (
+                    "%s version of core requires a more recent version (%s) of Shotgun!" % (
+                        "The newest" if core_version is None else "The requested",
+                        req_sg
+                    )
                 )
-            )
-            log.error(msg)
-            return_status = {"status": "update_blocked", "reason": msg}
+                self._log.error(msg)
+                return_status = {"status": "update_blocked", "reason": msg}
 
-        elif status == TankCoreUpdater.UPDATE_POSSIBLE:
+            elif status == TankCoreUpdater.UPDATE_POSSIBLE:
 
-            (summary, url) = installer.get_release_notes()
-            log.info("")
-            log.info("Change Summary:")
-            for x in textwrap.wrap(summary, width=60):
-                log.info(x)
-            log.info("")
-            log.info("Detailed Release Notes:")
-            log.info("%s" % url)
-            log.info("")
-            log.info("Please note that if this is a shared core used by more than one project, "
-                     "this will affect the other projects as well.")
-            log.info("")
-
-            if suppress_prompts or console_utils.ask_yn_question("Update to this version of the Core API?"):
                 # install it!
                 installer.do_install()
 
-                log.info("")
-                log.info("")
-                log.info("----------------------------------------------------------------")
-                log.info("The Toolkit Core API has been updated!")
-                log.info("")
-                log.info("")
-                log.info("Please note the following:")
-                log.info("")
-                log.info("- You need to restart any applications (such as Maya or Nuke)")
-                log.info("  in order for them to pick up the API update.")
-                log.info("")
-                log.info("- Please close this shell, as the update process")
-                log.info("  has replaced the folder that this script resides in")
-                log.info("  with a more recent version. ")
-                log.info("")
-                log.info("----------------------------------------------------------------")
-                log.info("")
-                return_status = {"status": "updated", "new_version": new_version}
+                self._log.info("")
+                self._log.info("")
+                self._log.info("----------------------------------------------------------------")
+                self._log.info("The Toolkit Core API has been updated!")
+                self._log.info("")
+                self._log.info("")
+                self._log.info("Please note the following:")
+                self._log.info("")
+                self._log.info("- You need to restart any applications (such as Maya or Nuke)")
+                self._log.info("  in order for them to pick up the API update.")
+                self._log.info("")
+                self._log.info("- Please close this shell, as the update process")
+                self._log.info("  has replaced the folder that this script resides in")
+                self._log.info("  with a more recent version. ")
+                self._log.info("")
+                self._log.info("----------------------------------------------------------------")
+                self._log.info("")
+                return_status = {"status": "updated", "new_version": upgrade_version}
 
             else:
-                log.info("The Shotgun Pipeline Toolkit will not be updated.")
-
+                raise TankError("Unknown Update state!")
         else:
-            raise TankError("Unknown Update state!")
+           self._log.info("The Shotgun Pipeline Toolkit will not be updated.")
 
         return return_status
 
@@ -242,11 +290,13 @@ class TankCoreUpdater(object):
     # possible update status states
     (
         UP_TO_DATE,                   # all good, no update necessary
+        UPDATE_IS_OLDER,              # the requested update is older than the currently installed version
+        UPDATE_IS_NEWER,              # the requested update is newer than the currently installed version
         UPDATE_POSSIBLE,              # more recent version exists
         UPDATE_BLOCKED_BY_SG          # more recent version exists but SG version is too low.
-    ) = range(3)
+    ) = range(5)
 
-    def __init__(self, install_folder_root, logger, core_version=None, core_source=None, backup_core=False):
+    def __init__(self, install_folder_root, logger, old_core_descriptor, new_core_descriptor, backup_core=False):
         """
         Constructor
 
@@ -262,9 +312,55 @@ class TankCoreUpdater(object):
         self._log = logger
         self._backup_core = backup_core
 
+        self._core_install_root = install_folder_root
+        self._install_root = os.path.join(install_folder_root, "install")
+        self._old_core_descriptor = old_core_descriptor
+        self._new_core_descriptor = new_core_descriptor
+
+    @classmethod
+    def get_current_core_descriptor(cls, log, core_install_root):
+        """
+        Returns the descriptor for the currently installed Toolkit API core
+        """
         from ..descriptor import Descriptor, create_descriptor
 
-        self._local_sg = shotgun.get_sg_connection()
+        local_sg = shotgun.get_sg_connection()
+
+        config_path = os.path.join(core_install_root, 'config')
+        config_descriptor = create_descriptor(local_sg, Descriptor.CONFIG,
+                                    {'type' : 'path', 'path' : config_path})
+
+        # Get the core descriptor dict from config/core/core_api.yml
+        core_uri_or_dict = config_descriptor.associated_core_descriptor
+
+        if core_uri_or_dict is None:
+            # Assume app_store and try and get version from info.yml
+            log.debug("core_api.yml does not exist. Reading info.yml instead.")
+            version = pipelineconfig_utils.get_core_api_version(core_install_root)
+
+            return create_descriptor(local_sg, Descriptor.CORE,
+                            {'name' : 'tk-core',
+                             'type' : 'app_store',
+                             'version' : version}
+                    )
+
+        # we have an exact core descriptor. Get a descriptor for it
+        log.debug("Core descriptor defined in core/core_api.yml: %s" % core_uri_or_dict)
+
+        return create_descriptor(local_sg, Descriptor.CORE, core_uri_or_dict)
+
+    @classmethod
+    def get_upgrade_core_descriptor(cls, log, core_version=None, core_source=None):
+        """
+        Returns the descriptor for the upgradeable Toolkit API core
+        """
+        from ..descriptor import Descriptor, create_descriptor
+
+        local_sg = shotgun.get_sg_connection()
+
+        # if core_source not specified, assume app_store
+        if core_source is None:
+            core_source = 'app_store'
 
         descriptor_dict = { 'name' : 'tk-core' }
         if core_source == 'app_store':
@@ -280,85 +376,67 @@ class TankCoreUpdater(object):
 
         if core_version:
             descriptor_dict['version'] = core_version
-            self._new_core_descriptor = create_descriptor(self._local_sg, Descriptor.CORE, descriptor_dict)
-        else:
-            self._new_core_descriptor = create_descriptor(self._local_sg, Descriptor.CORE, descriptor_dict, resolve_latest=True)
+            return create_descriptor(local_sg, Descriptor.CORE, descriptor_dict)
 
-        self._core_root = install_folder_root
-        self._install_root = os.path.join(install_folder_root, "install")
-
-        # now also extract the version of shotgun currently running
-        try:
-            self._sg_studio_version = ".".join([ str(x) for x in self._local_sg.server_info["version"]])
-        except Exception, e:
-            raise TankError("Could not extract version number for shotgun: %s" % e)
-
-    def get_update_version_number(self):
-        """
-        Returns the new version of the Toolkit API from shotgun
-        Returns None if there is no new version
-        """
-        return self._new_core_descriptor.version
-
-    def get_current_version_number(self):
-        """
-        Returns the currently installed version of the Toolkit API
-        """
-        return pipelineconfig_utils.get_core_api_version(self._core_root)
-
-    def get_required_sg_version_for_update(self):
-        """
-        Returns the SG version that is required in order to update to the specified
-        version of the Tank Core API.
-
-        :returns: sg version number as a string or None if no version is required.
-        """
-        return self._new_core_descriptor.version_constraints["min_sg"]
-
-    def get_release_notes(self):
-        """
-        Returns the release notes for the most recent version of the Toolkit API
-
-        :returns: tuple with (summary_string, details_url_string)
-        """
-        return self._new_core_descriptor.changelog
+        return create_descriptor(local_sg, Descriptor.CORE, descriptor_dict, resolve_latest=True)
 
     def get_update_status(self):
         """
-        Returns true if an update is recommended. As a side effect, if pulls down
-        the core from the AppStore to get access to the info.yml file so we can
-        get the required Shotgun version.
+        Check whether we are up to date, older than, or newer than the update version.
         """
-        if is_version_head(self.get_current_version_number()):
-            # head is the verison number which is stored in tank core trunk
+        old_version = self._old_core_descriptor.version
+        new_version = self._new_core_descriptor.version
+        if is_version_head(old_version):
+            # head is the version number which is stored in tank core trunk
             # getting this as a result means that we are not actually running
             # a version of tank that came from the app store, but some sort
             # of dev version
             return self.UP_TO_DATE
 
-        elif self.get_current_version_number() == self._new_core_descriptor.version:
+        elif old_version == new_version:
             # running updated version already
             return self.UP_TO_DATE
-        else:
-            # FIXME: We should cache info.yml on the appstore so we don't have
-            # to download the whole bundle just to see the file.
-            if not self._new_core_descriptor.exists_local():
-                self._log.info("")
-                self._log.info("Downloading Toolkit Core API %s from the App Store..." % self._new_core_descriptor.version)
-                self._new_core_descriptor.download_local()
-                self._log.info("Download completed.")
 
-            # running an older version. Make sure that shotgun has the required version
-            req_sg = self.get_required_sg_version_for_update()
-            if req_sg is None:
-                # no particular version required! We are good to go!
-                return TankCoreUpdater.UPDATE_POSSIBLE
+        elif is_version_newer(old_version, new_version):
+            # current version is newer than requested version
+            return self.UPDATE_IS_OLDER
+
+        return self.UPDATE_IS_NEWER
+
+    def check_sg_version_req(self):
+        """
+        Check we meet the required minimum shotgun version for this update
+        """
+        # FIXME: We should cache info.yml on the appstore so we don't have
+        # to download the whole bundle just to see the file.
+        if not self._new_core_descriptor.exists_local():
+            self._log.info("")
+            self._log.info("Downloading Toolkit Core API %s from '%s'..." % 
+                    (self._new_core_descriptor.version,
+                     self._new_core_descriptor.get_dict()['type'])
+                    )
+            self._new_core_descriptor.download_local()
+            self._log.info("Download completed.")
+
+        # running an older version. Make sure that shotgun has the required version
+        req_sg_version = self._new_core_descriptor.version_constraints["min_sg"]
+        if req_sg_version is None:
+            # no particular version required! We are good to go!
+            return TankCoreUpdater.UPDATE_POSSIBLE
+        else:
+
+            # now also extract the version of shotgun currently running
+            local_sg = shotgun.get_sg_connection()
+            try:
+                cur_sg_version = ".".join([ str(x) for x in local_sg.server_info["version"]])
+            except Exception, e:
+                raise TankError("Could not extract version number for shotgun: %s" % e)
+
+            # there is a sg min version required - make sure we have that!
+            if is_version_newer(req_sg_version, cur_sg_version):
+                return TankCoreUpdater.UPDATE_BLOCKED_BY_SG
             else:
-                # there is a sg min version required - make sure we have that!
-                if is_version_newer(req_sg, self._sg_studio_version):
-                    return TankCoreUpdater.UPDATE_BLOCKED_BY_SG
-                else:
-                    return TankCoreUpdater.UPDATE_POSSIBLE
+                return TankCoreUpdater.UPDATE_POSSIBLE
 
     def do_install(self):
         """
