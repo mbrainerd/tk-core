@@ -9,8 +9,10 @@
 # agreement to the Shotgun Pipeline Toolkit Source Code License. All rights 
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
-# get the current working directory
-CURR_PATH=`pwd -P`
+# set SHOTGUN_SERVER if not set
+if [ -z "$SHOTGUN_SERVER" ]; then
+    export SHOTGUN_SERVER="http://shotgun-dev.d2.com"
+fi
 
 # get absolute location of this script
 SELF_PATH=$(cd -P -- "$(dirname -- "$0")" && pwd -P) && SELF_PATH=$SELF_PATH/$(basename -- "$0")
@@ -29,18 +31,63 @@ done
 # chop off the file name
 SELF_PATH=$(dirname "$SELF_PATH")
 
-export STUDIO_TANK_PATH=$SELF_PATH
-export SHOTGUN_SERVER="http://shotgun-dev.d2.com"
+# get the current working directory
+CURR_PATH=`pwd -P`
 
-# set up an env var to track the current pipeline configuration
-# this is to help the tank core API figure out for example tank.tank_from_path()
-# when using multiple work dev areas.
-# since we are recursing upwards, only set it if it is not already set.
-# we only set this when it is a pipeline location. Check this by looking for
-# the roots.yml file
-ROOTS_FILE="$CURR_PATH/config/core/roots.yml"
-if [ -z "$TANK_CURRENT_PC" ] && [ -f "$ROOTS_FILE" ]; then
-    export TANK_CURRENT_PC=$CURR_PATH
+# Set TANK_CURRENT_PC if not set and we can determine config location
+# Check this by looking for the roots.yml file
+if [ -z "$TANK_CURRENT_PC" ]; then
+    if [ -f "$CURR_PATH/config/core/roots.yml" ]; then
+        export TANK_CURRENT_PC=$CURR_PATH
+    elif [ -f "$SELF_PATH/config/core/roots.yml" ]; then
+        export STUDIO_TANK_PATH=$SELF_PATH
+    fi
+fi
+
+# Set STUDIO_TANK_PATH if not set
+if [ -z $STUDIO_TANK_PATH ]; then
+
+    # Check current and tank cmd path by looking for the info.yml file
+    if [ -f "$CURR_PATH/install/core/info.yml" ]; then
+        export STUDIO_TANK_PATH=$CURR_PATH
+
+    elif [ -f "$SELF_PATH/install/core/info.yml" ]; then
+        export STUDIO_TANK_PATH=$SELF_PATH
+
+    # Else check if the core path is defined in the pipeline config
+    elif [ ! -z "$TANK_CURRENT_PC" ]; then
+
+        # the parent location is stored in a config file
+        CURR_PLAT=`uname`
+        if [[ "${CURR_PLAT}" == MINGW64_NT* ]] || [[ "${CURR_PLAT}" == MINGW32_NT* ]] ||
+           [[ "${CURR_PLAT}" ==  CYGWIN_NT* ]]; then
+            CURR_PLAT="Windows"
+        fi
+
+        CFG_FILE="$TANK_CURRENT_PC/install/core/core_${CURR_PLAT}.cfg"
+        if [ ! -f "$CFG_FILE" ]; then
+            echo "Cannot find parent configuration file $CFG_FILE!"
+            exit 1
+        fi
+
+        # now get path to parent
+        # by eval-ing the contents we are expanding any environment variables that may
+        # exist in the parent config file. For example, if the parent_config_file contains
+        # $STUDIO_TANK_PATH, it will be expanded correctly assuming the env var exists.
+        CORE_PATH=$( eval echo $( cat "CFG_FILE" ) )
+        # and check that it exists...
+        if [ ! -d "$CORE_PATH" ]; then
+            echo "Cannot find parent $CORE_PATH defined in config file $CFG_FILE!"
+            exit 1
+        fi
+
+        # Setting discovered STUDIO_TANK_PATH
+        export STUDIO_TANK_PATH=$CORE_PATH
+
+    else
+        echo "Cannot determine SGTK core location."
+        exit 1
+    fi
 fi
 
 # first of all, for performance, check if the command is shotgun_get_actions
@@ -69,47 +116,21 @@ if [ -n "$1" ] && [ "$1" = "shotgun_get_actions" ]; then
 fi
 
 # if we have a local install of the core, this is the script to dispatch to
-LOCAL_SCRIPT="$SELF_PATH/install/core/scripts/tank_cmd.sh"
+TANK_SCRIPT="$STUDIO_TANK_PATH/install/core/scripts/tank_cmd.sh"
 
 # when called from shotgun, we reroute to a special script which uses a login shell shebang.
 if [ -n "$1" ] && ( [ "$1" = "shotgun_run_action" ] || [ "$1" = "shotgun_cache_actions" ] ); then
-    LOCAL_SCRIPT="$SELF_PATH/install/core/scripts/tank_cmd_login.sh"
+    TANK_SCRIPT="$STUDIO_TANK_PATH/install/core/scripts/tank_cmd_login.sh"
 fi
 
-if [ -f "$LOCAL_SCRIPT" ];
-then
-   # run local script
-   "$LOCAL_SCRIPT" "$SELF_PATH" "$@"
+if [ ! -f "$TANK_SCRIPT" ]; then
+    echo "$STUDIO_TANK_PATH is not a valid SGTK Core. Missing $TANK_SCRIPT"
+    exit 1
+fi
+
+# run tank script
+if [ ! -z "$TANK_CURRENT_PC" ]; then
+    "$TANK_SCRIPT" "$STUDIO_TANK_PATH" "$@" --pc="$TANK_CURRENT_PC"
 else
-   # there is no local install
-   # so try and get the parent and call its tank script
-   # the parent location is stored in a config file
-   curr_platform=`uname`
-   if [[ "${curr_platform}" == MINGW64_NT* ]] || [[ "${curr_platform}" == MINGW32_NT* ]] ||
-        [[ "${curr_platform}" ==  CYGWIN_NT* ]];
-   then
-       curr_platform="Windows"
-   fi
-   parent_config_file="$TANK_CURRENT_PC/install/core/core_${curr_platform}.cfg"
-
-   if [ ! -f "$parent_config_file" ];
-   then
-      echo "Cannot find parent configuration file $parent_config_file!"
-      exit 1
-   fi
-
-   # now get path to parent
-   # by eval-ing the contents we are expanding any environment variables that may
-   # exist in the parent config file. For example, if the parent_config_file contains
-   # $STUDIO_TANK_PATH, it will be expanded correctly assuming the env var exists.
-   parent_location=$( eval echo $( cat "$parent_config_file" ) )
-   # and check that it exists...
-   if [ ! -d "$parent_location" ];
-   then
-      echo "Cannot find parent $parent_location defined in config file $parent_config_file!"
-      exit 1
-   fi
-
-   # all good, execute tank script in parent location
-   "$parent_location/tank" "$@" --pc="$TANK_CURRENT_PC"
+    "$TANK_SCRIPT" "$STUDIO_TANK_PATH" "$@"
 fi
