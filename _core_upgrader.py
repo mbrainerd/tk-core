@@ -201,12 +201,14 @@ def __copy_tank_cmd_binaries(src_dir, dst_dir, tank_scripts, log):
         shutil.copy(src_tank_script, dst_tank_script)
         os.chmod(dst_tank_script, 0775)
 
-def upgrade_tank(sgtk_install_root, log, backup_core):
+def upgrade_tank(sgtk_core_root, log, backup_core):
     """
     Upgrades the sgtk core API located in sgtk_install_root
     based on files located locally to this script
     """
-    
+    # set the install location
+    sgtk_install_root = os.path.join(sgtk_core_root, "install")
+
     # get our location
     this_folder = os.path.abspath(os.path.join( os.path.dirname(__file__)))
     
@@ -230,9 +232,8 @@ def upgrade_tank(sgtk_install_root, log, backup_core):
 
         # check that the sgtk_install_root looks sane
         # - check the root exists:
-        if not os.path.exists(os.path.join(sgtk_install_root)):
-            log.error("The specified sgtk install root '%s' doesn't look valid!\n"
-                      "Typically the install root path ends with /install." % sgtk_install_root)
+        if not os.path.exists(sgtk_core_root):
+            log.error("The specified sgtk install root '%s' doesn't exist!" % sgtk_core_root)
             return
 
         # get target locations
@@ -266,6 +267,11 @@ def upgrade_tank(sgtk_install_root, log, backup_core):
         # create new core folder
         log.info("Installing %s -> %s" % (this_folder, core_install_location))
         _copy_folder(log, this_folder, core_install_location)
+
+        src_dir = os.path.join(core_install_location, 'setup', 'root_binaries')
+        tank_scripts = ['tank', 'tank.bat']
+        log.info("Copying root binaries: %s" % tank_scripts)
+        __copy_tank_cmd_binaries(src_dir, sgtk_core_root, tank_scripts, log)
         
         log.info("Core upgrade complete.")
     finally:

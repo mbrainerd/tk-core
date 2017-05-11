@@ -313,7 +313,6 @@ class TankCoreUpdater(object):
         self._backup_core = backup_core
 
         self._core_install_root = install_folder_root
-        self._install_root = os.path.join(install_folder_root, "install")
         self._old_core_descriptor = old_core_descriptor
         self._new_core_descriptor = new_core_descriptor
 
@@ -454,7 +453,7 @@ class TankCoreUpdater(object):
         sys.path.insert(0, self._new_core_descriptor.get_path())
         try:
             import _core_upgrader
-            _core_upgrader.upgrade_tank(self._install_root, self._log, self._backup_core)
+            _core_upgrader.upgrade_tank(self._core_install_root, self._log, self._backup_core)
         except Exception, e:
             self._log.exception(e)
             raise Exception("Could not run update script! Error reported: %s" % e)
@@ -463,9 +462,7 @@ class TankCoreUpdater(object):
         """
         Updates the core_api.yml descriptor file.
         """
-        core_api_yaml_path = os.path.join(
-            os.path.dirname(self._install_root), "config", "core", "core_api.yml"
-        )
+        core_api_yaml_path = os.path.join(self._core_install_root, "config", "core", "core_api.yml")
 
         message = "# Shotgun Pipeline Toolkit configuration file. This file was automatically\n"\
                   "# created during the latest core update.\n"
