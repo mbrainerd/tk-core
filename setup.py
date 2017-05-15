@@ -75,5 +75,6 @@ setup(
         "": ["resources/*", ".txt", "*.*"],
     },
     # Everything can be found under the python folder, but installed without it
-    package_dir={"": "python"}
+    package_dir={"": "python"},
+    scripts=['scripts/tank_cmd.py']
 )
