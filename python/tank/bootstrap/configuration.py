@@ -91,7 +91,15 @@ class Configuration(object):
         # now bypass some of the very extensive validation going on
         # by creating a pipeline configuration object directly
         # and pass that into the factory method.
-        pc = pipelineconfig.PipelineConfiguration(path)
+
+        # Previous versions of the PipelineConfiguration API didn't support having a descriptor
+        # passed in, so we'll have to be backwards compatible with these. If the pipeline
+        # configuration does support the get_configuration_descriptor method however, we can
+        # pass the descriptor in.
+        if hasattr(pipelineconfig.PipelineConfiguration, "get_configuration_descriptor"):
+            pc = pipelineconfig.PipelineConfiguration(path, self.descriptor)
+        else:
+            pc = pipelineconfig.PipelineConfiguration(path)
         tk = api.tank_from_path(pc)
 
         log.debug("Bootstrapped into tk instance %r (%r)" % (tk, tk.pipeline_configuration))
