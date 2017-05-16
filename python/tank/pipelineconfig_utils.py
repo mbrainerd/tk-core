@@ -160,6 +160,9 @@ def get_path_to_current_core():
     
     :returns: string with path
     """
+    if 'STUDIO_TANK_PATH' in os.environ:
+        return os.environ['STUDIO_TANK_PATH']
+
     curr_os_core_root = os.path.abspath(os.path.join( os.path.dirname(__file__), "..", "..", "..", ".."))
     if not os.path.exists(curr_os_core_root):
         full_path_to_file = os.path.abspath(os.path.dirname(__file__))

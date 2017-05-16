@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+#
 # Copyright (c) 2013 Shotgun Software Inc.
 #
 # CONFIDENTIAL AND PROPRIETARY
@@ -1441,16 +1443,12 @@ if __name__ == "__main__":
     formatter = AltCustomFormatter()
     log_handler.setFormatter(formatter)
 
-    # the first argument is always the path to the code root
-    # we are running from.
-    if len(sys.argv) == 1:
-        logger.error("This script needs to be executed from the tank command!")
-        sys.exit(1)
     # the location of the actual tank core installation
-    install_root = sys.argv[1]
+    install_root = os.environ['STUDIO_TANK_PATH']
+    pipeline_config_root = os.environ['TANK_CURRENT_PC'] if 'TANK_CURRENT_PC' in os.environ else None
 
     # pass the rest of the args into our checker
-    cmd_line = sys.argv[2:]
+    cmd_line = sys.argv[1:]
 
     # check if there is a --debug flag anywhere in the args list.
     # in that case turn on debug logging and remove the flag
@@ -1687,4 +1685,3 @@ if __name__ == "__main__":
 
     logger.debug("Exiting with exit code %s" % exit_code)
     sys.exit(exit_code)
-

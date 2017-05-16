@@ -1,0 +1,8 @@
+# Shotgun Pipeline Toolkit configuration file
+# this file was automatically created
+
+host: $SHOTGUN_SERVER
+api_script: 
+api_key: 
+
+# End of file.
