@@ -24,7 +24,6 @@ from .template import read_templates
 from . import constants
 from .util import log_user_activity_metric
 from . import pipelineconfig
-from . import pipelineconfig_utils
 from . import pipelineconfig_factory
 from . import LogManager
 
@@ -265,7 +264,7 @@ class Sgtk(object):
         """
         The version of the tank Core API (e.g. v0.2.3)
         """
-        return pipelineconfig_utils.get_currently_running_api_version()
+        return self.__pipeline_config.get_associated_core_version()
 
     @property
     def documentation_url(self):
@@ -273,17 +272,7 @@ class Sgtk(object):
         A url pointing at relevant documentation for this version of the Toolkit Core
         or None if no documentation is associated.
         """
-        # read this from info.yml
-        info_yml_path = os.path.abspath(os.path.join( os.path.dirname(__file__), "..", "..", "info.yml"))
-        try:
-            data = yaml_cache.g_yaml_cache.get(info_yml_path, deepcopy_data=False)
-            data = str(data.get("documentation_url"))
-            if data == "":
-                data = None
-        except Exception:
-            data = None
-
-        return data
+        return self.__pipeline_config.get_documentation_url()
 
     @property
     def configuration_name(self):

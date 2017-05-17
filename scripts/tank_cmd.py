@@ -1445,7 +1445,6 @@ if __name__ == "__main__":
 
     # the location of the actual tank core installation
     install_root = os.environ['STUDIO_TANK_PATH']
-    pipeline_config_root = os.environ['TANK_CURRENT_PC'] if 'TANK_CURRENT_PC' in os.environ else None
 
     # pass the rest of the args into our checker
     cmd_line = sys.argv[1:]
@@ -1479,6 +1478,8 @@ if __name__ == "__main__":
         if is_localized:
             logger.debug("Core API resides inside a (localized) pipeline configuration.")
             pipeline_config_root = install_root
+        elif 'TANK_CURRENT_PC' in os.environ:
+            pipeline_config_root = os.environ['TANK_CURRENT_PC']
         else:
             pipeline_config_root = None
 

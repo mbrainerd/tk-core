@@ -50,9 +50,10 @@ def is_localized(pipeline_config_path):
 
 def is_core_install_root(path):
     """
+    Returns true if the current path is a valid core API install root
     """
-    # look for a localized API by searching for a _core_upgrader.py file
-    api_file = os.path.join(path, "install", "core", "_core_upgrader.py")
+    # look for a localized API by searching for a shotgun.yml file
+    api_file = os.path.join(path, "config", "shotgun.yml")
     return os.path.exists(api_file)
 
 def is_pipeline_config(pipeline_config_path):
@@ -63,7 +64,7 @@ def is_pipeline_config(pipeline_config_path):
     :returns: true if pipeline config, false if not
     """
     # probe by looking for the existence of a key config file.
-    pc_file = os.path.join(pipeline_config_path, "config", "core", constants.STORAGE_ROOTS_FILE)
+    pc_file = os.path.join(pipeline_config_path, "config", constants.STORAGE_ROOTS_FILE)
     return os.path.exists(pc_file)
 
 def get_metadata(pipeline_config_path):
@@ -78,7 +79,6 @@ def get_metadata(pipeline_config_path):
     cfg_yml = os.path.join(
         pipeline_config_path,
         "config",
-        "core",
         constants.PIPELINECONFIG_FILE
     )
 
@@ -119,7 +119,6 @@ def get_roots_metadata(pipeline_config_path):
     roots_yml = os.path.join(
         pipeline_config_path,
         "config",
-        "core",
         constants.STORAGE_ROOTS_FILE
     )
 
@@ -160,17 +159,14 @@ def get_path_to_current_core():
     
     :returns: string with path
     """
-    if 'STUDIO_TANK_PATH' in os.environ:
-        return os.environ['STUDIO_TANK_PATH']
-
-    curr_os_core_root = os.path.abspath(os.path.join( os.path.dirname(__file__), "..", "..", "..", ".."))
+    curr_os_core_root = os.path.abspath(os.environ.get('STUDIO_TANK_PATH'))
     if not os.path.exists(curr_os_core_root):
         full_path_to_file = os.path.abspath(os.path.dirname(__file__))
         raise TankError("Cannot resolve the core configuration from the location of the Toolkit Code! "
                         "This can happen if you try to move or symlink the Toolkit API. The "
                         "Toolkit API is currently picked up from %s which is an "
                         "invalid location." % full_path_to_file)
-    return curr_os_core_root    
+    return curr_os_core_root
 
 
 def get_core_path_for_config(pipeline_config_path):
@@ -271,7 +267,7 @@ def _get_current_platform_interpreter_file_name(install_root):
     :rtype: str
     """
     return os.path.join(
-        install_root, "config", "core", "interpreter_%s.cfg" % _get_current_platform_file_suffix()
+        install_root, "config", "interpreter_%s.cfg" % _get_current_platform_file_suffix()
     )
 
 
@@ -286,7 +282,7 @@ def _get_current_platform_core_location_file_name(install_root):
     :rtype: str
     """
     return os.path.join(
-        install_root, "install", "core", "core_%s.cfg" % _get_current_platform_file_suffix()
+        install_root, "config", "core_%s.cfg" % _get_current_platform_file_suffix()
     )
 
 
@@ -314,10 +310,10 @@ def _find_interpreter_location(pipeline_config_path):
             )
         else:
             return path_to_python
-    else:
-        raise TankFileDoesNotExistError(
-            "No interpreter file for the current platform found at '%s'." % interpreter_config_file
-        )
+
+    log.info("No interpreter file for the current platform found at '%s'." % interpreter_config_file)
+    log.info("Using current python interpreter: '%s'" % sys.executable)
+    return sys.executable
 
 
 def get_python_interpreter_for_config(pipeline_config_path):
@@ -352,9 +348,13 @@ def get_python_interpreter_for_config(pipeline_config_path):
     # Config is localized, we're supposed to find an interpreter file in it.
     if is_localized(pipeline_config_path):
         return _find_interpreter_location(pipeline_config_path)
-    else:
-        studio_path = _get_core_path_for_config(pipeline_config_path)
-        return _find_interpreter_location(studio_path)
+
+    studio_path = get_core_path_for_config(pipeline_config_path)
+    if studio_path is None:
+        # lookup failed. fall back onto runtime introspection
+        studio_path = get_path_to_current_core()
+
+    return _find_interpreter_location(studio_path)
 
 
 def resolve_all_os_paths_to_core(core_path):
@@ -368,6 +368,7 @@ def resolve_all_os_paths_to_core(core_path):
     # @todo - refactor this to return a ShotgunPath
     return _get_install_locations(core_path).as_system_dict()
 
+
 def resolve_all_os_paths_to_config(pc_path):
     """
     Given a pipeline configuration path on the current os platform, 
@@ -376,6 +377,7 @@ def resolve_all_os_paths_to_config(pc_path):
     :returns: ShotgunPath object
     """
     return _get_install_locations(pc_path)
+
 
 def get_config_install_location(path):
     """
@@ -398,6 +400,7 @@ def get_config_install_location(path):
     """
     return _get_install_locations(path).current_os
 
+
 def _get_install_locations(path):
     """
     Given a pipeline configuration OR core location, return paths on all platforms.
@@ -410,7 +413,7 @@ def _get_install_locations(path):
         raise TankError("The core path '%s' does not exist on disk!" % path)
     
     # for other platforms, read in install_location
-    location_file = os.path.join(path, "config", "core", "install_location.yml")
+    location_file = os.path.join(path, "config", "install_location.yml")
 
     # load the config file
     try:
@@ -458,7 +461,7 @@ def get_currently_running_api_version():
     :returns: version string, e.g. 'v1.2.3'. 'unknown' if a version number cannot be determined.
     """
     # read this from info.yml
-    info_yml_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "info.yml"))
+    info_yml_path = os.path.join(get_path_to_current_core(), constants.BUNDLE_METADATA_FILE)
     return _get_version_from_manifest(info_yml_path)
 
 
@@ -474,7 +477,7 @@ def get_core_api_version(core_install_root):
     :returns: version str e.g. 'v1.2.3', 'unknown' if no version could be determined. 
     """
     # now try to get to the info.yml file to get the version number
-    info_yml_path = os.path.join(core_install_root, "install", "core", "info.yml")
+    info_yml_path = os.path.join(core_install_root, constants.BUNDLE_METADATA_FILE)
     return _get_version_from_manifest(info_yml_path)
     
 def _get_version_from_manifest(info_yml_path):

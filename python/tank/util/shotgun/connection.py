@@ -22,6 +22,7 @@ from tank_vendor import shotgun_api3
 
 from ..errors import UnresolvableCoreConfigurationError
 from ...errors import TankError
+from ...pipelineconfig_utils import get_path_to_current_core
 from ...log import LogManager
 from ... import hook
 from .. import constants
@@ -32,31 +33,17 @@ log = LogManager.get_logger(__name__)
 
 def __get_api_core_config_location():
     """
-
-    Walk from the location of this file on disk to the config area.
-    this operation is guaranteed to work on any valid tank installation
-
-    Pipeline Configuration / Studio Location
-       |
-       |- Install
-       |     \- Core
-       |          \- Python
-       |                \- tank
-       |
-       \- Config
-             \- Core
+    Returns the path to the currently running core config location
     """
-    # local import to avoid cyclic references
-    from ...pipelineconfig_utils import get_path_to_current_core
     core_api_root = get_path_to_current_core()
-    core_cfg = os.path.join(core_api_root, "config", "core")
+    return os.path.join(core_api_root, "config")
 
-    if not os.path.exists(core_cfg):
-        path_to_file = os.path.abspath(os.path.dirname(__file__))
-        path_to_core = os.path.abspath(os.path.join(path_to_file, "..", ".."))
-        raise UnresolvableCoreConfigurationError(path_to_core)
-
-    return core_cfg
+def __get_api_core_hook_location():
+    """
+    Returns the path to the currently running core hooks location
+    """
+    core_api_root = get_path_to_current_core()
+    return os.path.join(core_api_root, "hooks")
 
 def __get_sg_config():
     """
@@ -83,7 +70,7 @@ def get_project_name_studio_hook_location():
     # an API or set of functions which can be executed outside the remit of a 
     # pipeline configuration/Toolkit project.
     
-    core_cfg = __get_api_core_config_location()
+    core_cfg = __get_api_core_hook_location()
     path = os.path.join(core_cfg, constants.STUDIO_HOOK_PROJECT_NAME)
     return path
 
@@ -170,7 +157,7 @@ def __parse_config_data(file_data, user, shotgun_cfg_path):
         config_data = file_data
 
     # now check if there is a studio level override hook which want to refine these settings
-    sg_hook_path = os.path.join(__get_api_core_config_location(), constants.STUDIO_HOOK_SG_CONNECTION_SETTINGS)
+    sg_hook_path = os.path.join(__get_api_core_hook_location(), constants.STUDIO_HOOK_SG_CONNECTION_SETTINGS)
 
     if os.path.exists(sg_hook_path):
         # custom hook is available!
@@ -188,6 +175,9 @@ def __parse_config_data(file_data, user, shotgun_cfg_path):
     if not config_data.get("host"):
         _raise_missing_key("host")
 
+    # Expand the host name if variable-ized
+    config_data["host"] = os.path.expandvars(config_data["host"])
+
     # The script authentication credentials need to be complete in order to work. They can be completely
     # omitted or fully specified, but not halfway configured.
     if config_data.get("api_script") and not config_data.get("api_key"):
@@ -201,8 +191,6 @@ def __parse_config_data(file_data, user, shotgun_cfg_path):
         config_data["app_store_http_proxy"] = None
 
     return config_data
-
-
 
     
 def get_associated_sg_base_url():
