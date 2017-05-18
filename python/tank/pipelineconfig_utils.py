@@ -461,7 +461,7 @@ def get_currently_running_api_version():
     :returns: version string, e.g. 'v1.2.3'. 'unknown' if a version number cannot be determined.
     """
     # read this from info.yml
-    info_yml_path = os.path.join(get_path_to_current_core(), constants.BUNDLE_METADATA_FILE)
+    info_yml_path = os.path.join(get_path_to_current_core(), "info.yml")
     return _get_version_from_manifest(info_yml_path)
 
 
@@ -477,7 +477,7 @@ def get_core_api_version(core_install_root):
     :returns: version str e.g. 'v1.2.3', 'unknown' if no version could be determined. 
     """
     # now try to get to the info.yml file to get the version number
-    info_yml_path = os.path.join(core_install_root, constants.BUNDLE_METADATA_FILE)
+    info_yml_path = os.path.join(core_install_root, "info.yml")
     return _get_version_from_manifest(info_yml_path)
     
 def _get_version_from_manifest(info_yml_path):

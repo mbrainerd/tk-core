@@ -22,7 +22,6 @@ from tank_vendor import shotgun_api3
 
 from ..errors import UnresolvableCoreConfigurationError
 from ...errors import TankError
-from ...pipelineconfig_utils import get_path_to_current_core
 from ...log import LogManager
 from ... import hook
 from .. import constants
@@ -35,6 +34,7 @@ def __get_api_core_config_location():
     """
     Returns the path to the currently running core config location
     """
+    from ...pipelineconfig_utils import get_path_to_current_core
     core_api_root = get_path_to_current_core()
     return os.path.join(core_api_root, "config")
 
@@ -42,6 +42,7 @@ def __get_api_core_hook_location():
     """
     Returns the path to the currently running core hooks location
     """
+    from ...pipelineconfig_utils import get_path_to_current_core
     core_api_root = get_path_to_current_core()
     return os.path.join(core_api_root, "hooks")
 
