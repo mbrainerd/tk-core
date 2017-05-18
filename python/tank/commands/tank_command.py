@@ -53,36 +53,18 @@ log = LogManager.get_logger(__name__)
 ###############################################################################################
 # Built in actions (all in the tank_commands sub module)
 
-BUILT_IN_ACTIONS = [setup_project.SetupProjectAction,
-                    setup_project_wizard.SetupProjectFactoryAction,
-                    core_upgrade.CoreUpdateAction,
-                    core_localize.CoreLocalizeAction,
-                    core_localize.ShareCoreAction,
-                    core_localize.AttachToCoreAction,
-                    dump_config.DumpConfigAction,
-                    validate_config.ValidateConfigAction,
-                    cache_apps.CacheAppsAction,
-                    misc.ClearCacheAction,
-                    switch.SwitchAppAction,
+BUILT_IN_ACTIONS = [
                     app_info.AppInfoAction,
-                    misc.InteractiveShellAction,
-                    install.InstallAppAction,
-                    push_pc.PushPCAction,
-                    install.InstallEngineAction,
-                    update.AppUpdatesAction,
+                    dump_config.DumpConfigAction,
                     folders.CreateFoldersAction,
                     folders.PreviewFoldersAction,
-                    move_pc.MovePCAction,
-                    pc_overview.PCBreakdownAction,
-                    migrate_entities.MigratePublishedFileEntitiesAction,
+                    get_entity_commands.GetEntityCommandsAction,
+                    misc.ClearCacheAction,
+                    misc.InteractiveShellAction,
                     path_cache.SynchronizePathCache,
-                    path_cache.PathCacheMigrationAction,
+                    pc_overview.PCBreakdownAction,
                     unregister_folders.UnregisterFoldersAction,
-                    clone_configuration.CloneConfigAction,
-                    copy_apps.CopyAppsAction,
-                    desktop_migration.DesktopMigration,
-                    cache_yaml.CacheYamlAction,
-                    get_entity_commands.GetEntityCommandsAction
+                    validate_config.ValidateConfigAction
                     ]
 
 
@@ -519,5 +501,3 @@ def run_action(log, tk, ctx, command, args):
             found_action.tk.log_metric(found_action.name)
 
         return found_action.run_interactive(log, args)
-
-

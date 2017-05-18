@@ -28,7 +28,7 @@ class PCBreakdownAction(Action):
                         "configurations", 
                         Action.TK_INSTANCE, 
                         ("Shows an overview of the different configurations registered with this project."), 
-                        "Admin")
+                        "Configuration")
 
         # this method can be executed via the API
         self.supports_api = True        
@@ -167,5 +167,3 @@ class PCBreakdownAction(Action):
             
             log.info("")
             log.info("")
-        
-        
