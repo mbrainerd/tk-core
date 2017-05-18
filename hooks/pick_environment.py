@@ -1,17 +1,15 @@
-# Copyright (c) 2013 Shotgun Software Inc.
-# 
+# Copyright (c) 2015 Shotgun Software Inc.
+#
 # CONFIDENTIAL AND PROPRIETARY
-# 
-# This work is provided "AS IS" and subject to the Shotgun Pipeline Toolkit 
+#
+# This work is provided "AS IS" and subject to the Shotgun Pipeline Toolkit
 # Source Code License included in this distribution package. See LICENSE.
-# By accessing, using, copying or modifying this work you indicate your 
-# agreement to the Shotgun Pipeline Toolkit Source Code License. All rights 
+# By accessing, using, copying or modifying this work you indicate your
+# agreement to the Shotgun Pipeline Toolkit Source Code License. All rights
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
 """
 Hook which chooses an environment file to use based on the current context.
-This file is almost always overridden by a standard config.
-
 """
 
 from tank import Hook
@@ -20,17 +18,33 @@ class PickEnvironment(Hook):
 
     def execute(self, context, **kwargs):
         """
-        The default implementation assumes there are two environments, called shot 
-        and asset, and switches to these based on entity type.
+        The default implementation assumes there are three environments, called shot, asset
+        and project, and switches to these based on entity type.
         """
-        
-        # must have an entity
+
+        if context.project is None:
+            # our context is completely empty!
+            # don't know how to handle this case.
+            return "site"
+
         if context.entity is None:
-            return None
-        
-        if context.entity["type"] == "Shot":
-            return "shot"
-        elif context.entity["type"] == "Asset":
-            return "asset"
+            # we have a project but not an entity
+            return "project"
+
+        if context.entity and context.step is None:
+            # we have an entity but no step!
+            if context.entity["type"] == "Shot":
+                return "shot"
+            if context.entity["type"] == "Asset":
+                return "asset"
+            if context.entity["type"] == "Sequence":
+                return "sequence"
+
+        if context.entity and context.step:
+            # we have a step and an entity
+            if context.entity["type"] == "Shot":
+                return "shot_step"
+            if context.entity["type"] == "Asset":
+                return "asset_step"
 
         return None
