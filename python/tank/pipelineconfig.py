@@ -857,9 +857,13 @@ class PipelineConfiguration(object):
         
         :returns: path string
         """
-        return os.path.join(LocalFileStorageManager.get_global_root(
-                        LocalFileStorageManager.CACHE),
-                        self._project_name, self._pc_name)
+        return LocalFileStorageManager.get_configuration_root(
+                        shotgun.get_sg_connection().base_url,
+                        self._project_id,
+                        self._plugin_id,
+                        self._pc_id,
+                        LocalFileStorageManager.CACHE
+                )
 
     ########################################################################################
     # configuration data access
