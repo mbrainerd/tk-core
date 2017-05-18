@@ -65,11 +65,11 @@ class ConfigurationWriter(object):
         filesystem.ensure_folder_exists(os.path.join(config_path, "cache"))
 
         filesystem.ensure_folder_exists(
-            os.path.join(config_path, "install", "config.backup"),
+            os.path.join(config_path, "config.backup"),
             create_placeholder_file=True
         )
         filesystem.ensure_folder_exists(
-            os.path.join(config_path, "install", "core.backup"),
+            os.path.join(config_path, "core.backup"),
             create_placeholder_file=True
         )
 
@@ -88,7 +88,7 @@ class ConfigurationWriter(object):
         if core_uri_or_dict is None:
             # we don't have a core descriptor specified. Get latest from app store.
             log.debug(
-                "Config does not have a core/core_api.yml file to define which core to use. "
+                "Config does not have a core_api.yml file to define which core to use. "
                 "Will use the latest approved core in the app store."
             )
             core_uri_or_dict = constants.LATEST_CORE_DESCRIPTOR
@@ -96,7 +96,7 @@ class ConfigurationWriter(object):
             use_latest = True
         else:
             # we have an exact core descriptor. Get a descriptor for it
-            log.debug("Config has a specific core defined in core/core_api.yml: %s" % core_uri_or_dict)
+            log.debug("Config has a specific core defined in core_api.yml: %s" % core_uri_or_dict)
             # when core is specified, it is always a specific version
             use_latest = False
 
@@ -111,7 +111,7 @@ class ConfigurationWriter(object):
         # make sure we have our core on disk
         core_descriptor.ensure_local()
         config_root_path = self._path.current_os
-        core_target_path = os.path.join(config_root_path, "install", "core")
+        core_target_path = os.path.join(config_root_path)
 
         log.debug("Copying core into place")
         core_descriptor.copy(core_target_path)
@@ -164,7 +164,7 @@ class ConfigurationWriter(object):
 
             if os.path.exists(configuration_payload):
 
-                config_backup_root = os.path.join(config_path, "install", "config.backup")
+                config_backup_root = os.path.join(config_path, "config.backup")
 
                 # make sure we have a backup folder present
                 # sometimes, execution and rollback is so quick that several backup folders
@@ -186,29 +186,30 @@ class ConfigurationWriter(object):
                 log.debug("Backup complete.")
                 config_backup_path = backup_target_path
 
+            core_backup_root = os.path.join(config_path, "core.backup")
+            # should not be necessary but just in case.
+            filesystem.ensure_folder_exists(core_backup_root)
+
+            # make sure we have a backup folder present
+            # sometimes, execution and rollback is so quick that several backup folders
+            # are created in a single second. In that case, append a suffix
+            core_backup_path = os.path.join(core_backup_root, timestamp)
+            counter = 0
+            while os.path.exists(core_backup_path):
+                # that backup path already exists. Try another one
+                counter += 1
+                core_backup_path = os.path.join(core_backup_root, "%s.%d" % (timestamp, counter))
+
             # now back up the core API
-            core_payload = os.path.join(config_path, "install", "core")
+            for subdir in ("bin", "hooks", "python"):
+                core_payload = os.path.join(config_path, subdir)
 
-            if os.path.exists(core_payload):
-                core_backup_root = os.path.join(config_path, "install", "core.backup")
-                # should not be necessary but just in case.
-                filesystem.ensure_folder_exists(core_backup_root)
-
-                # make sure we have a backup folder present
-                # sometimes, execution and rollback is so quick that several backup folders
-                # are created in a single second. In that case, append a suffix
-                core_backup_path = os.path.join(core_backup_root, timestamp)
-                counter = 0
-                while os.path.exists(core_backup_path):
-                    # that backup path already exists. Try another one
-                    counter += 1
-                    core_backup_path = os.path.join(core_backup_root, "%s.%d" % (timestamp, counter))
-
-                log.debug("Moving core %s -> %s" % (core_payload, core_backup_path))
-                guard.move(core_payload, core_backup_path)
-                guard.done()
-                log.debug("Backup complete.")
-                core_backup_path = core_backup_path
+                if os.path.exists(core_payload):
+                    log.debug("Moving core %s -> %s" % (core_payload, core_backup_path))
+                    guard.move(core_payload, core_backup_path)
+                    guard.done()
+                    log.debug("Backup complete.")
+                    core_backup_path = core_backup_path
 
             return (config_backup_path, core_backup_path)
 
@@ -240,7 +241,6 @@ class ConfigurationWriter(object):
             sg_config_location = os.path.join(
                 config_root_path,
                 "config",
-                "core",
                 "interpreter_%s.cfg" % platform
             )
             # clean out any existing files
@@ -248,18 +248,6 @@ class ConfigurationWriter(object):
             # create new file
             with open(sg_config_location, "wt") as fh:
                 fh.write(executables[platform])
-
-        # now deploy the actual tank command
-        core_target_path = os.path.join(config_root_path, "install", "core")
-        root_binaries_folder = os.path.join(core_target_path, "setup", "root_binaries")
-        for file_name in os.listdir(root_binaries_folder):
-            src_file = os.path.join(root_binaries_folder, file_name)
-            tgt_file = os.path.join(config_root_path, file_name)
-            # clear out any existing files
-            filesystem.safe_delete_file(tgt_file)
-            # and copy new one into place
-            log.debug("Installing tank command %s -> %s" % (src_file, tgt_file))
-            filesystem.copy_file(src_file, tgt_file, 0775)
 
     def write_install_location_file(self):
         """
@@ -271,7 +259,6 @@ class ConfigurationWriter(object):
         sg_code_location = os.path.join(
             config_path,
             "config",
-            "core",
             "install_location.yml"
         )
 
@@ -315,19 +302,17 @@ class ConfigurationWriter(object):
 
     def write_shotgun_file(self, descriptor):
         """
-        Writes config/core/shotgun.yml
+        Writes config/shotgun.yml
         """
 
         source_config_sg_file = os.path.join(
             descriptor.get_path(),
-            "core",
             constants.CONFIG_SHOTGUN_FILE
         )
 
         dest_config_sg_file = os.path.join(
             self._path.current_os,
             "config",
-            "core",
             constants.CONFIG_SHOTGUN_FILE
         )
 
@@ -362,7 +347,7 @@ class ConfigurationWriter(object):
 
     def write_pipeline_config_file(self, pipeline_config_id, project_id, plugin_id, bundle_cache_fallback_paths):
         """
-        Writes out the the pipeline configuration file config/core/pipeline_config.yml
+        Writes out the the pipeline configuration file config/pipeline_config.yml
 
         This will populate all relevant parameters required for a toolkit runtime setup.
         Project and pipeline configuration names will be resolved from Shotgun.
@@ -432,7 +417,6 @@ class ConfigurationWriter(object):
         pipeline_config_path = os.path.join(
             self._path.current_os,
             "config",
-            "core",
             constants.PIPELINECONFIG_FILE
         )
 
@@ -476,7 +460,6 @@ class ConfigurationWriter(object):
         roots_file = os.path.join(
             self._path.current_os,
             "config",
-            "core",
             constants.STORAGE_ROOTS_FILE
         )
 

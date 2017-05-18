@@ -92,7 +92,6 @@ class ConfigDescriptor(Descriptor):
 
         core_descriptor_path = os.path.join(
             self._io_descriptor.get_path(),
-            "core",
             constants.CONFIG_CORE_DESCRIPTOR_FILE
         )
 

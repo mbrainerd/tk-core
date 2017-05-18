@@ -44,8 +44,8 @@ if "TANK_CURRENT_PC" not in os.environ:
     #
     from . import constants
     current_folder = os.path.abspath(os.path.dirname(__file__))
-    pipeline_config = os.path.abspath(os.path.join(current_folder, "..", "..", "..", ".."))
-    roots_file = os.path.join(pipeline_config, "config", "core", constants.STORAGE_ROOTS_FILE)
+    pipeline_config = os.path.abspath(os.path.join(current_folder, "..", ".."))
+    roots_file = os.path.join(pipeline_config, "config", constants.STORAGE_ROOTS_FILE)
     if os.path.exists(roots_file):
         os.environ["TANK_CURRENT_PC"] = pipeline_config
 

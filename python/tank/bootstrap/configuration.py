@@ -76,7 +76,7 @@ class Configuration(object):
                         the tk instance with.
         """
         path = self._path.current_os
-        core_path = os.path.join(path, "install", "core", "python")
+        core_path = os.path.join(path, "python")
 
         # swap the core out
         CoreImportHandler.swap_core(core_path)
