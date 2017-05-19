@@ -114,6 +114,9 @@ class PipelineConfiguration(object):
         if pipeline_config_metadata.get("use_bundle_cache"):
             # use bundle cache
             self._bundle_cache_root_override = None
+        elif "SGTK_BUNDLE_CACHE_ROOT" in os.environ:
+            # use SGTK_BUNDLE_CACHE_ROOT env variable if defined
+            self._bundle_cache_root_override = os.environ.get("SGTK_BUNDLE_CACHE_ROOT")
         else:
             # use cache relative to core install
             self._bundle_cache_root_override = self.get_core_install_location()

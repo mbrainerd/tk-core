@@ -301,7 +301,6 @@ class IODescriptorAppStore(IODescriptorBase):
         """
         return os.path.join(
             bundle_cache_root,
-            "app_store",
             self.get_system_name(),
             self.get_version()
         )

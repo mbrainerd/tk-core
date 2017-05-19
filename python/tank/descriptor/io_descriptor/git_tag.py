@@ -91,7 +91,6 @@ class IODescriptorGitTag(IODescriptorGit):
         """
         return os.path.join(
             bundle_cache_root,
-            "git",
             self._name,
             self.get_version()
         )
