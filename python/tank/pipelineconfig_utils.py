@@ -169,19 +169,34 @@ def get_path_to_current_core():
     return curr_os_core_root
 
 
+def get_core_python_path_for_config(pipeline_config_path):
+    """
+    Returns the location of the Toolkit library associated with the given pipeline configuration.
+
+    :param pipeline_config_path: path to a pipeline configuration
+
+    :returns: Path to location where the Toolkit Python library associated with the config resides.
+    :rtype: str
+    """
+    return os.path.join(_get_core_path_for_config(pipeline_config_path), "python")
+
+
 def get_core_path_for_config(pipeline_config_path):
     """
     Returns the core api install location associated with the given pipeline configuration.
+
     In the case of a localized PC, it just returns the given path.
     Otherwise, it resolves the location via the core_xxxx.cfg files.
     
     :param pipeline_config_path: path to a pipeline configuration
+
     :returns: Path to the studio location root or pipeline configuration root or None if not resolved
     """
     try:
         return _get_core_path_for_config(pipeline_config_path)
     except:
         return None
+
 
 def _get_core_path_for_config(pipeline_config_path):
     """
