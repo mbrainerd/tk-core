@@ -604,7 +604,7 @@ class PipelineConfiguration(object):
         
         :returns: path string
         """
-        return os.path.join(self.get_core_install_location(), "python")
+        return pipelineconfig_utils.get_core_python_path_for_config(self._pc_root)
 
     def get_documentation_url(self):
         """

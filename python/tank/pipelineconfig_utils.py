@@ -17,6 +17,7 @@ from __future__ import with_statement
 
 import os
 import sys
+import prez
 
 from .errors import (
     TankError,
@@ -159,14 +160,7 @@ def get_path_to_current_core():
     
     :returns: string with path
     """
-    curr_os_core_root = os.path.abspath(os.environ.get('STUDIO_TANK_PATH'))
-    if not os.path.exists(curr_os_core_root):
-        full_path_to_file = os.path.abspath(os.path.dirname(__file__))
-        raise TankError("Cannot resolve the core configuration from the location of the Toolkit Code! "
-                        "This can happen if you try to move or symlink the Toolkit API. The "
-                        "Toolkit API is currently picked up from %s which is an "
-                        "invalid location." % full_path_to_file)
-    return curr_os_core_root
+    return prez.derive(__file__).path
 
 
 def get_core_python_path_for_config(pipeline_config_path):
@@ -218,39 +212,25 @@ def _get_core_path_for_config(pipeline_config_path):
     if is_localized(pipeline_config_path):
         # first, try to locate an install local to this pipeline configuration.
         # this would find any localized APIs.
-        install_path = pipeline_config_path
+        return pipeline_config_path
 
-    else:
-        # this pipeline config is associated with a shared API (studio install)
-        # follow the links defined in the configuration to establish which
-        # setup it has been associated with.
-        studio_linkback_file = _get_current_platform_core_location_file_name(pipeline_config_path)
+    roots = get_roots_metadata(pipeline_config_path)
+    primary_root_path = roots['primary'].current_os
+    # validate it
+    if primary_root_path is None:
+        raise TankError("The %s for the 'primary' file storage location is not defined for this "
+                "operating system! Please contact toolkit support." % ShotgunPath.get_shotgun_storage_key())
 
-        if not os.path.exists(studio_linkback_file):
-            raise TankFileDoesNotExistError(
-                "Configuration at '%s' without a localized core is missing a core location file at '%s'" %
-                (pipeline_config_path, studio_linkback_file)
-            )
+    # Get the prez configuration for the given primary root
+    config = prez.Configuration.current()
+    config.replace(level=prez.Level.derive(primary_root_path))
 
-        # this file will contain the path to the API which is meant to be used with this PC.
-        install_path = None
-        with open(studio_linkback_file, "rt") as fh:
-            data = fh.read().strip() # remove any whitespace, keep text
+    # Resolve the version pin for the sgtk core package
+    env = prez.Environment.forConfiguration(config)
+    pin = env.resolvePin('sgtk_core')
 
-        # expand any env vars that are used in the files. For example, you could have
-        # an env variable $STUDIO_TANK_PATH=/sgtk/software/shotgun/studio and your
-        # linkback file may just contain "$STUDIO_TANK_PATH" instead of an explicit path.
-        data = os.path.expanduser(os.path.expandvars(data))
-        if data not in ["None", "undefined"] and os.path.exists(data):
-            install_path = data
-        else:
-            raise TankInvalidCoreLocationError(
-                "Cannot find core location '%s' defined in "
-                "config file '%s'." %
-                (data, studio_linkback_file)
-            )
-
-    return install_path
+    # Return the path to the associated distribution
+    return env.getDistribution(pin.project, pin.version).path
 
 
 def _get_current_platform_file_suffix():
@@ -283,21 +263,6 @@ def _get_current_platform_interpreter_file_name(install_root):
     """
     return os.path.join(
         install_root, "config", "interpreter_%s.cfg" % _get_current_platform_file_suffix()
-    )
-
-
-def _get_current_platform_core_location_file_name(install_root):
-    """
-    Retrieves the path to the core location file for a given install root.
-
-    :param str install_root: This can be the root to a studio install for a core
-        or a pipeline configuration root.
-
-    :returns: Path for the current platform's core location file.
-    :rtype: str
-    """
-    return os.path.join(
-        install_root, "config", "core_%s.cfg" % _get_current_platform_file_suffix()
     )
 
 
@@ -364,12 +329,7 @@ def get_python_interpreter_for_config(pipeline_config_path):
     if is_localized(pipeline_config_path):
         return _find_interpreter_location(pipeline_config_path)
 
-    studio_path = get_core_path_for_config(pipeline_config_path)
-    if studio_path is None:
-        # lookup failed. fall back onto runtime introspection
-        studio_path = get_path_to_current_core()
-
-    return _find_interpreter_location(studio_path)
+    return _find_interpreter_location(_get_core_path_for_config(pipeline_config_path))
 
 
 def resolve_all_os_paths_to_core(core_path):
@@ -494,7 +454,8 @@ def get_core_api_version(core_install_root):
     # now try to get to the info.yml file to get the version number
     info_yml_path = os.path.join(core_install_root, "info.yml")
     return _get_version_from_manifest(info_yml_path)
-    
+
+
 def _get_version_from_manifest(info_yml_path):
     """
     Helper method. 
@@ -510,5 +471,3 @@ def _get_version_from_manifest(info_yml_path):
         data = "unknown"
 
     return data
-
-
