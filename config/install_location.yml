@@ -1,9 +1,0 @@
-# This file stores the location on disk where this
-# configuration is located. It is needed to ensure
-# that deployment works correctly on all os platforms.
-
-Windows: ''
-Darwin: ''
-Linux: $STUDIO_TANK_PATH
-
-# End of file.
