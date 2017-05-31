@@ -49,6 +49,22 @@ def is_localized(pipeline_config_path):
 
     return is_core_install_root(pipeline_config_path)
 
+
+def is_site_configuration(pipeline_config_path):
+    """
+    Returns true if the pipeline configuration is a site configuration.
+
+    :returns: True if this is a site configuration, False otherwise.
+    """
+    # first, make sure that this path is actually a pipeline configuration
+    # path. otherwise, it cannot be localized :)
+    if not is_pipeline_config(pipeline_config_path):
+        return False
+
+    site_env_file = os.path.join(pipeline_config_path, "config", "env", "site.yml")
+    return os.path.exists(site_env_file)
+
+
 def is_core_install_root(path):
     """
     Returns true if the current path is a valid core API install root
@@ -56,6 +72,7 @@ def is_core_install_root(path):
     # look for a localized API by searching for a shotgun.yml file
     api_file = os.path.join(path, "config", "shotgun.yml")
     return os.path.exists(api_file)
+
 
 def is_pipeline_config(pipeline_config_path):
     """
@@ -65,10 +82,11 @@ def is_pipeline_config(pipeline_config_path):
     :returns: true if pipeline config, false if not
     """
     # probe by looking for the existence of a key config file.
-    pc_file = os.path.join(pipeline_config_path, "config", constants.STORAGE_ROOTS_FILE)
+    pc_file = os.path.join(pipeline_config_path, "config", constants.PIPELINECONFIG_FILE)
     return os.path.exists(pc_file)
 
-def get_metadata(pipeline_config_path):
+
+def get_pipeline_metadata(pipeline_config_path):
     """
     Loads the pipeline config metadata (the pipeline_configuration.yml) file from disk.
     
@@ -172,7 +190,7 @@ def get_core_python_path_for_config(pipeline_config_path):
     :returns: Path to location where the Toolkit Python library associated with the config resides.
     :rtype: str
     """
-    return os.path.join(_get_core_path_for_config(pipeline_config_path), "python")
+    return os.path.join(get_core_path_for_config(pipeline_config_path), "python")
 
 
 def get_core_path_for_config(pipeline_config_path):
@@ -186,51 +204,13 @@ def get_core_path_for_config(pipeline_config_path):
 
     :returns: Path to the studio location root or pipeline configuration root or None if not resolved
     """
-    try:
-        return _get_core_path_for_config(pipeline_config_path)
-    except:
-        return None
-
-
-def _get_core_path_for_config(pipeline_config_path):
-    """
-    Returns the core api install location associated with the given pipeline configuration.
-    In the case of a localized PC, it just returns the given path.
-    Otherwise, it resolves the location via the core_xxxx.cfg files.
-
-    :param str pipeline_config_path: path to a pipeline configuration
-
-    :returns: Path to the studio location root or pipeline configuration root or None if not resolved
-    :rtype: str
-
-    :raises TankFileDoesNotExistError: Raised if the core_xxxx.cfg file is missing for the
-        pipeline configuration.
-    :raises TankNotPipelineConfigurationError: Raised if the path is not referencing a pipeline configuration.
-    :raises TankInvalidCoreLocationError: Raised if the core location specified in core_xxxx.cfg
-        does not exist.
-    """
     if is_localized(pipeline_config_path):
         # first, try to locate an install local to this pipeline configuration.
         # this would find any localized APIs.
         return pipeline_config_path
 
-    roots = get_roots_metadata(pipeline_config_path)
-    primary_root_path = roots['primary'].current_os
-    # validate it
-    if primary_root_path is None:
-        raise TankError("The %s for the 'primary' file storage location is not defined for this "
-                "operating system! Please contact toolkit support." % ShotgunPath.get_shotgun_storage_key())
-
-    # Get the prez configuration for the given primary root
-    config = prez.Configuration.current()
-    config.replace(level=prez.Level.derive(primary_root_path))
-
-    # Resolve the version pin for the sgtk core package
-    env = prez.Environment.forConfiguration(config)
-    pin = env.resolvePin('sgtk_core')
-
-    # Return the path to the associated distribution
-    return env.getDistribution(pin.project, pin.version).path
+    data = get_pipeline_metadata(pipeline_config_path)
+    return get_core_install_location(data.get("project_name"))
 
 
 def _get_current_platform_file_suffix():
@@ -329,7 +309,7 @@ def get_python_interpreter_for_config(pipeline_config_path):
     if is_localized(pipeline_config_path):
         return _find_interpreter_location(pipeline_config_path)
 
-    return _find_interpreter_location(_get_core_path_for_config(pipeline_config_path))
+    return _find_interpreter_location(get_core_path_for_config(pipeline_config_path))
 
 
 def resolve_all_os_paths_to_core(core_path):
@@ -354,26 +334,62 @@ def resolve_all_os_paths_to_config(pc_path):
     return _get_install_locations(pc_path)
 
 
-def get_config_install_location(path):
+def get_core_install_location(project_or_path='current'):
     """
-    Given a pipeline configuration, return the location
-    on the current platform.
-    
-    Loads the location metadata file from install_location.yml
-    This contains a reflection of the paths given in the pipeline config entity.
+    Given a project name or path on disk, return the location of the core api location
+    """
+    return get_package_install_location('sgtk_core', project_or_path)
 
-    Returns the path that has been registered for this pipeline configuration 
-    for the current OS. This is the path that has been defined in shotgun.
-    
-    This is useful when drive letter mappings or symlinks are being used to ensure
-    a correct path resolution.
-    
-    This may return None if no path has been registered for the current os.
-    
-    :param path: Path to a pipeline configuration on disk.
-    :returns: registered path, may be None.
+
+def get_config_install_location(project_or_path='current'):
     """
-    return _get_install_locations(path).current_os
+    Given a project name or path on disk, return the location of the core api location
+    """
+    return get_package_install_location('sgtk_config', project_or_path)
+
+
+def get_package_install_location(package_name, project_or_path='current'):
+    """
+    Given a project name or path on disk, return the location of a given package
+    """
+    # Get the current environment
+    env = prez.Environment.current()
+
+    # First check if there is an override for this package
+    spec = os.environ.get("DD_WITH_OVERRIDE") or ""
+    withOverrides = dict(x.split("=", 1) for x in spec.split(",") if x != "")
+    if withOverrides.get(package_name):
+        package_version = prez.Version.parse(withOverrides[package_name])
+        return env.getDistribution(package_name, package_version).path
+
+    # Next check if the current level has a workarea
+    if env.level.isWorkarea:
+        # Then check if this package is in the current work area
+        if package_name in env.source.source.getProjects():
+            return env.resolveDistribution(package_name).path
+
+    # If nothing is specified, override to operate at the facility level
+    if project_or_path is None or project_or_path == 'facility':
+        # Start with the current configuration so we maintain role, site, etc
+        config = env.configuration.replace(level=prez.Level.facility())
+
+    # If the project is set to 'current', just return the current config
+    elif project_or_path == 'current':
+        config = env.configuration
+
+    # Else if it is a path, derive the level from the path
+    elif os.path.exists(os.path.expandvars(project_or_path)):
+        config = env.configuration.replace(level=prez.Level.derive(project_or_path))
+
+    # Else assume it is a project name and evaluate for the project
+    else:
+        config = env.configuration.replace(level=prez.Level(project_or_path.upper()))
+
+    # Get the environment for the updated configuration
+    env = prez.Environment.forConfiguration(config)
+
+    # Return the path to the resolved distribution
+    return env.resolveDistribution(package_name).path
 
 
 def _get_install_locations(path):
@@ -421,8 +437,6 @@ def _get_install_locations(path):
 
     # sanitize data into a ShotgunPath and return data
     return ShotgunPath(win_path, linux_path, macosx_path)
-
-
 
 
 ####################################################################################################################

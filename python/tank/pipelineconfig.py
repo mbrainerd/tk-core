@@ -94,7 +94,7 @@ class PipelineConfiguration(object):
 
         # get the project tank disk name (Project.tank_name),
         # stored in the pipeline config metadata file.
-        pipeline_config_metadata = self._get_metadata()
+        pipeline_config_metadata = pipelineconfig_utils.get_pipeline_metadata(self._pc_root)
         self._project_name = pipeline_config_metadata.get("project_name")
         self._project_id = pipeline_config_metadata.get("project_id")
         self._pc_id = pipeline_config_metadata.get("pc_id")
@@ -114,12 +114,9 @@ class PipelineConfiguration(object):
         if pipeline_config_metadata.get("use_bundle_cache"):
             # use bundle cache
             self._bundle_cache_root_override = None
-        elif "SGTK_BUNDLE_CACHE_ROOT" in os.environ:
-            # use SGTK_BUNDLE_CACHE_ROOT env variable if defined
-            self._bundle_cache_root_override = os.environ.get("SGTK_BUNDLE_CACHE_ROOT")
         else:
             # use cache relative to core install
-            self._bundle_cache_root_override = self.get_core_install_location()
+            self._bundle_cache_root_override = pipelineconfig_utils.get_package_install_location("sgtk_apps")
 
         if pipeline_config_metadata.get("bundle_cache_fallback_roots"):
             self._bundle_cache_fallback_paths = pipeline_config_metadata.get("bundle_cache_fallback_roots")
@@ -175,39 +172,8 @@ class PipelineConfiguration(object):
     def __repr__(self):
         return "<Sgtk Configuration %s>" % self._pc_root
 
-    ########################################################################################
-    # handling pipeline config metadata
-    
-    def _get_metadata(self):
-        """
-        Loads the pipeline config metadata (the pipeline_configuration.yml) file from disk.
-        
-        :param pipeline_config_path: path to a pipeline configuration root folder
-        :returns: deserialized content of the file in the form of a dict.
-        """
-    
-        # now read in the pipeline_configuration.yml file
-        cfg_yml = os.path.join(
-            self.get_config_location(),
-            constants.PIPELINECONFIG_FILE
-        )
-    
-        if not os.path.exists(cfg_yml):
-            raise TankError("Configuration metadata file '%s' missing! "
-                            "Please contact support." % cfg_yml)
-    
-        fh = open(cfg_yml, "rt")
-        try:
-            data = yaml.load(fh)
-            if data is None:
-                raise Exception("File contains no data!")
-        except Exception, e:
-            raise TankError("Looks like a config file is corrupt. Please contact "
-                            "support! File: '%s' Error: %s" % (cfg_yml, e))
-        finally:
-            fh.close()
-    
-        return data
+########################################################################################
+# handling pipeline config metadata
     
     def _update_metadata(self, updates):
         """
@@ -216,7 +182,7 @@ class PipelineConfiguration(object):
         :param updates: Dictionary of values to update in the pipeline configuration
         """
         # get current settings
-        curr_settings = self._get_metadata()
+        curr_settings = pipelineconfig_utils.get_pipeline_metadata(self._pc_root)
         
         # apply updates to existing cache
         curr_settings.update(updates)
@@ -258,12 +224,13 @@ class PipelineConfiguration(object):
         self._pc_id = curr_settings.get("pc_id")
         self._pc_name = curr_settings.get("pc_name")
 
+
     def _populate_yaml_cache(self):
         """
         Loads pickled yaml_cache items if they are found and merges them into
         the global YamlCache.
         """
-        cache_file = os.path.join(self._pc_root, "yaml_cache.pickle")
+        cache_file = os.path.join(self.get_cache_location(), "yaml_cache.pickle")
         if not os.path.exists(cache_file):
             return
 
@@ -853,12 +820,9 @@ class PipelineConfiguration(object):
         """
         return os.path.join(self.get_config_location(), "schema")
 
-    def get_shotgun_menu_cache_location(self):
+    def get_cache_location(self):
         """
-        returns the folder where shotgun menu cache files 
-        (used by the browser plugin and java applet) are stored.
-        
-        :returns: path string
+        return the folder where config related cache files are stored.
         """
         return LocalFileStorageManager.get_configuration_root(
                         shotgun.get_sg_connection().base_url,
@@ -867,6 +831,16 @@ class PipelineConfiguration(object):
                         self._pc_id,
                         LocalFileStorageManager.CACHE
                 )
+
+    def get_shotgun_menu_cache_location(self):
+        """
+        returns the folder where shotgun menu cache files 
+        (used by the browser plugin and java applet) are stored.
+        
+        :returns: path string
+        """
+        return os.path.join(self.get_cache_location, "menu")
+
 
     ########################################################################################
     # configuration data access
