@@ -1,16 +1,111 @@
-#!/opt/Shotgun/Python/bin/python
+#!/usr/bin/env python
 
-import sys, os, pprint
+import sys, os
+import pprint
+import logging
+import datetime
+import textwrap
+import traceback
 
 import sgtk
 
-sgtk.LogManager().initialize_base_file_handler("tk-desktop")
-
-logger = sgtk.LogManager.get_logger(__name__)
-logger.debug("Running main from %s" % __file__)
-
-#sys.path.insert(0, '/dd/tools/cent6_64/package/pyside/1.2.4_qt4.8.6/python/2.7')
 from PySide import QtCore, QtGui
+
+__version__ = '1.4.3'
+
+# the logger used by this file is sgtk.tank_cmd
+logger = sgtk.LogManager.get_logger("shotgun_desktop")
+
+# custom log formatter for the tank command
+formatter = None
+
+###############################################################################################
+# Helpers and General Stuff
+
+class AltCustomFormatter(logging.Formatter):
+    """
+    Custom logging formatter for the tank command.
+
+    This logger handles html-style outputting, intended for
+    messages that are sent back to the Shotgun UI (via the sg engine).
+
+    Non-html output is formatted to be cut at 80 chars
+    in order to make it easily readable.
+    """
+    def __init__(self, *args, **kwargs):
+        """
+        Constructor
+        """
+        self._html = False
+        self._num_errors = 0
+        logging.Formatter.__init__(self, *args, **kwargs)
+
+    def enable_html_mode(self):
+        """
+        Turns on html output
+        """
+        self._html = True
+
+    def get_num_errors(self):
+        """
+        Returns the number of items that have been logged so far.
+        """
+        return self._num_errors
+
+    def format(self, record):
+
+        if record.levelno > logging.WARNING:
+            self._num_errors += 1
+
+        if self._html:
+            # html logging for shotgun.
+            # The logging mechanisms in Shotgun tend to filter out any output
+            # which does not start with an html tag, so we need to make sure we got that.
+            if record.levelno in (logging.WARNING, logging.ERROR, logging.CRITICAL, logging.DEBUG):
+                # for errors and warnings, we turn all special chars into codes using cgi
+                # before converting, make sure the record is a string, sometimes
+                # people pass in all sorts of crap into the logger
+                message_str = str(record.msg)
+                message = "<b>%s:</b> %s" % (record.levelname, cgi.escape(message_str))
+            else:
+                # info logging allows html chars to be passed so no cgi encode
+                message = str(record.msg)
+
+            # now make sure each distinct line is wrapped in a span so the shotgun
+            # logger will pick them up.
+            lines = []
+            for line in message.split("\n"):
+                lines.append("<span>%s</span>" % line)
+
+            record.msg = "\n".join(lines)
+
+        else:
+            # shell based logging. Cut nicely at 80 chars width.
+            if record.levelno in (logging.WARNING, logging.ERROR, logging.CRITICAL):
+                record.msg = '%s: %s' % (record.levelname, record.msg)
+
+            if record.levelno == logging.DEBUG:
+                # time stamps in debug logging!
+                record.msg = 'DEBUG [%s %s]: %s' % (datetime.datetime.now().strftime("%H:%M:%S"),
+                                                    record.msecs,
+                                                    record.msg)
+
+            if not("Code Traceback" in record.msg or record.levelno < logging.INFO):
+                # do not wrap exceptions and debug
+                # wrap other log levels on an 80 char wide boundary
+                lines = []
+
+                if sys.version_info < (2,6):
+                    # python 2.5 doesn't support all params
+                    wrapped_lines = textwrap.wrap(record.msg, width=78, break_long_words=False)
+                else:
+                    wrapped_lines = textwrap.wrap(record.msg, width=78, break_long_words=False, break_on_hyphens=False)
+
+                for x in wrapped_lines:
+                    lines.append(x)
+                record.msg = "\n".join(lines)
+
+        return logging.Formatter.format(self, record)
 
 class Ui_Splash(object):
     def setupUi(self, Splash):
@@ -24,16 +119,16 @@ class Ui_Splash(object):
         Splash.setMinimumSize(QtCore.QSize(512, 200))
         Splash.setMaximumSize(QtCore.QSize(512, 200))
         Splash.setStyleSheet("QDialog\n"
-"{\n"
-"    border: 2px solid rgb(119, 134, 145)\n"
-"}\n"
-"\n"
-"QWidget\n"
-"{\n"
-"    background-color:  rgb(36, 39, 42);\n"
-"    color: rgb(198, 198, 198);\n"
-"    font-size: 12px;\n"
-"}")
+                "{\n"
+                "    border: 2px solid rgb(119, 134, 145)\n"
+                "}\n"
+                "\n"
+                "QWidget\n"
+                "{\n"
+                "    background-color:  rgb(36, 39, 42);\n"
+                "    color: rgb(198, 198, 198);\n"
+                "    font-size: 12px;\n"
+                "}")
         self.icon = QtGui.QLabel(Splash)
         self.icon.setGeometry(QtCore.QRect(16, 30, 480, 142))
         sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
@@ -68,7 +163,170 @@ def qInitResources():
 def qCleanupResources():
     QtCore.qUnregisterResourceData(0x01, qt_resource_struct, qt_resource_name, qt_resource_data)
 
-qInitResources()
+
+class DesktopMessageBox(QtGui.QMessageBox):
+
+    @staticmethod
+    def critical(title, message, default_button=QtGui.QMessageBox.Ok, buttons=QtGui.QMessageBox.Ok, detailed_text=None, parent=None):
+        """
+        Pops a critical message box, very similar to QtGui.QMessageBox.critical.
+
+        :param title: Text to display in the title bar.
+        :param message: Text to display in the body of the dialog. Text is split into a separate
+            paragraph after each \n.
+        :param default_button: Button that will be highlighted bu default. Defaults to
+            QtGui.QMessageBox.Ok
+        :param buttons: Union of QtGui.QMessageBox.StandardButton to display in the dialog. Defaults
+            to QtGui.QMessageBox.Ok
+        :param detailed_text: Text to display in the detailed area when clicking "Show Details...".
+            If None, the button won't be displayed.
+        :param parent: Parent widget of this message box.
+
+        :returns: The QtGui.QMessageBox.StandardButton value representing the user selection.
+        """
+        return DesktopMessageBox(
+            QtGui.QMessageBox.Critical,
+            title,
+            message,
+            default_button,
+            buttons,
+            detailed_text,
+            parent
+        ).exec_()
+
+    @staticmethod
+    def information(title, message, default_button=QtGui.QMessageBox.Ok, buttons=QtGui.QMessageBox.Ok, detailed_text=None, parent=None):
+        """
+        Pops an informational message box, very similar to QtGui.QMessageBox.information.
+
+        :param title: Text to display in the title bar.
+        :param message: Text to display in the body of the dialog. Text is split into a separate
+            paragraph after each \n.
+        :param default_button: Button that will be highlighted bu default. Defaults to
+            QtGui.QMessageBox.Ok
+        :param buttons: Union of QtGui.QMessageBox.StandardButton to display in the dialog. Defaults
+            to QtGui.QMessageBox.Ok
+        :param detailed_text: Text to display in the detailed area when clicking "Show Details...".
+            If None, the button won't be displayed.
+        :param parent: Parent widget of this message box.
+
+        :returns: The QtGui.QMessageBox.StandardButton value representing the user selection.
+        """
+        return DesktopMessageBox(
+            QtGui.QMessageBox.Information,
+            title,
+            message,
+            default_button,
+            buttons,
+            detailed_text,
+            parent
+        ).exec_()
+
+    @staticmethod
+    def warning(title, message, default_button=QtGui.QMessageBox.Ok, buttons=QtGui.QMessageBox.Ok, detailed_text=None, parent=None):
+        """
+        Pops a warning message box, very similar to QtGui.QMessageBox.warning.
+
+        :param title: Text to display in the title bar.
+        :param message: Text to display in the body of the dialog. Text is split into a separate
+            paragraph after each \n.
+        :param default_button: Button that will be highlighted bu default. Defaults to
+            QtGui.QMessageBox.Ok
+        :param buttons: Union of QtGui.QMessageBox.StandardButton to display in the dialog. Defaults
+            to QtGui.QMessageBox.Ok
+        :param detailed_text: Text to display in the detailed area when clicking "Show Details...".
+            If None, the button won't be displayed.
+        :param parent: Parent widget of this message box.
+
+        :returns: The QtGui.QMessageBox.StandardButton value representing the user selection.
+        """
+        return DesktopMessageBox(
+            QtGui.QMessageBox.Warning,
+            title,
+            message,
+            default_button,
+            buttons,
+            detailed_text,
+            parent
+        ).exec_()
+
+    def __init__(self, icon, title, message, default_button, buttons, detailed_text=None, parent=None):
+        """
+        Pops a warning message box, very similar to QtGui.QMessageBox.warning.
+
+        :param icon: QtGui.QMessageBox.Icon value representing the icon to display.
+        :param title: Text to display in the title bar.
+        :param message: Text to display in the body of the dialog. Text is split into a separate
+            paragraph after each \n.
+        :param default_button: Button that will be highlighted bu default. Defaults to
+            QtGui.QMessageBox.Ok
+        :param buttons: Union of QtGui.QMessageBox.StandardButton to display in the dialog. Defaults
+            to QtGui.QMessageBox.Ok
+        :param detailed_text: Text to display in the detailed area when clicking "Show Details...".
+            If None, the button won't be displayed.
+        :param parent: Parent widget of this message box.
+
+        :returns: The QtGui.QMessageBox.StandardButton value representing the user selection.
+        """
+
+        QtGui.QMessageBox.__init__(self)
+
+        # Retrieve the style to get the message box icon associated to it. Icon is a temporary
+        # object.
+        self.setStyleSheet(
+            """QWidget
+            {
+                background-color:  rgb(36, 39, 42);
+                color: rgb(192, 193, 195);
+                selection-background-color: rgb(168, 123, 43);
+                selection-color: rgb(230, 230, 230);
+                font-size: 11px;
+                color: rgb(192, 192, 192);
+            }
+
+            QPushButton
+            {
+                background-color: transparent;
+                border-radius: 2px;
+                padding: 8px;
+                padding-left: 15px;
+                padding-right: 15px;
+            }
+
+            QPushButton:default
+            {
+                color: rgb(248, 248, 248);
+                background-color: rgb(35, 165, 225);
+            }
+            """)
+        # Set the requested icon
+        self.setIcon(icon)
+
+        # Set the buttons
+        self.setStandardButtons(buttons)
+        self.setDefaultButton(default_button)
+
+        if detailed_text:
+            self.setDetailedText(detailed_text)
+
+        # Set the title
+        self.setWindowTitle(title)
+
+        # Create a paragraph per \n line of text.
+        message = "".join(["<p><span style=\" font-size:12pt;\">%s</span></p>" % para for para in message.split("\n")])
+        self.setText(
+            "<html><head/><body>%s</body></html>" % message
+        )
+
+    def exec_(self):
+        """
+        Displays the window modally and makes sure it goes front and center.
+        """
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint | self.windowFlags())
+        return QtGui.QDialog.exec_(self)
 
 
 class Splash(QtGui.QDialog):
@@ -112,96 +370,6 @@ class Splash(QtGui.QDialog):
         self.set_message("")
         QtGui.QDialog.hide(self)
 
-def get_pipeline_configuration_info(connection):
-    """
-    Finds the site configuration root on disk.
-
-    :param shotgun_api3.Shotgun connection: Shotgun instance for the site we want
-        to find a configuration for.
-
-    :returns (str, str, bool): The pipeline configuration root, the pipeline configuration
-        entity dictionary and a boolean indicating if Toolkit classic is required. If True,
-        Toolkit classic is required.
-    """
-
-    # find what path field from the entity we need
-    if sys.platform == "darwin":
-        plat_key = "mac_path"
-    elif sys.platform == "win32":
-        plat_key = "windows_path"
-    elif sys.platform.startswith("linux"):
-        plat_key = "linux_path"
-    else:
-        raise RuntimeError("unknown platform: %s" % sys.platform)
-
-    # interesting fields to return
-    fields = ["id", "code", "windows_path", "mac_path", "linux_path", "project", "sg_plugin_ids", "plugin_ids"]
-
-    # Find the right pipeline configuration. We'll always pick a projectless
-    # one over one with the Template Project. To have a deterministic behaviour,
-    # we'll also always sort the ids. Common sense would dictate that the
-    # sorting needs to be done from low ids to high ids. However, entries with
-    # no project get systematically pushed to the end of the list, no matter
-    # the ordering. Since we want to pick the projectless configuration first,
-    # we'll reverse the sorting order on ids so the last returned result is the
-    # lowest projectless configuration (if available). If no projectless
-    # pipeline configurations are available, then the ones from the Template
-    # project will show up. Once again, because we are sorting configurations
-    # based on decreasing ids, the last entry is still the one with the lowest
-    # id.
-
-    pcs = connection.find(
-        "PipelineConfiguration",
-        [{
-            "filter_operator": "any",
-            "filters": [
-                ["project", "is", None],
-                {
-                    "filter_operator": "all",
-                    "filters": [
-                        ["project.Project.name", "is", "Template Project"],
-                        ["project.Project.layout_project", "is", None]
-                    ]
-                }
-            ]
-        }],
-        fields=fields,
-        order=[
-            # Sorting on the project id doesn't actually matter. We want
-            # some sorting simply because this will force grouping between
-            # configurations with a project and those that don't.
-            {"field_name": "project.Project.id", "direction": "asc"},
-            {"field_name": "id", "direction": "desc"}
-        ]
-    )
-
-    # We don't filter in the Shotgun query for the plugin ids because not every site these fields yet.
-    # So if any pipeline configurations with a plugin id was returned, filter them it out.
-    pcs = filter(lambda pc: not(pc.get("sg_plugin_ids") or pc.get("plugin_ids")), pcs)
-
-    logger.debug("These non-plugin_id based pipeline configurations were found by Desktop:")
-    logger.debug(pprint.pformat(pcs))
-
-    if len(pcs) == 0:
-        pc = None
-    else:
-        # Pick the last result. See the big comment before the Shotgun query to understand.
-        pc = pcs[-1]
-        # It is possible to get multiple pipeline configurations due to user error.
-        # Log a warning if there was more than one pipeline configuration found.
-        if len(pcs) > 1:
-            logger.info(
-                "More than one pipeline configuration was found (%s), using %d" %
-                (", ".join([str(p["id"]) for p in pcs]), pc["id"])
-            )
-
-    logger.debug("This pipeline configuration will be used:")
-    logger.debug(pprint.pformat(pc))
-
-    # see if we found a pipeline configuration
-    if pc is not None and pc.get(plat_key, ""):
-        # path is already set for us, just return it
-        return (str(pc[plat_key]), pc, True)
 
 def __bootstrap_progress_callback(splash, app, progress_value, message):
     """
@@ -216,43 +384,154 @@ def __bootstrap_progress_callback(splash, app, progress_value, message):
     logger.debug(message)
 
 
-if "QT_PLUGIN_PATH" in os.environ:
-    del os.environ["QT_PLUGIN_PATH"]
+def __handle_exception(splash, shotgun_authenticator, error_message):
+    """
+    Tears down the application, logs you out and displays an error message.
 
-# start up our QApp now
-app = QtGui.QApplication(sys.argv)
-splash = Splash()
-
-# show the splash screen
-splash.show()
-
-# Reading user settings from disk.
-settings = sgtk.util.UserSettings()
-
-shotgun_authenticator = sgtk.authentication.ShotgunAuthenticator()
-user = shotgun_authenticator.get_user()
-if user.are_credentials_expired():
-    # If they are, we will clear them from the session cache...
-    shotgun_authenticator.clear_default_user()
-    user = shotgun_authenticator.get_user()
-
-sgtk.set_authenticated_user(user)
-
-splash.set_message("Looking up site configuration.")
+    :param splash: Splash dialog to hide.
+    :param shotgun_authenticator: Used to clear the default user so we logout
+        automatically on Desktop failure.
+    :param error_message: Error string that will be displayed in a message box.
+    """
+    if splash:
+        splash.hide()
+    logger.exception("Fatal error, user will be logged out.")
+    DesktopMessageBox.critical("Shotgun Desktop Error", error_message)
+    # If we are logged in, we should log out so the user is not stuck in a loop of always
+    # automatically logging in each time the app is launched again
+    if shotgun_authenticator:
+        shotgun_authenticator.clear_default_user()
 
 
-connection = user.create_sg_connection()
-pc_path, pc, __ = get_pipeline_configuration_info(connection)
+def __handle_unexpected_exception(splash, shotgun_authenticator, error_message):
+    """
+    Tears down the application, logs you out and displays an error message.
 
-mgr = sgtk.bootstrap.ToolkitManager(user)
+    :param splash: Splash dialog to hide.
+    :param shotgun_authenticator: Used to clear the default user so we logout
+        automatically on Desktop failure.
+    :param error_message: Error string that will be displayed in a message box.
+    """
+    if splash:
+        splash.hide()
 
-# Tell the manager to resolve the config in Shotgun so it can resolve the location on disk.
-mgr.do_shotgun_config_lookup = True
-mgr.progress_callback = lambda progress_value, message: __bootstrap_progress_callback(
-        splash, app, progress_value, message)
-mgr.pipeline_configuration = pc["id"]
+    exc_type, exc_value, exc_traceback = sys.exc_info()
 
-splash.set_message("Launching Engine...")
+    logger.exception("Fatal error, user will be logged out.")
+    DesktopMessageBox.critical(
+        "Shotgun Desktop Error",
+        "Something went wrong in the Shotgun Desktop! If you drop us an email at "
+        "support@shotgunsoftware.com, we'll help you diagnose the issue.\n"
+        "Error: %s\n"
+        "For more information, see the log file at %s." % (
+            str(error_message), sgtk.LogManager.log_folder
+        ),
+        detailed_text="".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    )
+    # If we are logged in, we should log out so the user is not stuck in a loop of always
+    # automatically logging in each time the app is launched again
+    if shotgun_authenticator:
+        shotgun_authenticator.clear_default_user()
 
-engine = mgr.bootstrap_engine("tk-desktop")
-engine.run(splash, version='1.4.3')
+def init_logging():
+    """
+    Initialize logging
+    """
+    global logger, formatter
+
+    # set up std toolkit logging to file
+    sgtk.LogManager().initialize_base_file_handler("tk-desktop")
+
+    # set up output of all sgtk log messages to stdout
+    log_handler = sgtk.LogManager().initialize_custom_handler(
+        logging.StreamHandler(sys.stdout)
+    )
+
+    # set up the custom html formatter
+    formatter = AltCustomFormatter()
+    log_handler.setFormatter(formatter)
+
+    # check if there is a --debug flag anywhere in the args list.
+    # in that case turn on debug logging and remove the flag
+    if "--debug" in sys.argv[1:]:
+        sgtk.LogManager().global_debug = True
+        logger.debug("")
+        logger.debug("A log file can be found in %s" % sgtk.LogManager().log_folder)
+        logger.debug("")
+
+    logger.debug("Running main from %s" % __file__)
+
+
+def main():
+    """
+    Do stuff
+    """
+    try:
+
+        # Initialize logging
+        init_logging()
+
+        # Todo: remove this when we move to std DD python
+        if "QT_PLUGIN_PATH" in os.environ:
+            del os.environ["QT_PLUGIN_PATH"]
+
+        # Init qt resources
+        qInitResources()
+
+        # start up our QApp now
+        app = QtGui.QApplication(sys.argv)
+        splash = Splash()
+
+        # show the splash screen
+        splash.show()
+
+        shotgun_authenticator = sgtk.authentication.ShotgunAuthenticator()
+        user = shotgun_authenticator.get_user()
+        if user.are_credentials_expired():
+            # If they are, we will clear them from the session cache...
+            shotgun_authenticator.clear_default_user()
+            user = shotgun_authenticator.get_user()
+
+        sgtk.set_authenticated_user(user)
+
+        # Initialize the bootstrap manager
+        mgr = sgtk.bootstrap.ToolkitManager(user)
+        mgr.progress_callback = lambda progress_value, message: __bootstrap_progress_callback(
+                splash, app, progress_value, message)
+
+        # Get the facility level pipeline config location
+        splash.set_message("Looking up site configuration.")
+        pc_path = sgtk.pipelineconfig_utils.get_config_install_location('facility')
+
+        # Validate that this package is indeed a site config
+        if not sgtk.pipelineconfig_utils.is_site_configuration(pc_path):
+            raise Exception("Specified configuration '%s' does not support the site environment." % pc_path)
+
+        # Don't resolve the config in Shotgun since we already have the location on disk.
+        mgr.do_shotgun_config_lookup = False
+
+        # Set the manager's pc descriptor 
+        mgr.base_configuration = {
+            "type": sgtk.bootstrap.constants.INSTALLED_DESCRIPTOR_TYPE,
+            "path": pc_path
+        }
+
+        splash.set_message("Launching Engine...")
+        engine = mgr.bootstrap_engine("tk-desktop")
+        exit_code = engine.run(splash, version=__version__)
+        return exit_code
+
+    except sgtk.authentication.AuthenticationCancelled:
+        # The user cancelled an authentication request while the app was running, log him out.
+        splash.hide()
+        shotgun_authenticator.clear_default_user()
+        return 0
+    except sgtk.descriptor.InvalidAppStoreCredentialsError, e:
+        __handle_exception(splash, shotgun_authenticator, str(e))
+        return -1
+    except Exception, e:
+        __handle_unexpected_exception(splash, shotgun_authenticator, str(e))
+        return -1
+
+if __name__ == "__main__":
+    sys.exit(main())
