@@ -35,6 +35,20 @@ class ConfigDescriptor(Descriptor):
         super(ConfigDescriptor, self).__init__(io_descriptor)
 
     @property
+    def version(self):
+        """
+        The version number string for this item.
+        """
+        try:
+            meta = self._io_descriptor.get_manifest()
+            version = meta.get("version")
+            if version is None:
+                raise Exception
+        except Exception:
+            version = self._io_descriptor.get_version()
+        return version
+
+    @property
     def version_constraints(self):
         """
         A dictionary with version constraints. The absence of a key
@@ -69,6 +83,7 @@ class ConfigDescriptor(Descriptor):
 
         readme_file = os.path.join(
             self._io_descriptor.get_path(),
+            "config",
             constants.CONFIG_README_FILE
         )
         if os.path.exists(readme_file):
@@ -92,6 +107,7 @@ class ConfigDescriptor(Descriptor):
 
         core_descriptor_path = os.path.join(
             self._io_descriptor.get_path(),
+            "config",
             constants.CONFIG_CORE_DESCRIPTOR_FILE
         )
 
@@ -132,6 +148,7 @@ class ConfigDescriptor(Descriptor):
         # get the roots definition
         root_file_path = os.path.join(
             self._io_descriptor.get_path(),
+            "config",
             constants.STORAGE_ROOTS_FILE)
 
         roots_data = {}
