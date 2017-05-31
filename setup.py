@@ -76,5 +76,5 @@ setup(
     },
     # Everything can be found under the python folder, but installed without it
     package_dir={"": "python"},
-    scripts=['scripts/tank_cmd.py']
+    scripts=['scripts/tank_cmd.py', 'scripts/shotgun_desktop.py']
 )
