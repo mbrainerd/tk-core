@@ -26,6 +26,7 @@ from .installed_configuration import InstalledConfiguration
 from ..util import filesystem
 from ..util import ShotgunPath
 from ..util import LocalFileStorageManager
+from .. import pipelineconfig_utils
 from .. import LogManager
 from . import constants
 
@@ -285,7 +286,7 @@ class ConfigurationResolver(object):
         log.debug(pprint.pformat(filters))
 
         pipeline_configs = sg_connection.find(
-            "PipelineConfiguration",
+            constants.PIPELINE_CONFIGURATION_ENTITY_TYPE,
             filters,
             self._PIPELINE_CONFIG_FIELDS,
             order=[{"field_name": "id", "direction": "asc"}]
@@ -307,33 +308,13 @@ class ConfigurationResolver(object):
             # 1. windows/linux/mac path
             # 2. descriptor
             # 3. sg_descriptor
-            path = ShotgunPath.from_shotgun_dict(pc)
-            current_os_path = path.current_os
-            uri = pc.get("descriptor") or pc.get("sg_descriptor")
+            pc_path = pipelineconfig_utils.get_config_install_location(pc.get("project"))
 
-            if path:
-                # Make sure that the config has a path for the current OS.
-                if current_os_path is None:
-                    log.debug("Config isn't setup for %s: %s", sys.platform, pc)
-                    cfg_descriptor = None
-                else:
-                    cfg_descriptor = create_descriptor(
-                        sg_connection,
-                        Descriptor.CONFIG,
-                        dict(path=current_os_path, type="path"),
-                    )
-            elif uri:
-                log.debug("Using descriptor uri: %s", uri)
-                cfg_descriptor = create_descriptor(
+            cfg_descriptor = create_descriptor(
                     sg_connection,
                     Descriptor.CONFIG,
-                    uri,
-                )
-            else:
-                # If we have neither a uri, nor a path, then we can't get
-                # a descriptor for this config.
-                log.debug("No uri or path found for config: %s", pc)
-                cfg_descriptor = None
+                    dict(path=pc_path, type="path"),
+            )
 
             # We add to the pc dict even if the descriptor is a None. We have an obligation
             # to return configs even when they're not viable on the current platform. This
@@ -354,7 +335,7 @@ class ConfigurationResolver(object):
                 # If a location was specified to get access to that pipeline, return it. Note that we are
                 # potentially returning pipeline configurations that have been configured for one platform but
                 # not all.
-                if pc.get("descriptor") or pc.get("sg_descriptor") or path:
+                if pc.get("descriptor") or pc.get("sg_descriptor") or pc_path:
                     yield pc
                 else:
                     log.warning("Pipeline configuration's 'path' and 'descriptor' fields are not set: %s" % pc)
@@ -363,7 +344,7 @@ class ConfigurationResolver(object):
                 # If a location was specified to get access to that pipeline, return it. Note that we are
                 # potentially returning pipeline configurations that have been configured for one platform but
                 # not all.
-                if path:
+                if pc_path:
                     yield pc
                 else:
                     log.debug("Pipeline configuration's 'path' fields are not set: %s" % pc)
@@ -622,7 +603,7 @@ class ConfigurationResolver(object):
 
             # Fetch the one and only config that matches this id.
             pipeline_config = sg_connection.find_one(
-                "PipelineConfiguration",
+                constants.PIPELINE_CONFIGURATION_ENTITY_TYPE,
                 [
                     ["id", "is", pipeline_config_identifier],
                 ],
@@ -655,36 +636,15 @@ class ConfigurationResolver(object):
             # 1 windows/linux/mac path
             # 2 descriptor
             # 3 sg_descriptor
+            pc_path = pipelineconfig_utils.get_config_install_location(pipeline_config.get("project"))
 
-            path = ShotgunPath.from_shotgun_dict(pipeline_config)
+            # Emit a warning when both the OS field and descriptor field is set.
+            if pipeline_config.get("descriptor") or pipeline_config.get("sg_descriptor"):
+                log.warning("Fields for path based and descriptor based pipeline configuration are both set. "
+                            "Using path based field.")
 
-            if path and not path.current_os:
-                log.debug(
-                    "No path set for %s on the Pipeline Configuration \"%s\" (id %d).",
-                    sys.platform,
-                    pipeline_config["code"],
-                    pipeline_config["id"]
-                )
-                raise TankBootstrapError("The Toolkit configuration path has not\n"
-                                         "been set for your operating system.")
-            elif path:
-                # Emit a warning when both the OS field and descriptor field is set.
-                if pipeline_config.get("descriptor") or pipeline_config.get("sg_descriptor"):
-                    log.warning("Fields for path based and descriptor based pipeline configuration are both set. "
-                                "Using path based field.")
-
-                log.debug("Descriptor will be based off the path in the pipeline configuration")
-                descriptor = {"type": constants.INSTALLED_DESCRIPTOR_TYPE, "path": path.current_os}
-            elif pipeline_config.get("descriptor"):
-                # Emit a warning when the sg_descriptor is set as well.
-                if pipeline_config.get("sg_descriptor"):
-                    log.warning("Both sg_descriptor and descriptor fields are set. Using descriptor field.")
-
-                log.debug("Descriptor will be based off the descriptor field in the pipeline configuration")
-                descriptor = pipeline_config.get("descriptor")
-            elif pipeline_config.get("sg_descriptor"):
-                log.debug("Descriptor will be based off the sg_descriptor field in the pipeline configuration")
-                descriptor = pipeline_config.get("sg_descriptor")
+            log.debug("Descriptor will be based off the path in the pipeline configuration")
+            descriptor = {"type": constants.INSTALLED_DESCRIPTOR_TYPE, "path": pc_path}
 
         log.debug("The descriptor representing the config is %s" % descriptor)
 
