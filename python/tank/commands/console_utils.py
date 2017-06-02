@@ -78,7 +78,7 @@ def ask_yn_question(question):
 ##########################################################################################
 # displaying of info in the terminal, ascii-graphcics style
 
-def format_bundle_info(log, descriptor, required_updates=None):
+def format_bundle_info(log, old_descriptor, new_descriptor, required_updates=None):
     """
     Formats a release notes summary output for an app, engine or core.
 
@@ -87,7 +87,7 @@ def format_bundle_info(log, descriptor, required_updates=None):
     :param required_updates: A list of bundle names that require updating.
     """
     # yay we can install! - get release notes
-    (summary, url) = descriptor.changelog
+    (summary, url) = new_descriptor.changelog
 
     if required_updates:
         add_padding = "     "
@@ -98,10 +98,10 @@ def format_bundle_info(log, descriptor, required_updates=None):
         summary = "No details provided."
 
     log.info("/%s" % ("-" * 70))
-    log.info("| Item:        %s%s" % (add_padding, descriptor))
+    log.info("| Item:        %s%s ==> %s" % (add_padding, old_descriptor, new_descriptor.version))
     log.info("|")
 
-    str_to_wrap = "Description: %s%s" % (add_padding, descriptor.description)
+    str_to_wrap = "Description: %s%s" % (add_padding, new_descriptor.description)
     description = textwrap.wrap(
         str_to_wrap,
         width=68,
@@ -126,12 +126,12 @@ def format_bundle_info(log, descriptor, required_updates=None):
 
     if required_updates:
         log.info("|")
-        name = required_updates[0]
-        fw_str = "| Required Updates: %s" % name
+        data = required_updates[0]
+        fw_str = "| Required Updates: %s %s < %s" % data
         log.info(fw_str)
 
-        for name in required_updates[1:]:
-            log.info("|                   %s" % name)
+        for data in required_updates[1:]:
+            log.info("|                   %s [%s (cur) < %s (min)]" % data)
 
     log.info("\%s" % ("-" * 70))
 
@@ -281,7 +281,7 @@ def ensure_frameworks_installed(log, tank_api_instance, file_location, descripto
 
         # get the latest version from the app store by
         # first getting a stub and then looking for latest.
-        location_stub = {"type": "app_store", "name": name}
+        location_stub = {"type": "manual", "name": name}
 
         pc = tank_api_instance.pipeline_configuration
 
@@ -290,9 +290,14 @@ def ensure_frameworks_installed(log, tank_api_instance, file_location, descripto
         installed_fw_descriptors.append(fw_descriptor)
 
         # and now process this framework
-        log.info("Installing required framework %s %s. Downloading %s..." % (name, version_pattern, fw_descriptor))
+        log.info("Installing required framework %s %s" % (name, version_pattern))
         if not fw_descriptor.exists_local():
-            fw_descriptor.download_local()
+            try:
+                log.info("  Downloading %s..." % fw_descriptor)
+                fw_descriptor.download_local()
+            except OSError, e:
+                raise TankError("Cannot download framework: %s " % e)
+                
 
         # now assume a convention where we will name the fw_instance that we create in the environment
         # on the form name_version
