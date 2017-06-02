@@ -222,15 +222,7 @@ class IODescriptorBase(object):
         #
         versions = {}
         for version_num in version_numbers:
-            try:
-                version_split = map(int, version_num[1:].split("."))
-            except Exception, e:
-                # this git tag is not on the expected form vX.Y.Z where X Y and Z are ints. skip.
-                continue
-
-            if len(version_split) < 3:
-                # git tag has no minor or increment number. skip.
-                continue
+            version_split = version_num[1:].split(".")
 
             # fill our versions dictionary
             #
@@ -258,15 +250,15 @@ class IODescriptorBase(object):
                 current = current[number]
 
         # now search for the latest version matching our pattern
-        if not re.match("^v([0-9]+|x)(.([0-9]+|x)){2,}$", pattern):
+        if not re.match("^v(\d+|x)(.(\d+|x))+$", pattern):
             raise TankDescriptorError("Cannot parse version expression '%s'!" % pattern)
 
         # split our pattern, beware each part is a string (even integers)
-        version_split = re.findall("([0-9]+|x)", pattern)
+        version_split = re.findall("(\d+|x)", pattern)
         if 'x' in version_split:
             # check that we don't have an incorrect pattern using x
             # then a digit, eg. v4.x.2
-            if re.match("^v[0-9\.]+[x\.]+[0-9\.]+$", pattern):
+            if re.match("^v[\d\.]+[x\.]+[\d\.]+$", pattern):
                 raise TankDescriptorError(
                     "Incorrect version pattern '%s'. "
                     "There should be no digit after a 'x'." % pattern
@@ -277,17 +269,26 @@ class IODescriptorBase(object):
         # process each digit in the pattern
         for version_digit in version_split:
             if version_digit == 'x':
+                # Treat 'x' patterns as optional search params so its okay if
+                # our version doesn't have a digit for this field, just use
+                # the version that's matched up to this point
+                if len(current) == 0: break
+
                 # replace the 'x' by the latest at this level
-                version_digit = max(current.keys(), key=int)
-            version_digit = int(version_digit)
+                if "x" in current.keys():
+                    version_digit = "x"
+                else:
+                    version_digit = max(current.keys())
+
             if version_digit not in current:
                 # no matches
                 return None
+
             current = current[version_digit]
             if version_to_use is None:
-                version_to_use = "v%d" % version_digit
+                version_to_use = "v%s" % version_digit
             else:
-                version_to_use = version_to_use + ".%d" % version_digit
+                version_to_use = version_to_use + ".%s" % version_digit
 
         # at this point we have a matching version (eg. v4.x.x => v4.0.2) but
         # there may be forked versions under this 4.0.2, so continue to recurse into
@@ -295,7 +296,7 @@ class IODescriptorBase(object):
         while len(current):
             version_digit = max(current.keys())
             current = current[version_digit]
-            version_to_use = version_to_use + ".%d" % version_digit
+            version_to_use = version_to_use + ".%s" % version_digit
 
         return version_to_use
 
