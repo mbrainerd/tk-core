@@ -308,7 +308,8 @@ class ConfigurationResolver(object):
             # 1. windows/linux/mac path
             # 2. descriptor
             # 3. sg_descriptor
-            pc_path = pipelineconfig_utils.get_config_install_location(pc.get("project"))
+            project_name = pc["project"]["name"] if pc["project"] is not None else None
+            pc_path = pipelineconfig_utils.get_config_install_location(project_name)
 
             cfg_descriptor = create_descriptor(
                     sg_connection,
@@ -636,7 +637,8 @@ class ConfigurationResolver(object):
             # 1 windows/linux/mac path
             # 2 descriptor
             # 3 sg_descriptor
-            pc_path = pipelineconfig_utils.get_config_install_location(pipeline_config.get("project"))
+            project_name = pipeline_config["project"]["name"] if pipeline_config["project"] is not None else None
+            pc_path = pipelineconfig_utils.get_config_install_location(project_name)
 
             # Emit a warning when both the OS field and descriptor field is set.
             if pipeline_config.get("descriptor") or pipeline_config.get("sg_descriptor"):
