@@ -8,6 +8,7 @@
 # agreement to the Shotgun Pipeline Toolkit Source Code License. All rights 
 # not expressly granted therein are reserved by Shotgun Software Inc.
 import os
+import copy
 from .base import IODescriptorBase
 from ... import LogManager
 from ..errors import TankDescriptorError
@@ -52,7 +53,6 @@ class IODescriptorManual(IODescriptorBase):
         """
         return os.path.join(
             bundle_cache_root,
-            "manual",
             self._name,
             self._version
         )
@@ -124,9 +124,15 @@ class IODescriptorManual(IODescriptorBase):
 
         :returns: IODescriptorManual object
         """
-        # since this descriptor has no way of updating and no way of knowing 
-        # what is latest, just return our own version as representing the latest version.
-        return self
+        desc = self.get_latest_cached_version(constraint_pattern)
+        if desc is None:
+            all_versions = self._get_locally_cached_versions().keys()
+            raise TankDescriptorError(
+                "'%s' does not have a version matching the pattern '%s'. "
+                "Available versions are: %s" % (self.get_system_name(),
+                constraint_pattern, ", ".join(all_versions))
+            )
+        return desc
 
     def get_latest_cached_version(self, constraint_pattern=None):
         """
@@ -142,9 +148,26 @@ class IODescriptorManual(IODescriptorBase):
 
         :returns: instance deriving from IODescriptorBase or None if not found
         """
-        # manual descriptor is always manually managed
-        # we also assume that the manual descriptor always exists
-        return self
+        log.debug("Looking for available versions of %r..." % self)
+        all_versions = self._get_locally_cached_versions().keys()
+        log.debug("Found %d versions" % len(all_versions))
+
+        if len(all_versions) == 0:
+            return None
+
+        # get latest
+        version_to_use = self._find_latest_tag_by_pattern(all_versions, constraint_pattern)
+        if version_to_use is None:
+            return None
+
+        # create new descriptor to represent this tag
+        new_loc_dict = copy.deepcopy(self._descriptor_dict)
+        new_loc_dict["version"] = version_to_use
+        desc = IODescriptorManual(new_loc_dict, self._type)
+        desc.set_cache_roots(self._bundle_cache_root, self._fallback_roots)
+
+        log.debug("Latest available version resolved to %r" % desc)
+        return desc
 
     def has_remote_access(self):
         """
