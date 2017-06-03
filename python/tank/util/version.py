@@ -90,13 +90,13 @@ def is_version_number(version):
     """
     Tests whether the given string is a properly formed
     version number (ex: v1.2.3). The test is made using
-    the pattern r"v\d+(.\d+)+$"
+    the pattern r"v\d+(.(\d+|x))+$"
 
     :param str version: The version string to test.
 
     :rtype: bool
     """
-    match = re.match(r"v\d+(.\d+)+$", version)
+    match = re.match(r"v\d+(.(\d+|x))+$", version)
 
     if match:
         return True
