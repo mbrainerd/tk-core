@@ -471,10 +471,6 @@ def main():
         # Initialize logging
         init_logging()
 
-        # Todo: remove this when we move to std DD python
-        if "QT_PLUGIN_PATH" in os.environ:
-            del os.environ["QT_PLUGIN_PATH"]
-
         # Init qt resources
         qInitResources()
 
@@ -485,7 +481,9 @@ def main():
         # show the splash screen
         splash.show()
 
-        shotgun_authenticator = sgtk.authentication.ShotgunAuthenticator()
+        # Initialize shotgun authenticator and ensure we login as a human user
+        core_dm = sgtk.util.CoreDefaultsManager(mask_script_user=True)
+        shotgun_authenticator = sgtk.authentication.ShotgunAuthenticator(core_dm)
         user = shotgun_authenticator.get_user()
         if user.are_credentials_expired():
             # If they are, we will clear them from the session cache...
