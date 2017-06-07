@@ -17,7 +17,7 @@ from __future__ import with_statement
 
 import os
 import sys
-import prez
+import copy
 
 from .errors import (
     TankError,
@@ -69,8 +69,8 @@ def is_core_install_root(path):
     """
     Returns true if the current path is a valid core API install root
     """
-    # look for a localized API by searching for a shotgun.yml file
-    api_file = os.path.join(path, "config", "shotgun.yml")
+    # look for a localized API by searching for _core_upgrader.py
+    api_file = os.path.join(path, "_core_upgrader.py")
     return os.path.exists(api_file)
 
 
@@ -178,6 +178,7 @@ def get_path_to_current_core():
     
     :returns: string with path
     """
+    import prez
     return prez.derive(__file__).path
 
 
@@ -352,44 +353,54 @@ def get_package_install_location(package_name, project_or_path='current'):
     """
     Given a project name or path on disk, return the location of a given package
     """
-    # Get the current environment
-    env = prez.Environment.current()
+    from dd import ddos
+    from dd.runtime.info import getVersionToBeLoaded, locateNearestDistribution
+    import prez
 
-    # First check if there is an override for this package
-    spec = os.environ.get("DD_WITH_OVERRIDE") or ""
-    withOverrides = dict(x.split("=", 1) for x in spec.split(",") if x != "")
-    if withOverrides.get(package_name):
-        package_version = prez.Version.parse(withOverrides[package_name])
-        return env.getDistribution(package_name, package_version).path
+    # Get the current platform    
+    platform = ddos.getOsInfo()
 
-    # Next check if the current level has a workarea
-    if env.level.isWorkarea:
-        # Then check if this package is in the current work area
-        if package_name in env.source.source.getProjects():
-            return env.resolveDistribution(package_name).path
+    # First check if the package has a local override
+    if "DD_TEST_BRANCHES" in os.environ:
+        version = getVersionToBeLoaded(package_name)
+        path = locateNearestDistribution(package_name, version, platform)
+
+        # If the resolved distribution comes from the local work area, return that
+        if prez.Level.parse(prez.derive(path).source.name).isWorkarea:
+            return path
+
+    # Backup the current environment
+    env_bak = copy.deepcopy(os.environ)
 
     # If nothing is specified, override to operate at the facility level
     if project_or_path is None or project_or_path == 'facility':
-        # Start with the current configuration so we maintain role, site, etc
-        config = env.configuration.replace(level=prez.Level.facility())
-
-    # If the project is set to 'current', just return the current config
-    elif project_or_path == 'current':
-        config = env.configuration
+        if "DD_SHOW"     in os.environ: del os.environ["DD_SHOW"]
+        if "DD_SEQ"      in os.environ: del os.environ["DD_SEQ"]
+        if "DD_SHOT"     in os.environ: del os.environ["DD_SHOT"]
+        if "DD_WORKAREA" in os.environ: del os.environ["DD_WORKAREA"]
 
     # Else if it is a path, derive the level from the path
     elif os.path.exists(os.path.expandvars(project_or_path)):
-        config = env.configuration.replace(level=prez.Level.derive(project_or_path))
+        level = prez.Level.derive(project_or_path)
+        os.environ["DD_SHOW"]     = level.show
+        os.environ["DD_SEQ"]      = level.sequence
+        os.environ["DD_SHOW"]     = level.show
+        os.environ["DD_WORKAREA"] = level.workarea
 
-    # Else assume it is a project name and evaluate for the project
-    else:
-        config = env.configuration.replace(level=prez.Level(project_or_path.upper()))
+    # Else if not 'current', assume it is a project name and evaluate for the project
+    elif project_or_path != 'current':
+        os.environ["DD_SHOW"] = project_or_path.upper()
+        if "DD_SEQ"      in os.environ: del os.environ["DD_SEQ"]
+        if "DD_SHOT"     in os.environ: del os.environ["DD_SHOT"]
+        if "DD_WORKAREA" in os.environ: del os.environ["DD_WORKAREA"]
 
-    # Get the environment for the updated configuration
-    env = prez.Environment.forConfiguration(config)
+    version = getVersionToBeLoaded(package_name)
+    path = locateNearestDistribution(package_name, version, platform)
 
-    # Return the path to the resolved distribution
-    return env.resolveDistribution(package_name).path
+    # Restore original environment
+    os.environ = env_bak
+
+    return path
 
 
 def _get_install_locations(path):
