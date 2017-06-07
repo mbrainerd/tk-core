@@ -30,14 +30,6 @@ from .. import yaml_cache
 log = LogManager.get_logger(__name__)
 
 
-def __get_api_core_config_location():
-    """
-    Returns the path to the currently running core config location
-    """
-    from ...pipelineconfig_utils import get_path_to_current_core
-    core_api_root = get_path_to_current_core()
-    return os.path.join(core_api_root, "config")
-
 def __get_api_core_hook_location():
     """
     Returns the path to the currently running core hooks location
@@ -52,8 +44,18 @@ def __get_sg_config():
     
     :returns: full path to to shotgun.yml config file
     """
-    core_cfg = __get_api_core_config_location()
-    path = os.path.join(core_cfg, "shotgun.yml")
+    if 'SGTK_SHOTGUN_CONFIG' in os.environ:
+        path = os.path.expandvars(os.path.expanduser(os.environ['SGTK_SHOTGUN_CONFIG']))
+        if os.path.exists(path):
+            return path
+        else:
+            log.warning("Shotgun config path '%s' specified by SGTK_SHOTGUN_CONFIG does not exist." % path)
+
+    from ...pipelineconfig_utils import get_path_to_current_core
+    path = os.path.join(get_path_to_current_core(), "config", "shotgun.yml")
+    if not os.path.exists(path):
+        raise TankError("Shotgun config path '%s' does not exist." % path)
+
     return path
 
 def get_project_name_studio_hook_location():
