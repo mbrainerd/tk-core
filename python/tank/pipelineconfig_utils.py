@@ -370,7 +370,7 @@ def get_package_install_location(package_name, project_or_path='current'):
             return path
 
     # Backup the current environment
-    env_bak = copy.deepcopy(os.environ)
+    env_bak = copy.deepcopy(dict(os.environ))
 
     # If nothing is specified, override to operate at the facility level
     if project_or_path is None or project_or_path == 'facility':
