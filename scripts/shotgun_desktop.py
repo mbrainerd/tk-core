@@ -421,7 +421,7 @@ def __handle_unexpected_exception(splash, shotgun_authenticator, error_message):
     DesktopMessageBox.critical(
         "Shotgun Desktop Error",
         "Something went wrong in the Shotgun Desktop! If you drop us an email at "
-        "support@shotgunsoftware.com, we'll help you diagnose the issue.\n"
+        "shotgunhelp@d2.com, we'll help you diagnose the issue.\n"
         "Error: %s\n"
         "For more information, see the log file at %s." % (
             str(error_message), sgtk.LogManager.log_folder
