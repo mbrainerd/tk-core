@@ -101,7 +101,7 @@ class IODescriptorAppStore(IODescriptorBase):
         "code",
         "sg_status_list",
         "description",
-        "tag_list",
+        "tags",
         "sg_detailed_release_notes",
         "sg_documentation",
         constants.TANK_CODE_PAYLOAD_FIELD
@@ -540,10 +540,13 @@ class IODescriptorAppStore(IODescriptorBase):
             for (version_str, path) in all_versions.iteritems():
                 metadata = self.__load_cached_app_store_metadata(path)
                 try:
-                    if self.__match_label(metadata["sg_version_data"]["tag_list"]):
+                    tags = [x["name"] for x in metadata["sg_version_data"]["tags"]]
+                    if self.__match_label(tags):
                         version_numbers.append(version_str)
-                except Exception:
-                    log.debug("Could not determine label metadata for %s. Ignoring." % path)
+                except Exception, e:
+                    log.debug(
+                        "Could not determine label metadata for %s. Ignoring. Details: %s" % (path, e)
+                    )
 
         else:
             # no label based filtering. all versions are valid.
@@ -649,7 +652,8 @@ class IODescriptorAppStore(IODescriptorBase):
         # now filter out all labels that aren't matching
         matching_records = []
         for sg_version_entry in sg_versions:
-            if self.__match_label(sg_version_entry["tag_list"]):
+            tags = [x["name"] for x in sg_version_entry["tags"]]
+            if self.__match_label(tags):
                 matching_records.append(sg_version_entry)
 
         log.debug("After applying label filters, %d records remain." % len(matching_records))
@@ -898,9 +902,6 @@ class IODescriptorAppStore(IODescriptorBase):
             # connect to the app store
             (sg, _) = self.__create_sg_app_store_connection()
             log.debug("...connection established: %s" % sg)
-        except InvalidAppStoreCredentialsError:
-            # Let this one bubble up, there's something wrong going on with the appstore credentials
-            raise
         except Exception, e:
             log.debug("...could not establish connection: %s" % e)
             can_connect = False
