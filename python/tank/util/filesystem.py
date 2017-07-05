@@ -17,12 +17,14 @@ import re
 import sys
 import errno
 import stat
-import shutil
 import datetime
 import functools
 from .. import LogManager
 
 log = LogManager.get_logger(__name__)
+
+# DD
+from .. dd_utils import dd_hook_utils
 
 
 def with_cleared_umask(func):
@@ -102,7 +104,7 @@ def touch_file(path, permissions=0666):
         try:
             fh = open(path, "wb")
             fh.close()
-            os.chmod(path, permissions)
+            # os.chmod(path, permissions)
         except OSError, e:
             # Race conditions are perfectly possible on some network storage
             # setups so make sure that we ignore any file already exists errors,
@@ -124,8 +126,12 @@ def ensure_folder_exists(path, permissions=0775, create_placeholder_file=False):
     """
     if not os.path.exists(path):
         try:
-            os.makedirs(path, permissions)
-
+            # os.makedirs(path, permissions)
+            # Use JSTOOLS instead.
+            success = dd_hook_utils.makedir_with_jstools(path=path)
+            # this returns a success-bool, but no need to use it here (in this 'try')
+            # If success=False, the "placeholder" code here will fail with an IOError -
+            # so the second "except" was also added
             if create_placeholder_file:
                 ph_path = os.path.join(path, "placeholder")
                 if not os.path.exists(ph_path):
@@ -144,7 +150,8 @@ def ensure_folder_exists(path, permissions=0775, create_placeholder_file=False):
             if e.errno != errno.EEXIST:
                 # re-raise
                 raise
-
+        except IOError:
+            raise
 
 @with_cleared_umask
 def copy_file(src, dst, permissions=0666):
@@ -156,9 +163,12 @@ def copy_file(src, dst, permissions=0666):
     :param permissions: Permissions to use for target file. Default permissions will
                         be readable and writable for all users.
     """
-    shutil.copy(src, dst)
-    os.chmod(dst, permissions)
+    # do a standard file copy
+    # shutil.copy(src, dst)
+    # os.chmod(dst, permissions)
 
+    # Use JSTOOLS instead.
+    dd_hook_utils.copy_using_jstools(src=src, dst=dst)
 
 def safe_delete_file(path):
     """
@@ -242,7 +252,9 @@ def copy_folder(src, dst, folder_permissions=0775, skip_list=None):
             if os.path.isdir(srcname):
                 files.extend(copy_folder(srcname, dstname, folder_permissions))
             else:
-                shutil.copy(srcname, dstname)
+                # shutil.copy(srcname, dstname)
+                # Use JSTOOLS instead.
+                dd_hook_utils.copy_using_jstools(src=srcname, dst=dstname)
                 files.append(srcname)
                 # if the file extension is sh, set executable permissions
                 if dstname.endswith(".sh") or dstname.endswith(".bat") or dstname.endswith(".exe"):
