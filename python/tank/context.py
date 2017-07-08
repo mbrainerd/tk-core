@@ -1028,7 +1028,11 @@ def from_entity(tk, entity_type, entity_id):
     :param entity_id:    The shotgun entity id to produce a context for
     :returns: :class:`Context`
     """
-    
+    return Context(**_from_entity(tk, entity_type, entity_id))
+
+def _from_entity(tk, entity_type, entity_id):
+    """
+    """
     if entity_type is None:
         raise TankError("Cannot create a context from an entity type 'None'!")
     
@@ -1062,15 +1066,15 @@ def from_entity(tk, entity_type, entity_id):
         
         if sg_entity.get("task"):
             # base the context on the task for the published file
-            return from_entity(tk, "Task", sg_entity["task"]["id"])
+            return _from_entity(tk, "Task", sg_entity["task"]["id"])
         
         elif sg_entity.get("entity"):
             # base the context on the entity that the published is linked with
-            return from_entity(tk, sg_entity["entity"]["type"], sg_entity["entity"]["id"])
+            return _from_entity(tk, sg_entity["entity"]["type"], sg_entity["entity"]["id"])
         
         elif sg_entity.get("project"):
             # base the context on the project that the published is linked with
-            return from_entity(tk, "Project", sg_entity["project"]["id"])
+            return _from_entity(tk, "Project", sg_entity["project"]["id"])
     
     else:
         # Get data from path cache
@@ -1088,7 +1092,7 @@ def from_entity(tk, entity_type, entity_id):
             # that only produces double entries.
             context["entity"] = None
 
-    return Context(**context)
+    return context
 
 def from_entity_dictionary(tk, entity_dictionary):
     """
@@ -1100,6 +1104,11 @@ def from_entity_dictionary(tk, entity_dictionary):
     :param entity_dictionary: The entity dictionary to create the context from
                               containing at least: {"type":entity_type, "id":entity_id}
     :returns: :class:`Context`
+    """
+    return Context(**_from_entity_dictionary(tk, entity_dictionary))
+
+def _from_entity_dictionary(tk, entity_dictionary):
+    """
     """
     # perform validation of the entity dictionary:
     if not isinstance(entity_dictionary, dict):
@@ -1122,6 +1131,7 @@ def from_entity_dictionary(tk, entity_dictionary):
 
     entity_type = entity_dictionary["type"]
     entity_id = entity_dictionary["id"]
+    user = entity_dictionary.get("user", None)
 
     # try to determine the various entities from the entity dictionary:
     project = None
@@ -1145,13 +1155,13 @@ def from_entity_dictionary(tk, entity_dictionary):
         # special case handling for published files:
         if entity_dictionary.get("task"):
             # construct a task context
-            return from_entity_dictionary(tk, entity_dictionary["task"])
+            return _from_entity_dictionary(tk, entity_dictionary["task"])
         elif entity_dictionary.get("entity"):
             # construct an entity context
-            return from_entity_dictionary(tk, entity_dictionary["entity"])
+            return _from_entity_dictionary(tk, entity_dictionary["entity"])
         elif entity_dictionary.get("project"):
             # construct project context
-            return from_entity_dictionary(tk, entity_dictionary["project"])
+            return _from_entity_dictionary(tk, entity_dictionary["project"])
         else:
             # fall back on from_entity:
             fallback_to_ctx_from_entity = True
@@ -1200,6 +1210,9 @@ def from_entity_dictionary(tk, entity_dictionary):
             if not context["step"]:
                 fallback_to_ctx_from_entity = True
 
+        if not fallback_to_ctx_from_entity and user:
+            context["user"] = _build_clean_entity(user)
+
         if not fallback_to_ctx_from_entity and task:
             context["task"] = _build_clean_entity(task)
             if not context["task"]:
@@ -1208,7 +1221,7 @@ def from_entity_dictionary(tk, entity_dictionary):
     if fallback_to_ctx_from_entity:
         # entity dict doesn't contain enough information to build a 
         # safe, valid context so fall back on 'from_entity':
-        return from_entity(tk, entity_type, entity_id)
+        return _from_entity(tk, entity_type, entity_id)
 
     if task:
         # one final check if we have a task:
@@ -1218,7 +1231,7 @@ def from_entity_dictionary(tk, entity_dictionary):
             task_context = _task_from_sg(tk, task["id"], additional_fields)
             context.update(task_context)
 
-    return Context(**context)
+    return context
 
 def from_path(tk, path, previous_context=None):
     """
@@ -1261,13 +1274,18 @@ def from_path(tk, path, previous_context=None):
     entities = []
     secondary_entities = []
     curr_path = path
+    missing_entry = None
     while True:
         curr_entity = path_cache.get_entity(curr_path)
         if curr_entity:
             # Don't worry about entity types we've already got in the context. In the future
             # we should look for entity ids that conflict in order to flag a degenerate schema.
             entities.append(curr_entity)
-        
+        else:
+            if missing_entry is None:
+                # Else capture the missing entry to see if we can parse it later on
+                missing_entry = curr_path
+
         # add secondary entities
         secondary_entities.extend( path_cache.get_secondary_entities(curr_path) )
 
@@ -1334,6 +1352,24 @@ def from_path(tk, path, previous_context=None):
         else:
             if context["entity"] is None:
                 context["entity"] = curr_entity
+
+    # If we don't have a path_cache entry, attempt to parse the path using a template
+    if missing_entry:
+        template = tk.template_from_path(missing_entry)
+        if template:
+            curr_entity = template.get_entity(missing_entry)
+            if curr_entity:
+                # Merge in entity context
+                tmp_context = _from_entity_dictionary(tk, curr_entity)
+                for k, v in context.items():
+                    # Only update if the current context is missing a value
+                    if v is None or (hasattr(v, "len") and len(v) == 0):
+                        context[k] = tmp_context[k]
+
+                # Add entity to additional entities if not already
+                if curr_entity["type"] in additional_types:
+                    if curr_entity not in context["additional_entities"]:
+                        context["additional_entities"].append(curr_entity)
 
     # see if we can populate it based on the previous context
     if previous_context and \
