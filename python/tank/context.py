@@ -1261,7 +1261,7 @@ def from_path(tk, path, previous_context=None):
                     # Get the embedded entities from the path
                     log.debug("Getting entities from path template")
                     try:
-                        entities.extend(template.get_entities(curr_path))
+                        entities.extend(template.get_entities(curr_path, additional_types))
                         entities_from_template = True
                     except TankError, e:
                         log.warning(str(e))

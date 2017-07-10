@@ -528,7 +528,7 @@ class TemplatePath(Template):
             return TemplatePath(parent_definition, self.keys, self.root_path, None, self._per_platform_roots)
         return None
 
-    def get_entities(self, input_path, skip_keys=None):
+    def get_entities(self, input_path, additional_types=None, skip_keys=None):
         """
         Extracts a list of entities from a string that can be used for building a context. Example:
 
@@ -542,6 +542,8 @@ class TemplatePath(Template):
         
         :param input_path: Source path for values
         :type input_path: String
+        :param additional_types: Optional additional types to search for
+        :type additional_types: List
         :param skip_keys: Optional keys to skip
         :type skip_keys: List
 
@@ -582,6 +584,12 @@ class TemplatePath(Template):
         user_entity = _get_entity_from_key("login", sg_filters, "HumanUser")
         if user_entity:
             entities.append(user_entity)
+
+        # Search for any additional requested entity types
+        for key in additional_types:
+            entity = _get_entity_from_key(key, sg_filters)
+            if entity:
+                entities.append(entity)
 
         # Get the project entity
         proj_entity = _get_entity_from_key("Project", sg_filters)
