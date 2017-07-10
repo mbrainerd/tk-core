@@ -607,7 +607,17 @@ class TemplatePath(Template):
                 entities.append(seq_entity)
 
         else:
-            asset_entity = _get_entity_from_key("Asset", sg_filters)
+
+            # Get the asset type if defined
+            if "sg_asset_type" in path_fields:
+                # Filter asset-level entity by this asset type (optional)
+                asset_type = path_fields["sg_asset_type"]
+                asset_filters = sg_filters + [["sg_asset_type", "is", asset_type]]
+            else:
+                asset_filters = sg_filters
+
+            # Get the asset name
+            asset_entity = _get_entity_from_key("Asset", asset_filters)
             if asset_entity:
                 entities.append(asset_entity)
 
