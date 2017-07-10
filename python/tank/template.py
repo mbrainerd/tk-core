@@ -16,7 +16,6 @@ Management of file and directory templates.
 import os
 import re
 import sys
-import copy
 
 from . import templatekey
 from .errors import TankError
@@ -529,20 +528,17 @@ class TemplatePath(Template):
             return TemplatePath(parent_definition, self.keys, self.root_path, None, self._per_platform_roots)
         return None
 
-    def get_entity(self, input_path, skip_keys=None):
+    def get_entities(self, input_path, skip_keys=None):
         """
-        Extracts an entity dictionary from a string that can be used for building a context. Example:
+        Extracts a list of entities from a string that can be used for building a context. Example:
 
             >>> input_path = '/studio_root/sgtk/demo_project_1/sequences/seq_1/shot_2/comp/dirk.gently'
-            >>> template_path.get_entity(input_path)
+            >>> template_path.get_entities(input_path)
 
-            {'type': 'Task',
-             'id': 470430,
-             'content': 'Shot Compositing',
-             'entity': {'id': 64033, 'name': 'shot_2', 'type': 'Shot'},
-             'project': {'id': 1044, 'name': 'demo_project_1', 'type': 'Project'},
-             'step': {'id': 144, 'name': 'comp', 'type': 'Step'},
-             'user': {'id': 23, 'name': 'Dirk Gently', 'type': 'HumanUser'}}
+            [{'type': 'Project',   'id': 10, 'name': 'demo_project_1'},
+             {'type': 'Shot',      'id': 60, 'code': 'shot_2'},
+             {'type': 'Step',      'id': 14, 'code': 'comp'},
+             {'type': 'HumanUser', 'id': 23, 'name': 'Dirk Gently'}]
         
         :param input_path: Source path for values
         :type input_path: String
@@ -552,65 +548,78 @@ class TemplatePath(Template):
         :returns: Values found in the path based on keys in template
         :rtype: Dictionary
         """
-        entity = None
+        entities = []
         sg = shotgun.get_sg_connection()
 
-        filters = []
-        fields = ["type", "id"]
+        sg_filters = []
 
-        # Get the project_name separately since it isn't typically parsed by get_fields
-        project_name = os.path.basename(self.root_path)
+        # Get fields parsed from the path
+        path_fields = self.get_fields(input_path, skip_keys)
 
-        name_field = _get_entity_type_sg_name_field("Project")
-        entity = sg.find_one("Project", [["name", "is", project_name]], fields + [name_field])
-        if entity is None:
-            # We can't resolve anything if we're outside a project
-            return None
+        # Get the project name separately since it isn't typically parsed by get_fields
+        path_fields["Project"] = os.path.basename(self.root_path)
 
-        # Append filters to filter by this project
-        filters.append(["project", "is", entity])
-        fields.append("project")
+        def _get_entity_from_key(key, sg_filters, sg_key=None):
+            """
+            Helper function to get a Shotgun entity from a given field key
+            """
+            # Set sg_key to key if its not set
+            sg_key = sg_key if sg_key else key
 
-        entity_fields = self.get_fields(input_path, skip_keys)
-        entity_filters = copy.copy(filters)
-        if "Sequence" in entity_fields:
-            name_field = _get_entity_type_sg_name_field("Sequence")
-            entity = sg.find_one("Sequence", filters + [["code", "is", entity_fields["Sequence"]]], fields + [name_field])
-            entity_filters.append(["sg_sequence", "is", entity])
+            entity = None
+            if key in path_fields:
+                value = path_fields[key]
+                sg_name = _get_entity_type_sg_name_field(sg_key)
+                filters = sg_filters + [[sg_name, "is", value]]
+                fields = ["type", "id", "name", sg_name]
+                entity = sg.find_one(sg_key, filters, fields)
+                if entity is None:
+                    raise TankError("Could not find sg entry for %s: '%s'" % (sg_key, filters))
 
-        if "Shot" in entity_fields:
-            name_field = _get_entity_type_sg_name_field("Shot")
-            entity = sg.find_one("Shot", entity_filters + [["code", "is", entity_fields["Shot"]]], fields + [name_field])
-            filters.append(["entity", "is", entity])
-            fields.append("entity")
-        elif "Asset" in entity_fields:
-            name_field = _get_entity_type_sg_name_field("Asset")
-            entity = sg.find_one("Asset", entity_filters + [["code", "is", entity_fields["Asset"]]], fields + [name_field])
-            filters.append(["entity", "is", entity])
-            fields.append("entity")
-        elif "Sequence" in entity_fields:
-            filters.append(["entity", "is", entity])
-            fields.append("entity")
+            return entity
 
-        if "Step" in entity_fields:
-            step_entity = sg.find_one("Step", [["entity_type", "is", entity["type"]], ["code", "is", entity_fields["Step"]]])
-            filters.append(["step", "is", step_entity])
-            fields.append("step")
+        # Get the user from the login key if its been parsed
+        user_entity = _get_entity_from_key("login", sg_filters, "HumanUser")
+        if user_entity:
+            entities.append(user_entity)
 
-            # Get the task for this step. This is flawed since technically there can be
-            # more than one task per step
-            name_field = _get_entity_type_sg_name_field("Task")
-            task_entity = sg.find_one("Task", filters, fields + [name_field])
-            if task_entity is not None:
-                entity = task_entity
+        # Get the project entity
+        proj_entity = _get_entity_from_key("Project", sg_filters)
+        if proj_entity:
+            entities.append(proj_entity)
 
-        # Tack on the user if its been parsed even though this isn't a typical entity field
-        if "login" in entity_fields:
-            name_field = _get_entity_type_sg_name_field("HumanUser")
-            user_entity = sg.find_one("HumanUser", [["login", "is", entity_fields["login"]]], ["type", "id", name_field])
-            entity["user"] = user_entity
+            # Filter all further entities by this project
+            sg_filters.append(["project", "is", proj_entity])
+        else:
+            # We can't resolve anything else if we're outside a project
+            return entities
 
-        return entity
+        seq_entity = _get_entity_from_key("Sequence", sg_filters)
+        if seq_entity:
+
+            # Filter shot-level entity by this sequence
+            shot_filters = sg_filters + [["sg_sequence", "is", seq_entity]]
+
+            shot_entity = _get_entity_from_key("Shot", shot_filters)
+            if shot_entity:
+                entities.append(shot_entity)
+            else:
+                entities.append(seq_entity)
+
+        else:
+            asset_entity = _get_entity_from_key("Asset", sg_filters)
+            if asset_entity:
+                entities.append(asset_entity)
+
+        # Filter step entity by the parent entity type
+        step_filters = [["entity_type", "is", entities[-1]["type"]]]
+
+        step_entity = _get_entity_from_key("Step", step_filters)
+        if step_entity:
+            entities.append(step_entity)
+
+        return entities
+
 
     def _apply_fields(self, fields, ignore_types=None, platform=None):
         """
@@ -854,7 +863,7 @@ def _get_entity_type_sg_name_field(entity_type):
     :param entity_type:     The entity type to get the name field for
     :returns:               The name field for the specified entity type
     """
-    return {"HumanUser":"name", 
+    return {"HumanUser":"login", 
             "Task":"content", 
             "Project":"name"}.get(entity_type, "code")
 

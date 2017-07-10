@@ -27,7 +27,9 @@ from . import constants
 from .errors import TankError, TankContextDeserializationError
 from .path_cache import PathCache
 from .template import TemplatePath
+from . import LogManager
 
+log = LogManager.get_logger(__name__)
 
 class Context(object):
     """
@@ -1028,11 +1030,7 @@ def from_entity(tk, entity_type, entity_id):
     :param entity_id:    The shotgun entity id to produce a context for
     :returns: :class:`Context`
     """
-    return Context(**_from_entity(tk, entity_type, entity_id))
-
-def _from_entity(tk, entity_type, entity_id):
-    """
-    """
+    
     if entity_type is None:
         raise TankError("Cannot create a context from an entity type 'None'!")
     
@@ -1066,15 +1064,15 @@ def _from_entity(tk, entity_type, entity_id):
         
         if sg_entity.get("task"):
             # base the context on the task for the published file
-            return _from_entity(tk, "Task", sg_entity["task"]["id"])
+            return from_entity(tk, "Task", sg_entity["task"]["id"])
         
         elif sg_entity.get("entity"):
             # base the context on the entity that the published is linked with
-            return _from_entity(tk, sg_entity["entity"]["type"], sg_entity["entity"]["id"])
+            return from_entity(tk, sg_entity["entity"]["type"], sg_entity["entity"]["id"])
         
         elif sg_entity.get("project"):
             # base the context on the project that the published is linked with
-            return _from_entity(tk, "Project", sg_entity["project"]["id"])
+            return from_entity(tk, "Project", sg_entity["project"]["id"])
     
     else:
         # Get data from path cache
@@ -1092,7 +1090,7 @@ def _from_entity(tk, entity_type, entity_id):
             # that only produces double entries.
             context["entity"] = None
 
-    return context
+    return Context(**context)
 
 def from_entity_dictionary(tk, entity_dictionary):
     """
@@ -1104,11 +1102,6 @@ def from_entity_dictionary(tk, entity_dictionary):
     :param entity_dictionary: The entity dictionary to create the context from
                               containing at least: {"type":entity_type, "id":entity_id}
     :returns: :class:`Context`
-    """
-    return Context(**_from_entity_dictionary(tk, entity_dictionary))
-
-def _from_entity_dictionary(tk, entity_dictionary):
-    """
     """
     # perform validation of the entity dictionary:
     if not isinstance(entity_dictionary, dict):
@@ -1131,7 +1124,6 @@ def _from_entity_dictionary(tk, entity_dictionary):
 
     entity_type = entity_dictionary["type"]
     entity_id = entity_dictionary["id"]
-    user = entity_dictionary.get("user", None)
 
     # try to determine the various entities from the entity dictionary:
     project = None
@@ -1155,13 +1147,13 @@ def _from_entity_dictionary(tk, entity_dictionary):
         # special case handling for published files:
         if entity_dictionary.get("task"):
             # construct a task context
-            return _from_entity_dictionary(tk, entity_dictionary["task"])
+            return from_entity_dictionary(tk, entity_dictionary["task"])
         elif entity_dictionary.get("entity"):
             # construct an entity context
-            return _from_entity_dictionary(tk, entity_dictionary["entity"])
+            return from_entity_dictionary(tk, entity_dictionary["entity"])
         elif entity_dictionary.get("project"):
             # construct project context
-            return _from_entity_dictionary(tk, entity_dictionary["project"])
+            return from_entity_dictionary(tk, entity_dictionary["project"])
         else:
             # fall back on from_entity:
             fallback_to_ctx_from_entity = True
@@ -1174,27 +1166,6 @@ def _from_entity_dictionary(tk, entity_dictionary):
             project = entity["project"]
 
     if not fallback_to_ctx_from_entity:
-        # clean up entities and populate context structure:
-        def _build_clean_entity(ent):
-            """
-            Ensure entity has id, type and name fields and build a clean
-            entity dictionary containing just those fields to return, stripping
-            out all other fields.
-
-            :param ent: The entity dictionary to build a clean dictionary from
-            :returns:   A clean entity dictionary containing just 'type', 'id' 
-                        and 'name' if all three exist in the input dictionary
-                        or None if they don't.
-            """
-            # make sure we have id, type and name:
-            if "id" not in ent or "type" not in ent:
-                return None
-            ent_name = _get_entity_name(ent)
-            if ent_name == None:
-                return None
-            # return a clean dictionary:
-            return {"type":ent["type"], "id":ent["id"], "name":ent_name}
-        
         if project:
             context["project"] = _build_clean_entity(project)
             if not context["project"]:
@@ -1210,9 +1181,6 @@ def _from_entity_dictionary(tk, entity_dictionary):
             if not context["step"]:
                 fallback_to_ctx_from_entity = True
 
-        if not fallback_to_ctx_from_entity and user:
-            context["user"] = _build_clean_entity(user)
-
         if not fallback_to_ctx_from_entity and task:
             context["task"] = _build_clean_entity(task)
             if not context["task"]:
@@ -1221,7 +1189,7 @@ def _from_entity_dictionary(tk, entity_dictionary):
     if fallback_to_ctx_from_entity:
         # entity dict doesn't contain enough information to build a 
         # safe, valid context so fall back on 'from_entity':
-        return _from_entity(tk, entity_type, entity_id)
+        return from_entity(tk, entity_type, entity_id)
 
     if task:
         # one final check if we have a task:
@@ -1231,7 +1199,7 @@ def _from_entity_dictionary(tk, entity_dictionary):
             task_context = _task_from_sg(tk, task["id"], additional_fields)
             context.update(task_context)
 
-    return context
+    return Context(**context)
 
 def from_path(tk, path, previous_context=None):
     """
@@ -1274,7 +1242,7 @@ def from_path(tk, path, previous_context=None):
     entities = []
     secondary_entities = []
     curr_path = path
-    missing_entry = None
+    entities_from_template = False
     while True:
         curr_entity = path_cache.get_entity(curr_path)
         if curr_entity:
@@ -1282,9 +1250,23 @@ def from_path(tk, path, previous_context=None):
             # we should look for entity ids that conflict in order to flag a degenerate schema.
             entities.append(curr_entity)
         else:
-            if missing_entry is None:
-                # Else capture the missing entry to see if we can parse it later on
-                missing_entry = curr_path
+            log.debug("Entry missing from path_cache: '%s'" % curr_path)
+
+            # Since we are processing the path in descending order, its safe to
+            # just process this once and avoid hitting SG more than we need to.
+            if not entities_from_template:
+                # Check if we can parse the path using a template
+                template = tk.template_from_path(curr_path)
+                if template is not None:
+                    # Get the embedded entities from the path
+                    log.debug("Getting entities from path template")
+                    try:
+                        entities.extend(template.get_entities(curr_path))
+                        entities_from_template = True
+                    except TankError, e:
+                        log.warning(str(e))
+                        log.debug("Could not get entities from path '%s' for template '%s'", (curr_path, template))
+                        pass
 
         # add secondary entities
         secondary_entities.extend( path_cache.get_secondary_entities(curr_path) )
@@ -1312,17 +1294,17 @@ def from_path(tk, path, previous_context=None):
     for curr_entity in entities[::-1]:
         # handle the special context fields first
         if curr_entity["type"] == "Project":
-            context["project"] = curr_entity
+            context["project"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] == "Step":
-            context["step"] = curr_entity
+            context["step"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] == "Task":
-            context["task"] = curr_entity
+            context["task"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] == "HumanUser":
-            context["user"] = curr_entity
+            context["user"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] in additional_types:
-            context["additional_entities"].append(curr_entity)
+            context["additional_entities"].append(_build_clean_entity(curr_entity))
         else:
-            context["entity"] = curr_entity
+            context["entity"] = _build_clean_entity(curr_entity)
 
     # now that the context has been populated as much as possible using the
     # primary entities, fill in any blanks based on the secondary entities.
@@ -1330,46 +1312,28 @@ def from_path(tk, path, previous_context=None):
         # handle the special context fields first
         if curr_entity["type"] == "Project":
             if context["project"] is None:
-                context["project"] = curr_entity
+                context["project"] = _build_clean_entity(curr_entity)
         
         elif curr_entity["type"] == "Step":
             if context["step"] is None:
-                context["step"] = curr_entity
+                context["step"] = _build_clean_entity(curr_entity)
         
         elif curr_entity["type"] == "Task":
             if context["task"] is None:
-                context["task"] = curr_entity
+                context["task"] = _build_clean_entity(curr_entity)
         
         elif curr_entity["type"] == "HumanUser":
             if context["user"] is None:
-                context["user"] = curr_entity
+                context["user"] = _build_clean_entity(curr_entity)
         
         elif curr_entity["type"] in additional_types:
             # is this entity in the list already
             if curr_entity not in context["additional_entities"]:            
-                context["additional_entities"].append(curr_entity)
+                context["additional_entities"].append(_build_clean_entity(curr_entity))
         
         else:
             if context["entity"] is None:
-                context["entity"] = curr_entity
-
-    # If we don't have a path_cache entry, attempt to parse the path using a template
-    if missing_entry:
-        template = tk.template_from_path(missing_entry)
-        if template:
-            curr_entity = template.get_entity(missing_entry)
-            if curr_entity:
-                # Merge in entity context
-                tmp_context = _from_entity_dictionary(tk, curr_entity)
-                for k, v in context.items():
-                    # Only update if the current context is missing a value
-                    if v is None or (hasattr(v, "len") and len(v) == 0):
-                        context[k] = tmp_context[k]
-
-                # Add entity to additional entities if not already
-                if curr_entity["type"] in additional_types:
-                    if curr_entity not in context["additional_entities"]:
-                        context["additional_entities"].append(curr_entity)
+                context["entity"] = _build_clean_entity(curr_entity)
 
     # see if we can populate it based on the previous context
     if previous_context and \
@@ -1512,6 +1476,26 @@ def _get_entity_name(entity_dictionary):
         if name_field != "name":
             entity_name = entity_dictionary.get("name")
     return entity_name
+
+def _build_clean_entity(ent):
+    """
+    Ensure entity has id, type and name fields and build a clean
+    entity dictionary containing just those fields to return, stripping
+    out all other fields.
+
+    :param ent: The entity dictionary to build a clean dictionary from
+    :returns:   A clean entity dictionary containing just 'type', 'id' 
+               and 'name' if all three exist in the input dictionary
+               or None if they don't.
+    """
+    # make sure we have id, type and name:
+    if "id" not in ent or "type" not in ent:
+       return None
+    ent_name = _get_entity_name(ent)
+    if ent_name == None:
+       return None
+    # return a clean dictionary:
+    return {"type":ent["type"], "id":ent["id"], "name":ent_name}
 
 def _task_from_sg(tk, task_id, additional_fields = None):
     """
