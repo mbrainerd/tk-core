@@ -17,7 +17,6 @@ from __future__ import with_statement
 
 import os
 import sys
-import copy
 
 from .errors import (
     TankError,
@@ -370,7 +369,7 @@ def get_package_install_location(package_name, project_or_path='current'):
             return path
 
     # Backup the current environment
-    env_bak = copy.deepcopy(dict(os.environ))
+    _environ = dict(os.environ)
 
     # If nothing is specified, override to operate at the facility level
     if project_or_path is None or project_or_path == 'facility':
@@ -398,7 +397,8 @@ def get_package_install_location(package_name, project_or_path='current'):
     path = locateNearestDistribution(package_name, version, platform)
 
     # Restore original environment
-    os.environ = env_bak
+    os.environ.clear()
+    os.environ.update(_environ)
 
     return path
 
