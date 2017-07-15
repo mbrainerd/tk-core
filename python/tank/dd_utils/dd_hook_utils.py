@@ -18,7 +18,7 @@
 
 #  STANDARD
 import os
-
+import subprocess
 #  DD
 from dd.runtime import api
 api.load('jstools')
@@ -50,7 +50,7 @@ def copy_using_jstools(src=None, dst=None):
 
 def makedir_with_jstools(path=None):
     # pdb.set_trace()
-    LOGGER.debug("makedir_with_jstools, path:%s", path)
+    LOGGER.info("Creating Folder with jstools.jsmk and/or os.makedirs, path:%s", path)
 
     template = jstools.Template("TESTINDIA")  # HARD
     if template.isValidPath(path):
@@ -58,18 +58,22 @@ def makedir_with_jstools(path=None):
         leaf_path = template.getLeafPath(path)
 
         if leaf_path:  # ... or below
-            # First, use jstools to create the directories down to the leaf
+            # First, use jstools to create the directories up to the leaf
             success = _do_makedir_with_jstools(leaf_path)
-            # Finally, use os to create the remaining directories
-            os.makedirs(path, 770)
+            if success:
+                LOGGER.info("\tSUCCESS creating %s", leaf_path)
+
+                # Finally, use os to create the remaining directories
+                result = _do_makedir_with_os_makedirs(path)
+                LOGGER.info("\t_do_makedir_with_os_makedirs RETVAL: %s", result)
+
             return success
         else:  # above leaf
             _do_makedir_with_jstools(path)
     else:
         # Not in jstemplate area, or in the area but invalid jstemplate path
         # Don't want to create invalid folders in the jstemplate area, so
-        LOGGER.error("Attempt to create INVALID PATH in jstemplate area")
-
+        LOGGER.error("Attempt to create INVALID PATH in jstemplate area: %s", path)
 
 
 def symlink_with_jstools(link_target=None, link_location=None):
@@ -80,8 +84,23 @@ def symlink_with_jstools(link_target=None, link_location=None):
     LOGGER.debug("jstools.execute result:%s", result)
 
 
+def _do_makedir_with_os_makedirs(path):
+    LOGGER.info("\tcreating folders with OS.MAKEDIRS: %s", path)
+    return os.makedirs(path, 770)
+
+
 def _do_makedir_with_jstools(path):
-    success, msg = jstools.jsmk(path, auto=True)  # permissions determined by jstools?
+    LOGGER.info("\tcreating folders with JSTOOLS.JSMK: %s", path)
+    success, msg = jstools.jsmk(path)
     if not success:
-        print "ERROR creating directory with jsmk.  ", msg
-        # TODO  - setup logging
+        LOGGER.error("trying to create directory with jsmk. %s", msg)
+
+    LOGGER.info("chmod to 770")
+    cmd_string_list = ['chmod', '770', path]
+    result = subprocess.call(cmd_string_list)
+    result_string = "FAILED"
+    if result == 0:
+        result_string = "SUCCESS"
+    LOGGER.debug("chmod to '770' - result: %s", result_string)
+    return success
+

@@ -602,32 +602,32 @@ class TemplatePath(Template):
             # We can't resolve anything else if we're outside a project
             return entities
 
+        # Get the sequence entity if defined
         seq_entity = _get_entity_from_key("Sequence", sg_filters)
         if seq_entity:
 
             # Filter shot-level entity by this sequence
             shot_filters = sg_filters + [["sg_sequence", "is", seq_entity]]
 
+            # Get the shot entity if defined
             shot_entity = _get_entity_from_key("Shot", shot_filters)
             if shot_entity:
                 entities.append(shot_entity)
             else:
                 entities.append(seq_entity)
 
+        # Get the asset type if defined
+        if "sg_asset_type" in path_fields:
+            # Filter asset-level entity by this asset type (optional)
+            asset_type = path_fields["sg_asset_type"]
+            asset_filters = sg_filters + [["sg_asset_type", "is", asset_type]]
         else:
+            asset_filters = sg_filters
 
-            # Get the asset type if defined
-            if "sg_asset_type" in path_fields:
-                # Filter asset-level entity by this asset type (optional)
-                asset_type = path_fields["sg_asset_type"]
-                asset_filters = sg_filters + [["sg_asset_type", "is", asset_type]]
-            else:
-                asset_filters = sg_filters
-
-            # Get the asset name
-            asset_entity = _get_entity_from_key("Asset", asset_filters)
-            if asset_entity:
-                entities.append(asset_entity)
+        # Get the asset entity if defined
+        asset_entity = _get_entity_from_key("Asset", asset_filters)
+        if asset_entity:
+            entities.append(asset_entity)
 
         # Filter step entity by the parent entity type
         step_filters = [["entity_type", "is", entities[-1]["type"]]]
