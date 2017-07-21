@@ -33,6 +33,7 @@ LOGGER = LogManager.get_logger(__name__)
 # TODO: query for this
 PROJECT_NAME = "TESTINDIA"
 
+
 def copy_using_jstools(src=None, dst=None):
     """
     jstools doesn't have a copy, so use "jstools.execute"
@@ -50,7 +51,20 @@ def copy_using_jstools(src=None, dst=None):
     LOGGER.debug("jstools.execute result:%s", result)
 
 
+def symlink_with_jstools(link_target=None, link_location=None):
+    # TODO... there is a jssymlink
+    cmd_string = 'import os\nos.symlink(%s, %s)' % (link_target, link_location)
+    cmd_string_list = ['python',  '-c', cmd_string]
+    result = jstools.execute(cmd_string_list)
+    LOGGER.debug("jstools.execute result:%s", result)
+
+
 def makedir_with_jstools(path=None):
+    """
+    Checks path for portions 'governed'-by jstools/jstemplate
+    - make directories using jstools for those portions
+    - make directories using os.makedirs for the remainder
+    """
     curr_frame = inspect.currentframe()
     call_frame = inspect.getouterframes(curr_frame, 2)
     LOGGER.debug("\n>>>>    makedir_with_jstools called from: %s", call_frame[1][3])
@@ -67,6 +81,8 @@ def makedir_with_jstools(path=None):
     template = jstools.Template(PROJECT_NAME)
     if template.isValidPath(path):
         # this is a jstemplate area (and the path is valid against the template)
+
+        # leaf_path is the portion of path governed-by jsjoots
         leaf_path = template.getLeafPath(path)
 
         if leaf_path:  # ... or below
@@ -75,95 +91,79 @@ def makedir_with_jstools(path=None):
             if success:
                 LOGGER.info("\tSUCCESS creating %s", leaf_path)
 
-                # Finally, use os to create the remaining directories.... if path is longer than leaf_path
+                # Finally, use os.makdirs to create the remaining directories
+                # .... if path is longer than leaf_path
                 if path != leaf_path:
-                    result = _do_makedir_with_os_makedirs(path)
-                    LOGGER.info("\t_do_makedir_with_os_makedirs RETVAL: %s", result)
-
+                    success = _do_makedir_with_os_makedirs(path)
+                    if success:
+                        LOGGER.info("\t\tSUCCESS creating %s", path)
+                    else:
+                        LOGGER.info("\tos.makedirs FAILED to create %s", leaf_path)
+            else:
+                LOGGER.info("\tjstools FAILED to create %s", leaf_path)
             return success
         else:  # above leaf
-            _do_makedir_with_jstools(path)
+            success = _do_makedir_with_jstools(path)
+            if success:
+                LOGGER.info("\tSUCCESS creating %s", leaf_path)
+            else:
+                LOGGER.info("\tjstools FAILED to create %s", leaf_path)
     else:
         # Not in jstemplate area, or in the area but invalid jstemplate path
         # Don't want to create invalid folders in the jstemplate area, so
         LOGGER.error("Attempt to create INVALID PATH in jstemplate area: %s", path)
 
 
-def symlink_with_jstools(link_target=None, link_location=None):
-    # pdb.set_trace()
-    cmd_string = 'import os\nos.symlink(%s, %s)' % (link_target, link_location)
-    cmd_string_list = ['python',  '-c', cmd_string]
-    result = jstools.execute(cmd_string_list)
-    LOGGER.debug("jstools.execute result:%s", result)
-
-
 def _do_makedir_with_os_makedirs(path):
+    """
+    for some reason "os.makedirs(path, 770) was giving weird results... e.g.
+        # dr------wT 2 kmohamed cgi 4.0K Jul 20 15:39 scripts/
+
+    :param path:
+    :return: bool success
+    """
     LOGGER.info("\tcreating folders with OS.MAKEDIRS: %s", path)
-    result = "Booo!"
+    makedir_success = False
     try:
-        os.makedirs(path, 770)
+        os.makedirs(path)
     except OSError:
         raise
+
     if os.path.isdir(path):
-        result = "SUCCESS"
-    return result
+        _cmdline_chmod(path=path, mode=770)
+        makedir_success = True
+    return makedir_success
 
 
 def _do_makedir_with_jstools(path):
-    LOGGER.info("\tcreating folders with JSTOOLS.JSMK: %s", path)
-    success, msg = jstools.jsmk(path)
-    if not success:
-        LOGGER.error("trying to create directory with jsmk. %s", msg)
+    """
 
-    LOGGER.info("chmod to 770")
-    cmd_string_list = ['chmod', '770', path]
+    :param path:
+    :return: bool success
+    """
+    LOGGER.info("\tcreating folders with JSTOOLS.JSMK: %s", path)
+    try:
+        makedir_success, msg = jstools.jsmk(path)
+        if not makedir_success:
+            LOGGER.error("trying to create directory with jsmk. %s", msg)
+    except OSError:
+        raise
+
+    if os.path.isdir(path):
+        _cmdline_chmod(path=path, mode=770)
+    return makedir_success
+
+
+def _cmdline_chmod(path=None, mode=770):
+    LOGGER.info("chmod to %s", mode)
+
+    cmd_string_list = ['chmod', mode, path]
     result = subprocess.call(cmd_string_list)
+
     result_string = "FAILED"
     if result == 0:
         result_string = "SUCCESS"
-    LOGGER.debug("chmod to '770' - result: %s", result_string)
-    return success
-
-
-def get_leaf_entity_from_context(context):
-    """
-
-
-    :param context:
-    :return: dict
-    """
-    # get parent_entity_list from context
-    parent_entity_list = context.parent_entities
-
-    # get SG-entity leaf_levels from parent_entity_list
-    # ... order matters in this for-loop - order of the parent_type's
-    # .. parent_type with be ["Project"|"Sequence"|"Shot"] OR "Asset"
-    leaf_levels = {}
-    for parent_entity in parent_entity_list:
-        parent_type = parent_entity["type"]
-        if parent_type == "Project":
-            leaf_levels["0"] = parent_entity
-        if parent_type == "Sequence":
-            leaf_levels["1"] = parent_entity
-        if parent_type == "Shot":
-            leaf_levels["2"] = parent_entity
-        if parent_type == "Asset":
-            leaf_levels["3"] = parent_entity
-
-    # select leaf_level_entity based on MAX leaf_level-value
-    selected_level = None
-    parent_entity_name = None
-    if leaf_levels:
-        selected_level = max(leaf_levels.keys())
-        # LOGGER.debug("selected_level: %s", selected_level)
-
-        parent_entity_name = leaf_levels[selected_level]["type"]
-
-
-
-
-
-
+    LOGGER.debug("chmod  %s", result_string)
 
 if __name__ == "__main__":
     test_path_0 = "/"  # OSError: [Errno 17] File exists: '/'
