@@ -20,6 +20,8 @@ class PickEnvironment(Hook):
         """
         The default implementation assumes there are three environments, called shot, asset
         and project, and switches to these based on entity type.
+
+        DD implementation includes Sequence and Step
         """
 
         if context.project is None:
@@ -33,21 +35,25 @@ class PickEnvironment(Hook):
 
         if context.entity and context.step is None:
             # we have an entity but no step!
+            if context.entity["type"] == "Project":
+                return "project"
+            if context.entity["type"] == "Sequence":
+                return "sequence"
             if context.entity["type"] == "Shot":
+                return "shot"
+            if context.entity["type"] == "Step":
                 return "shot"
             if context.entity["type"] == "Asset":
                 return "asset"
-            if context.entity["type"] == "Sequence":
-                return "sequence"
-            if context.entity["type"] == "Project":
-                return "project"
         if context.entity and context.step:
             # we have a step and an entity
             if context.entity["type"] == "Project":
-                return "project_step"
+                return "project_stp"
             if context.entity["type"] == "Sequence":
                 return "sequence_step"
             if context.entity["type"] == "Shot":
+                return "shot_step"
+            if context.entity["type"] == "Step":
                 return "shot_step"
             if context.entity["type"] == "Asset":
                 return "asset_step"

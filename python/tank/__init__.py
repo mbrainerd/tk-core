@@ -91,5 +91,5 @@ from .commands import list_commands, get_command, SgtkSystemCommand
 
 from .templatekey import TemplateKey, SequenceKey, IntegerKey, StringKey, TimestampKey
 
-from .dd_utils import dd_hook_utils
+from .dd_utils import dd_jstools_utils
 
