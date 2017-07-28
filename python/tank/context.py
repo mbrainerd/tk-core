@@ -1340,21 +1340,28 @@ def from_path(tk, path, previous_context=None):
             context["project"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] == "Sequence":
             entities_by_level["1"] = curr_entity
+
         elif curr_entity["type"] == "Shot":
             entities_by_level["2"] = curr_entity
+
         elif curr_entity["type"] == "Step":
             context["step"] = _build_clean_entity(curr_entity)
-            entities_by_level["3"] = curr_entity
+
         elif curr_entity["type"] == "Asset":
-            entities_by_level["4"] = curr_entity
+            entities_by_level["3"] = curr_entity
+
         elif curr_entity["type"] == "Task":
             context["task"] = _build_clean_entity(curr_entity)
+
         elif curr_entity["type"] == "HumanUser":
             context["user"] = _build_clean_entity(curr_entity)
+
         elif curr_entity["type"] in additional_types:
             context["additional_entities"].append(_build_clean_entity(curr_entity))
+
         elif found_entity:
             context["parent_entities"].append(_build_clean_entity(curr_entity))
+
         else:
             context["entity"] = _build_clean_entity(curr_entity)
             found_entity = True
