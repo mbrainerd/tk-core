@@ -29,12 +29,8 @@ from .path_cache import PathCache
 from .template import TemplatePath
 from . import LogManager
 
-# DD
-# from sgtk.dd_utils import dd_sg_context_utils
-from .dd_utils import dd_sg_context_utils
-
-
 log = LogManager.get_logger(__name__)
+
 
 class Context(object):
     """
@@ -201,6 +197,7 @@ class Context(object):
             # compare type, id tuples of all additional entities to ensure they are exactly the same.
             # this compare ignores duplicates in either list and just ensures that the intersection
             # of both lists contains all unique elements from both lists.
+
             types_and_ids = set([(e["type"], e["id"]) for e in self.parent_entities if e])
             other_types_and_ids = set([(e["type"], e["id"]) for e in other.parent_entities if e])
             if types_and_ids != other_types_and_ids:
@@ -1334,13 +1331,22 @@ def from_path(tk, path, previous_context=None):
     # go from the root down, so that in the case there are a path with
     # multiple entities (like PROJECT/SEQUENCE/SHOT), the last entry
     # is the most relevant one, and will be assigned as the entity
+    entities_by_level = {}
     found_entity = False
     for curr_entity in entities[::-1]:
         # handle the special context fields first
         if curr_entity["type"] == "Project":
+            entities_by_level["0"] = curr_entity
             context["project"] = _build_clean_entity(curr_entity)
+        elif curr_entity["type"] == "Sequence":
+            entities_by_level["1"] = curr_entity
+        elif curr_entity["type"] == "Shot":
+            entities_by_level["2"] = curr_entity
         elif curr_entity["type"] == "Step":
             context["step"] = _build_clean_entity(curr_entity)
+            entities_by_level["3"] = curr_entity
+        elif curr_entity["type"] == "Asset":
+            entities_by_level["4"] = curr_entity
         elif curr_entity["type"] == "Task":
             context["task"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] == "HumanUser":
@@ -1349,45 +1355,16 @@ def from_path(tk, path, previous_context=None):
             context["additional_entities"].append(_build_clean_entity(curr_entity))
         elif found_entity:
             context["parent_entities"].append(_build_clean_entity(curr_entity))
-            # DD -  In the "else" immediately above, the first entity in the list of entities that is
-            # not one of ("Project", "Step", "Task", "HumanUser"] BECOMES the context.entity.
-            # PROBLEM: this may not be the top-most leaf-entity
-            # INSTEAD, SELECT the top-most entity (from context["parent_entities"])
-            # to be the context.entity
-            #
-            # To facilitate "selecting the top-most leaf entity", the following code
-            # collects entities from the context["parent_entities"] into "entities_by_level"
-            #
-            #  entities_by_level = { "0": <project-entity, if present>,
-            #                        "1": <sequence-entity, if present>,
-            #                        "2": <shot-entity, if present>,
-            #                        "3": <asset-entity, if present>,
-            #                    }
-            entities_by_level = {}
-            # COLLECT entities for the entities_by_level-dict from the context's "parent_entity" list
-            #     * if-statement order matters in this for-loop
-            for parent_entity in context["parent_entities"]:
-                parent_type = parent_entity["type"]
-                if parent_type == "Project":
-                    entities_by_level["0"] = parent_entity
-                if parent_type == "Sequence":
-                    entities_by_level["1"] = parent_entity
-                if parent_type == "Shot":
-                    entities_by_level["2"] = parent_entity
-                if parent_type == "Asset":
-                    entities_by_level["3"] = parent_entity
-
-            # SELECT SG-entity leaf_level based on MAX (existing) leaf_level-value
-            if entities_by_level:
-                selected_level = max(entities_by_level.keys())
-                leaf_entity = entities_by_level[selected_level]
-                context["entity"] = _build_clean_entity(leaf_entity)
-                # DD - END
         else:
             context["entity"] = _build_clean_entity(curr_entity)
             found_entity = True
-    import pdb
-    pdb.set_trace()
+
+    # SELECT SG-entity leaf_level based on MAX (existing) leaf_level-value
+    if entities_by_level:
+        selected_level = max(entities_by_level.keys())
+        leaf_entity = entities_by_level[selected_level]
+        context["entity"] = _build_clean_entity(leaf_entity)
+
 
     # now that the context has been populated as much as possible using the
     # primary entities, fill in any blanks based on the secondary entities.

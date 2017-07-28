@@ -48,12 +48,14 @@ def copy_using_jstools(src=None, dst=None):
     LOGGER.debug("jstools.execute result:%s", result)
 
 
+
 def symlink_with_jstools(link_target=None, link_location=None):
     # TODO... there is a jssymlink
     cmd_string = 'import os\nos.symlink(%s, %s)' % (link_target, link_location)
     cmd_string_list = ['python',  '-c', cmd_string]
     result = jstools.execute(cmd_string_list)
     LOGGER.debug("jstools.execute result:%s", result)
+
 
 
 def makedir_with_jstools(path=None):
@@ -75,6 +77,7 @@ def makedir_with_jstools(path=None):
                 LOGGER.info("\tSUCCESS creating %s\n", path)
             else:
                 LOGGER.info("\tjstools FAILED to create %s\n", path)
+
         else:  # above leaf
             LOGGER.info("\t%s is in jstemplate, but its not a leaf-path - SKIPPING", path)
     else:
@@ -95,7 +98,6 @@ def _do_makedir_with_jstools(path):
             LOGGER.error("trying to create directory with jsmk. %s", msg)
     except OSError:
         raise
-
     if os.path.isdir(path):
         _cmdline_chmod(path=path, mode=770)
     return makedir_success
@@ -117,3 +119,18 @@ def _cmdline_chmod(path=None, mode=770):
         LOGGER.debug("chmod  SUCCESS")
     else:
         LOGGER.debug("chmod  FAILED")
+
+def _do_makedir_with_jstools(path):
+    LOGGER.info("\tcreating folders with JSTOOLS.JSMK: %s", path)
+    success, msg = jstools.jsmk(path)
+    if not success:
+        LOGGER.error("trying to create directory with jsmk. %s", msg)
+
+    LOGGER.info("chmod to 770")
+    cmd_string_list = ['chmod', '770', path]
+    result = subprocess.call(cmd_string_list)
+    result_string = "FAILED"
+    if result == 0:
+        result_string = "SUCCESS"
+    LOGGER.debug("chmod to '770' - result: %s", result_string)
+    return success

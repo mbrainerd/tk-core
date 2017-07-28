@@ -13,6 +13,7 @@ Hook which chooses an environment file to use based on the current context.
 """
 
 from tank import Hook
+from tank import TemplatePath
 
 class PickEnvironment(Hook):
 
@@ -23,6 +24,8 @@ class PickEnvironment(Hook):
 
         DD implementation includes Sequence and Step
         """
+
+
 
         if context.project is None:
             # our context is completely empty!
