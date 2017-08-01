@@ -62,7 +62,7 @@ class Context(object):
     currently operating user.
     """
 
-    def __init__(self, tk, project=None, entity=None, step=None, task=None, user=None, additional_entities=None):
+    def __init__(self, tk, project=None, entity=None, step=None, task=None, user=None, parent_entities=None, additional_entities=None):
         """
         Context objects are not constructed by hand but are fabricated by the
         methods :meth:`Sgtk.context_from_entity`, :meth:`Sgtk.context_from_entity_dictionary`
@@ -74,6 +74,7 @@ class Context(object):
         self.__step = step
         self.__task = task
         self.__user = user
+        self.__parent_entities = parent_entities or []
         self.__additional_entities = additional_entities or []
         self._entity_fields_cache = {}
 
@@ -86,6 +87,7 @@ class Context(object):
         msg.append("  Task: %s" % str(self.__task))
         msg.append("  User: %s" % str(self.__user))
         msg.append("  Shotgun URL: %s" % self.shotgun_url)
+        msg.append("  Parent Entities: %s" % str(self.__parent_entities))
         msg.append("  Additional Entities: %s" % str(self.__additional_entities))
         
         return "<Sgtk Context: %s>" % ("\n".join(msg))
@@ -188,6 +190,18 @@ class Context(object):
         
         if not _entity_dicts_eq(self.task, other.task):
             return False
+
+        # compare parent entities
+        if self.parent_entities and other.parent_entities:
+            # compare type, id tuples of all additional entities to ensure they are exactly the same.
+            # this compare ignores duplicates in either list and just ensures that the intersection
+            # of both lists contains all unique elements from both lists. 
+            types_and_ids = set([(e["type"], e["id"]) for e in self.parent_entities if e])
+            other_types_and_ids = set([(e["type"], e["id"]) for e in other.parent_entities if e])
+            if types_and_ids != other_types_and_ids:
+                return False
+        elif self.parent_entities or other.parent_entities:
+            return False
         
         # compare additional entities
         if self.additional_entities and other.additional_entities:
@@ -233,7 +247,8 @@ class Context(object):
         ctx_copy.__entity = copy.deepcopy(self.__entity, memo)
         ctx_copy.__step = copy.deepcopy(self.__step, memo)
         ctx_copy.__task = copy.deepcopy(self.__task, memo)
-        ctx_copy.__user = copy.deepcopy(self.__user, memo)        
+        ctx_copy.__user = copy.deepcopy(self.__user, memo)
+        ctx_copy.__parent_entities = copy.deepcopy(self.__parent_entities, memo)
         ctx_copy.__additional_entities = copy.deepcopy(self.__additional_entities, memo)
         
         # except:
@@ -340,6 +355,16 @@ class Context(object):
                                "id": user.get("id"), 
                                "name": user.get("name")}
         return self.__user
+
+    @property
+    def parent_entities(self):
+        """
+        List of parent entities that are required to provide a full context.
+
+        :returns: A list of std shotgun link dictionaries.
+                  Will be an empty list in most cases.
+        """
+        return self.__parent_entities
 
     @property
     def additional_entities(self):
@@ -559,6 +584,12 @@ class Context(object):
         if self.project:
             entities["Project"] = self.project
 
+        # If there are any parent entities, use them as long as they don't
+        # conflict with types we already have values for (Step, Task, Shot/Asset/etc)
+        for par_entity in self.parent_entities:
+            if par_entity["type"] not in entities:
+                entities[par_entity["type"]] = par_entity
+
         # If there are any additional entities, use them as long as they don't
         # conflict with types we already have values for (Step, Task, Shot/Asset/etc)
         for add_entity in self.additional_entities:
@@ -681,6 +712,7 @@ class Context(object):
             "user": self.user,
             "step": self.step,
             "task": self.task,
+            "parent_entities": self.parent_entities,
             "additional_entities": self.additional_entities,
             "_pc_path": self.tank.pipeline_configuration.get_path()
         }
@@ -1045,6 +1077,7 @@ def from_entity(tk, entity_type, entity_id):
         "step": None,
         "user": None,
         "task": None,
+        "parent_entities": [],
         "additional_entities": []
     }
 
@@ -1119,6 +1152,7 @@ def from_entity_dictionary(tk, entity_dictionary):
         "step": None,
         "user": None,
         "task": None,
+        "parent_entities": [],
         "additional_entities": []
     }
 
@@ -1226,6 +1260,7 @@ def from_path(tk, path, previous_context=None):
         "step": None,
         "user": None,
         "task": None,
+        "parent_entities": [],
         "additional_entities": []
     }
 
@@ -1291,6 +1326,7 @@ def from_path(tk, path, previous_context=None):
     # go from the root down, so that in the case there are a path with
     # multiple entities (like PROJECT/SEQUENCE/SHOT), the last entry
     # is the most relevant one, and will be assigned as the entity
+    found_entity = False
     for curr_entity in entities[::-1]:
         # handle the special context fields first
         if curr_entity["type"] == "Project":
@@ -1303,8 +1339,11 @@ def from_path(tk, path, previous_context=None):
             context["user"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] in additional_types:
             context["additional_entities"].append(_build_clean_entity(curr_entity))
+        elif found_entity:
+            context["parent_entities"].append(_build_clean_entity(curr_entity))
         else:
             context["entity"] = _build_clean_entity(curr_entity)
+            found_entity = True
 
     # now that the context has been populated as much as possible using the
     # primary entities, fill in any blanks based on the secondary entities.
@@ -1403,6 +1442,7 @@ def context_yaml_representer(dumper, context):
         "user": context.user,
         "step": context.step,
         "task": context.task,
+        "parent_entities": context.parent_entities,
         "additional_entities": context.additional_entities
     }
     

@@ -13,6 +13,7 @@ Hook which chooses an environment file to use based on the current context.
 """
 
 from tank import Hook
+from tank import TemplatePath
 
 class PickEnvironment(Hook):
 
@@ -21,6 +22,8 @@ class PickEnvironment(Hook):
         The default implementation assumes there are three environments, called shot, asset
         and project, and switches to these based on entity type.
         """
+
+
 
         if context.project is None:
             # our context is completely empty!
