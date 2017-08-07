@@ -58,10 +58,12 @@ def symlink_with_jstools(link_target=None, link_location=None):
 
 
 
+
 def makedir_with_jstools(path=None):
     """
     Attempts to create directories AT OR BELOW jstemplate-leaf-paths
     """
+
     template = jstools.Template(PROJECT_NAME)
     if template.isValidPath(path):
         # valid means that "path" is IN the jstemplate area
@@ -69,9 +71,8 @@ def makedir_with_jstools(path=None):
 
         # this returns the leaf_path if "path" includes the leaf_path, otherwise None
         leaf_path = template.getLeafPath(path)
-
+        LOGGER.debug("path: %s\nleaf-path: %s\n\n", path, leaf_path)
         if leaf_path:  # ... or below
-            # First, use jstools to create the directories up to the leaf
             success = _do_makedir_with_jstools(path)
             if success:
                 LOGGER.info("\tSUCCESS creating %s\n", path)
