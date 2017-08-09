@@ -41,3 +41,10 @@ coverage.xml
 
 # pyenv
 .python-version
+
+
+
+# PyCharm stuff
+.idea/
+
+

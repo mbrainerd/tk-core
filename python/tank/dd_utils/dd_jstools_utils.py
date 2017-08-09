@@ -19,23 +19,23 @@
 #  STANDARD
 import os
 import subprocess
+
 #  DD
 from dd.runtime import api
 api.load('jstools')
 import jstools
 
-
-# SETUP LOGGING
 from ..log import LogManager
 LOGGER = LogManager.get_logger(__name__)
 
+
+PROJECT_NAME = os.getenv("DD_SHOW")
 
 
 def copy_using_jstools(src=None, dst=None):
     """
     jstools doesn't have a copy, so use "jstools.execute"
     """
-    # pdb.set_trace()
     # check for dst_path existance
     LOGGER.debug("copy_using_jstools, pathfile: %s", dst)
     dst_path = os.path.dirname(dst)
@@ -48,46 +48,78 @@ def copy_using_jstools(src=None, dst=None):
     LOGGER.debug("jstools.execute result:%s", result)
 
 
-def makedir_with_jstools(path=None):
-    # pdb.set_trace()
-    LOGGER.info("Creating Folder with jstools.jsmk and/or os.makedirs, path:%s", path)
-
-    template = jstools.Template("TESTINDIA")  # HARD
-    if template.isValidPath(path):
-        # this is a jstemplate area (and the path is valid against the template)
-        leaf_path = template.getLeafPath(path)
-
-        if leaf_path:  # ... or below
-            # First, use jstools to create the directories up to the leaf
-            success = _do_makedir_with_jstools(leaf_path)
-            if success:
-                LOGGER.info("\tSUCCESS creating %s", leaf_path)
-
-                # Finally, use os to create the remaining directories
-                result = _do_makedir_with_os_makedirs(path)
-                LOGGER.info("\t_do_makedir_with_os_makedirs RETVAL: %s", result)
-
-            return success
-        else:  # above leaf
-            _do_makedir_with_jstools(path)
-    else:
-        # Not in jstemplate area, or in the area but invalid jstemplate path
-        # Don't want to create invalid folders in the jstemplate area, so
-        LOGGER.error("Attempt to create INVALID PATH in jstemplate area: %s", path)
-
 
 def symlink_with_jstools(link_target=None, link_location=None):
-    # pdb.set_trace()
+    # TODO... there is a jssymlink
     cmd_string = 'import os\nos.symlink(%s, %s)' % (link_target, link_location)
     cmd_string_list = ['python',  '-c', cmd_string]
     result = jstools.execute(cmd_string_list)
     LOGGER.debug("jstools.execute result:%s", result)
 
 
-def _do_makedir_with_os_makedirs(path):
-    LOGGER.info("\tcreating folders with OS.MAKEDIRS: %s", path)
-    return os.makedirs(path, 770)
 
+
+def makedir_with_jstools(path=None):
+    """
+    Attempts to create directories AT OR BELOW jstemplate-leaf-paths
+    """
+
+    template = jstools.Template(PROJECT_NAME)
+    if template.isValidPath(path):
+        # valid means that "path" is IN the jstemplate area
+        # and verified against the template as valid
+
+        # this returns the leaf_path if "path" includes the leaf_path, otherwise None
+        leaf_path = template.getLeafPath(path)
+        LOGGER.debug("path: %s\nleaf-path: %s\n\n", path, leaf_path)
+        if leaf_path:  # ... or below
+            success = _do_makedir_with_jstools(path)
+            if success:
+                LOGGER.info("\tSUCCESS creating %s\n", path)
+            else:
+                LOGGER.info("\tjstools FAILED to create %s\n", path)
+
+        else:  # above leaf
+            LOGGER.info("\t%s is in jstemplate, but its not a leaf-path - SKIPPING", path)
+    else:
+        # Not in jstemplate area, or in the area but invalid jstemplate path
+        msg = "Attempt to use jstools outside the jstemplate area OR, "
+        msg += "attempt to create INVALID PATH in jstemplate area: %s" % path
+        LOGGER.error(msg)
+
+
+def _do_makedir_with_jstools(path):
+    """
+    :return: bool success
+    """
+    LOGGER.info("\tCreating folders with JSTOOLS.JSMK: %s", path)
+    try:
+        makedir_success, msg = jstools.jsmk(path)
+        if not makedir_success:
+            LOGGER.error("trying to create directory with jsmk. %s", msg)
+    except OSError:
+        raise
+    if os.path.isdir(path):
+        _cmdline_chmod(path=path, mode=770)
+    return makedir_success
+
+
+def _cmdline_chmod(path=None, mode=770):
+    """
+        for some reason "os.makedirs(path, 770) was giving weird results... e.g.
+        # dr------wT 2 kmohamed cgi 4.0K Jul 20 15:39 scripts/
+
+        So using subprocess instead....
+    """
+    LOGGER.info("chmod to %s", mode)
+    cmd_string_list = ['chmod', str(mode), str(path)]
+
+    result = subprocess.call(cmd_string_list)
+
+    if result == 0:
+        LOGGER.debug("chmod  SUCCESS")
+    else:
+        LOGGER.debug("chmod  FAILED")
 
 def _do_makedir_with_jstools(path):
     LOGGER.info("\tcreating folders with JSTOOLS.JSMK: %s", path)
@@ -103,4 +135,3 @@ def _do_makedir_with_jstools(path):
         result_string = "SUCCESS"
     LOGGER.debug("chmod to '770' - result: %s", result_string)
     return success
-

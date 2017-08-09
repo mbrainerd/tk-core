@@ -23,7 +23,7 @@ from .. import LogManager
 log = LogManager.get_logger(__name__)
 
 # DD
-from .. dd_utils import dd_hook_utils
+from .. dd_utils import dd_jstools_utils
 
 
 def with_cleared_umask(func):
@@ -127,7 +127,7 @@ def ensure_folder_exists(path, permissions=0775, create_placeholder_file=False):
         try:
             # os.makedirs(path, permissions)
             # Use JSTOOLS instead.
-            success = dd_hook_utils.makedir_with_jstools(path=path)
+            success = dd_jstools_utils.makedir_with_jstools(path=path)
             # this returns a success-bool, but no need to use it here (in this 'try')
             # If success=False, the "placeholder" code here will fail with an IOError -
             # so the second "except" was also added
@@ -167,7 +167,7 @@ def copy_file(src, dst, permissions=0666):
     # os.chmod(dst, permissions)
 
     # Use JSTOOLS instead.
-    dd_hook_utils.copy_using_jstools(src=src, dst=dst)
+    dd_jstools_utils.copy_using_jstools(src=src, dst=dst)
 
 def safe_delete_file(path):
     """
@@ -253,7 +253,7 @@ def copy_folder(src, dst, folder_permissions=0775, skip_list=None):
             else:
                 # shutil.copy(srcname, dstname)
                 # Use JSTOOLS instead.
-                dd_hook_utils.copy_using_jstools(src=srcname, dst=dstname)
+                dd_jstools_utils.copy_using_jstools(src=srcname, dst=dstname)
                 files.append(srcname)
                 # if the file extension is sh, set executable permissions
                 if dstname.endswith(".sh") or dstname.endswith(".bat") or dstname.endswith(".exe"):
@@ -361,7 +361,7 @@ def get_permissions(path):
     given path.
 
     :param filename: Path to the file to be queried for permissions
-    :returns: permissions bits of the file 
+    :returns: permissions bits of the file
     :raises: OSError - if there was a problem retrieving permissions for the path
     """
     return stat.S_IMODE(os.stat(path)[stat.ST_MODE])
@@ -369,10 +369,10 @@ def get_permissions(path):
 def safe_delete_folder(path):
     """
     Deletes a folder and all of its contents recursively, even if it has read-only
-    items. 
+    items.
 
     .. note::
-        Problems deleting any items will be reported as warnings in the log 
+        Problems deleting any items will be reported as warnings in the log
         output but otherwise ignored and skipped; meaning the function will continue
         deleting as much as it can.
 
@@ -383,8 +383,8 @@ def safe_delete_folder(path):
         """
         Error function called whenever shutil.rmtree fails to remove a file system
         item. Exceptions raised by this function will not be caught.
-        
-        :param func: The function which raised the exception; it will be: 
+
+        :param func: The function which raised the exception; it will be:
                      os.path.islink(), os.listdir(), os.remove() or os.rmdir().
         :param path: The path name passed to function.
         :param exc_info: The exception information return by sys.exc_info().

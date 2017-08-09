@@ -22,7 +22,7 @@ import sys
 from tank import Hook
 
 # DD
-from tank.dd_utils import dd_hook_utils
+from tank.dd_utils import dd_jstools_utils
 
 
 
@@ -122,7 +122,7 @@ class ProcessFolderCreation(Hook):
                             # os.makedirs(path, 0777)
                         # folders.append(path)
                             # Use JSTOOLS instead.
-                            success = dd_hook_utils.makedir_with_jstools(path=path)
+                            success = dd_jstools_utils.makedir_with_jstools(path=path)
                         if success:
                             folders.append(path)
 
@@ -165,7 +165,7 @@ class ProcessFolderCreation(Hook):
                         if not preview_mode:
                             # os.symlink(target, path)
                             # Use JSTOOLS instead.
-                            dd_hook_utils.symlink_with_jstools(link_target=target,
+                            dd_jstools_utils.symlink_with_jstools(link_target=target,
                                                                link_location=path)
 
                         folders.append(path)
@@ -181,7 +181,7 @@ class ProcessFolderCreation(Hook):
                             # os.chmod(target_path, 0666)
 
                             # Use JSTOOLS instead.
-                            dd_hook_utils.copy_using_jstools(src=source_path, dst=target_path)
+                            dd_jstools_utils.copy_using_jstools(src=source_path, dst=target_path)
                         folders.append(target_path)
 
                 elif action == "create_file":
@@ -193,7 +193,7 @@ class ProcessFolderCreation(Hook):
                     if not os.path.exists(parent_folder) and not preview_mode:
                         # os.makedirs(parent_folder, 0777)
                         # Use JSTOOLS instead.
-                        success = dd_hook_utils.makedir_with_jstools(path=parent_folder)
+                        success = dd_jstools_utils.makedir_with_jstools(path=parent_folder)
 
                     if success and not os.path.exists(path):
                         if not preview_mode:
