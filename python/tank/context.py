@@ -197,7 +197,6 @@ class Context(object):
             # compare type, id tuples of all additional entities to ensure they are exactly the same.
             # this compare ignores duplicates in either list and just ensures that the intersection
             # of both lists contains all unique elements from both lists.
-
             types_and_ids = set([(e["type"], e["id"]) for e in self.parent_entities if e])
             other_types_and_ids = set([(e["type"], e["id"]) for e in other.parent_entities if e])
             if types_and_ids != other_types_and_ids:
@@ -572,8 +571,6 @@ class Context(object):
         :raises:            :class:`TankError` if the fields can't be resolved for some reason or if 'validate' is True
                             and any of the context fields for the template weren't found.
         """
-        log.debug("DD context.as_template_fields(self, template, validate=False)")
-        log.debug("DD template: %s", template)
         # Get all entities into a dictionary
         entities = {}
 
@@ -600,7 +597,6 @@ class Context(object):
             if add_entity["type"] not in entities:
                 entities[add_entity["type"]] = add_entity
 
-        log.debug("DD entities: %s", entities)
         fields = {}
 
         # Try to populate fields using paths caches for entity
@@ -627,7 +623,7 @@ class Context(object):
             # first look at which ENTITY paths are associated with this context object
             # and use these to extract the right fields for this template
             fields = self._fields_from_entity_paths(template)
-            log.debug("DD  self._fields_from_entity_paths(template): %s", fields)
+
             # filter the list of fields to just those that don't have a 'None' value.
             # Note: A 'None' value for a field indicates an ambiguity and was set in the
             # _fields_from_entity_paths method (!)
@@ -635,10 +631,10 @@ class Context(object):
 
             # Determine additional field values by walking down the template tree
             fields.update(self._fields_from_template_tree(template, non_none_fields, entities))
-            log.debug("DD fields.update(self._fields_from_template_tree(template, non_none_fields, entities)) : %s", fields)
+
         # get values for shotgun query keys in template
         fields.update(self._fields_from_shotgun(template, entities, validate))
-        log.debug("DD fields.update(self._fields_from_shotgun(template, entities, validate): %s", fields)
+
         if validate:
             # check that all context template fields were found and if not then raise a TankError
             missing_fields = []
@@ -1331,47 +1327,24 @@ def from_path(tk, path, previous_context=None):
     # go from the root down, so that in the case there are a path with
     # multiple entities (like PROJECT/SEQUENCE/SHOT), the last entry
     # is the most relevant one, and will be assigned as the entity
-    entities_by_level = {}
     found_entity = False
-    for curr_entity in entities[::-1]:
+    for curr_entity in entities:
         # handle the special context fields first
         if curr_entity["type"] == "Project":
-            entities_by_level["0"] = curr_entity
             context["project"] = _build_clean_entity(curr_entity)
-        elif curr_entity["type"] == "Sequence":
-            entities_by_level["1"] = curr_entity
-
-        elif curr_entity["type"] == "Shot":
-            entities_by_level["2"] = curr_entity
-
         elif curr_entity["type"] == "Step":
             context["step"] = _build_clean_entity(curr_entity)
-
-        elif curr_entity["type"] == "Asset":
-            entities_by_level["3"] = curr_entity
-
         elif curr_entity["type"] == "Task":
             context["task"] = _build_clean_entity(curr_entity)
-
         elif curr_entity["type"] == "HumanUser":
             context["user"] = _build_clean_entity(curr_entity)
-
         elif curr_entity["type"] in additional_types:
             context["additional_entities"].append(_build_clean_entity(curr_entity))
-
         elif found_entity:
             context["parent_entities"].append(_build_clean_entity(curr_entity))
-
         else:
             context["entity"] = _build_clean_entity(curr_entity)
             found_entity = True
-
-    # SELECT SG-entity leaf_level based on MAX (existing) leaf_level-value
-    if entities_by_level:
-        selected_level = max(entities_by_level.keys())
-        leaf_entity = entities_by_level[selected_level]
-        context["entity"] = _build_clean_entity(leaf_entity)
-
 
     # now that the context has been populated as much as possible using the
     # primary entities, fill in any blanks based on the secondary entities.
@@ -1422,6 +1395,21 @@ def from_path(tk, path, previous_context=None):
     if context["project"] and context["entity"] and context["entity"]["type"] == "Project":
         # remove double entry!
         context["entity"] = None
+
+    # DD-specific hack: If "Step" is not defined in the path, look for DD_ROLE
+    # in the environment and use that for a lookup instead
+    # Only process step if there is a project
+    if context["project"] and not context["step"]:
+        dd_role = os.environ.get("DD_ROLE", None)
+        if dd_role:
+
+            # Filter step entity by the parent entity type
+            parent_type = context["entity"]["type"] if context["entity"] else "Project"
+            sg_filters = [["entity_type", "is", parent_type]]
+
+            step_entity = shotgun.get_entity(dd_role, "Step", sg_filters)
+            if step_entity:
+                context["step"] = _build_clean_entity(step_entity)
 
     return Context(**context)
 

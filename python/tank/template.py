@@ -528,6 +528,7 @@ class TemplatePath(Template):
             return TemplatePath(parent_definition, self.keys, self.root_path, None, self._per_platform_roots)
         return None
 
+
     def get_entities(self, input_path, additional_types=None, skip_keys=None):
         """
         Extracts a list of entities from a string that can be used for building a context. Example:
@@ -551,7 +552,6 @@ class TemplatePath(Template):
         :rtype: Dictionary
         """
         entities = []
-        sg = shotgun.get_sg_connection()
 
         sg_filters = []
 
@@ -561,22 +561,17 @@ class TemplatePath(Template):
         # Get the project name separately since it isn't typically parsed by get_fields
         path_fields["Project"] = os.path.basename(self.root_path)
 
-        def _get_entity_from_key(key, sg_filters, sg_key=None):
+        def _get_entity_from_key(key, sg_filters, sg_type=None):
             """
-            Helper function to get a Shotgun entity from a given field key
+            Helper function to get a Shotgun entity from a given path field key
             """
-            # Set sg_key to key if its not set
-            sg_key = sg_key if sg_key else key
+            # Set sg_type to key if its not set
+            sg_type = sg_type if sg_type else key
 
             entity = None
             if key in path_fields:
-                value = path_fields[key]
-                sg_name = _get_entity_type_sg_name_field(sg_key)
-                filters = sg_filters + [[sg_name, "is", value]]
-                fields = ["type", "id", "name", sg_name]
-                entity = sg.find_one(sg_key, filters, fields)
-                if entity is None:
-                    raise TankError("Could not find sg entry for %s: '%s'" % (sg_key, filters))
+                sg_name = path_fields[key]
+                entity = shotgun.get_entity(sg_name, sg_type, sg_filters)
 
             return entity
 
@@ -872,18 +867,6 @@ def make_template_strings(data, keys, template_paths):
         template_strings[template_name] = template_string
 
     return template_strings
-
-def _get_entity_type_sg_name_field(entity_type):
-    """
-    Return the Shotgun name field to use for the specified entity type.  This
-    is needed as not all entity types are consistent!
-
-    :param entity_type:     The entity type to get the name field for
-    :returns:               The name field for the specified entity type
-    """
-    return {"HumanUser":"login", 
-            "Task":"content", 
-            "Project":"name"}.get(entity_type, "code")
 
 def _conform_template_data(template_data, template_name):
     """
