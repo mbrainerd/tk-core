@@ -21,37 +21,20 @@ class PickEnvironment(Hook):
         The default implementation assumes there are three environments, called shot, asset
         and project, and switches to these based on entity type.
 
-        DD implementation includes Sequence and Step
+        DD implementation includes additional Project/Sequence Step environments as well as
+        Sequence/Shot Asset environments
         """
-        if context.project is None:
-            # our context is completely empty!
-            # don't know how to handle this case.
-            return "site"
+        env_name = "site"
+        if context.project:
+            env_name = "project"
+            if context.entity:
+                env_name = context.entity["type"].lower()
 
-        if context.entity is None:
-            # we have a project but not an entity
-            return "project"
+                if context.entity["type"] == "Asset":
+                    if len(context.parent_entities):
+                        env_name = context.parent_entities[0]["type"].lower() + "_" + env_name
 
-        if context.entity and context.step is None:
-            # we have an entity but no step!
-            if context.entity["type"] == "Project":
-                return "project"
-            if context.entity["type"] == "Sequence":
-                return "sequence"
-            if context.entity["type"] == "Shot":
-                return "shot"
-            if context.entity["type"] == "Asset":
-                return "asset"
+            if context.step:
+                env_name += "_step"
 
-        if context.entity and context.step:
-            # we have a step and an entity
-            if context.entity["type"] == "Project":
-                return "project_step"
-            if context.entity["type"] == "Sequence":
-                return "sequence_step"
-            if context.entity["type"] == "Shot":
-                return "shot_step"
-            if context.entity["type"] == "Asset":
-                return "asset_step"
-
-        return None
+        return env_name
