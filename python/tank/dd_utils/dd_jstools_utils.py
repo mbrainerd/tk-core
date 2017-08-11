@@ -21,8 +21,6 @@ import os
 import subprocess
 
 #  DD
-from dd.runtime import api
-api.load('jstools')
 import jstools
 
 
@@ -99,7 +97,7 @@ def _do_makedir_with_os_makedirs(path):
 
 def _do_makedir_with_jstools(path):
     logger.info("\tcreating folders with JSTOOLS.JSMK: %s", path)
-    result, msg = jstools.jsmk(path)
+    result, msg = jstools.jsmk(path, parent=True)
     if not result:
         logger.error("Cannot jsmk folder: %s %s", path, msg)
 
