@@ -1403,6 +1403,10 @@ def from_path(tk, path, previous_context=None):
         dd_role = os.environ.get("DD_ROLE", None)
         if dd_role:
 
+            # We probably don't want to have corresponding subrole pipeline steps, so
+            # treat subroles the same as primary roles by removing the suffix
+            dd_role = dd_role.split('_')[0]
+
             # Filter step entity by the parent entity type
             parent_type = context["entity"]["type"] if context["entity"] else "Project"
             sg_filters = [["entity_type", "is", parent_type]]
