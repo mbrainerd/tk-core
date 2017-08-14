@@ -85,9 +85,11 @@ def _get_entity_type_sg_name_field(entity_type):
     :param entity_type:     The entity type to get the name field for
     :returns:               The name field for the specified entity type
     """
-    return {"HumanUser": "login", 
-            "Task": "content", 
-            "Project": "name"}.get(entity_type, "code")
+    return {    "HumanUser": "login", 
+                "Task":      "content", 
+                "Project":   "name",
+                "Step":      "short_name"
+            }.get(entity_type, "code")
 
 def get_entity(sg_name, sg_type, sg_filters=[], sg_fields=[]):
     """
@@ -100,7 +102,7 @@ def get_entity(sg_name, sg_type, sg_filters=[], sg_fields=[]):
     name_key = _get_entity_type_sg_name_field(sg_type)
 
     filters = sg_filters + [[name_key, "is", sg_name]]
-    fields = sg_fields + ["type", "id", "name", name_key]
+    fields = sg_fields + ["type", "id", "code", name_key]
 
     entity = sg.find_one(sg_type, filters, fields)
     if entity is None:

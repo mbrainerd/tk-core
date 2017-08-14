@@ -1399,7 +1399,7 @@ def from_path(tk, path, previous_context=None):
     # DD-specific hack: If "Step" is not defined in the path, look for DD_ROLE
     # in the environment and use that for a lookup instead
     # Only process step if there is a project
-    if context["project"] and not context["step"]:
+    if context["entity"] and not context["step"]:
         dd_role = os.environ.get("DD_ROLE", None)
         if dd_role:
 
@@ -1408,8 +1408,7 @@ def from_path(tk, path, previous_context=None):
             dd_role = dd_role.split('_')[0]
 
             # Filter step entity by the parent entity type
-            parent_type = context["entity"]["type"] if context["entity"] else "Project"
-            sg_filters = [["entity_type", "is", parent_type]]
+            sg_filters = [["entity_type", "is", context["entity"]["type"]]]
 
             step_entity = shotgun.get_entity(dd_role, "Step", sg_filters)
             if step_entity:
@@ -1516,9 +1515,11 @@ def _get_entity_type_sg_name_field(entity_type):
     :param entity_type:     The entity type to get the name field for
     :returns:               The name field for the specified entity type
     """
-    return {"HumanUser":"name",
-            "Task":"content",
-            "Project":"name"}.get(entity_type, "code")
+    return {    "HumanUser": "login", 
+                "Task":      "content", 
+                "Project":   "name",
+                "Step":      "short_name"
+            }.get(entity_type, "code")
 
 def _get_entity_name(entity_dictionary):
     """
