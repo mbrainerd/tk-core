@@ -30,6 +30,7 @@ from . import constants
 from . import LogManager
 from .util import yaml_cache
 from .util import ShotgunPath
+from .util import shotgun
 
 log = LogManager.get_logger(__name__)
 
@@ -107,6 +108,22 @@ def get_pipeline_metadata(pipeline_config_path):
     except Exception, e:
         raise TankError("Looks like a config file is corrupt. Please contact "
                         "support! File: '%s' Error: %s" % (cfg_yml, e))
+
+    # DD Hackery: Get the project from DD_SHOW instead of from yaml file
+    if not data.get("project_id", None):
+        dd_show = os.environ.get("DD_SHOW", None)
+        if dd_show:
+            # Get the matching project entity
+            proj_entity = shotgun.get_entity(dd_show, "Project")
+            if proj_entity:
+                # Filter PipelineConfigurations by this project
+                pc_name = data.get("pc_name")
+                pc_entity = shotgun.get_entity(pc_name, "PipelineConfiguration", [["project", "is", proj_entity]])
+                if pc_entity:
+                    data["project_name"]    = dd_show
+                    data["project_id"]      = proj_entity.get("id")
+                    data["pc_id"]           = pc_entity.get("id")
+
     return data
 
 
