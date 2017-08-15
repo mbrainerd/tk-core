@@ -129,7 +129,7 @@ def get_pipeline_metadata(pipeline_config_path):
                     data["pc_name"]         = pc_entity.get("code")
 
         # Else return the Site PipelineConfiguration
-        else:
+        if not data.get("pc_id", None):
             # Default is "Primary"
             pc_name = data.get("pc_name", "Primary")
 
