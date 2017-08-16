@@ -499,7 +499,7 @@ def main():
 
         # Get the facility level pipeline config location
         splash.set_message("Looking up site configuration.")
-        pc_path = sgtk.pipelineconfig_utils.get_config_install_location('facility')
+        pc_path = sgtk.pipelineconfig_utils.get_config_install_location()
 
         # Validate that this package is indeed a site config
         if not sgtk.pipelineconfig_utils.is_site_configuration(pc_path):
