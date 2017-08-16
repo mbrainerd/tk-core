@@ -19,12 +19,11 @@ from .. import constants
 from ... import LogManager
 from ...util import filesystem
 from ...util.version import is_version_newer
-from ..errors import TankDescriptorError
+from ..errors import TankDescriptorError, TankMissingManifestError
 
 from tank_vendor import yaml
 
 log = LogManager.get_logger(__name__)
-
 
 
 class IODescriptorBase(object):
@@ -52,6 +51,7 @@ class IODescriptorBase(object):
         self._fallback_roots = []
         self._descriptor_dict = descriptor_dict
         self.__manifest_data = None
+        self._is_copiable = True
 
     def set_cache_roots(self, primary_root, fallback_roots):
         """
@@ -332,9 +332,28 @@ class IODescriptorBase(object):
 
         return all_versions
 
+    def set_is_copiable(self, copiable):
+        """
+        Sets whether copying is supported by this descriptor.
+
+        :param bool copiable: If True, bundle can be copied.
+        """
+        self._is_copiable = copiable
+
     def copy(self, target_path):
         """
-        Copy the contents of the descriptor to an external location
+        Copy the contents of the descriptor to an external location, if supported.
+
+        :param target_path: target path to copy the descriptor to.
+        """
+        if self._is_copiable:
+            self._copy(target_path)
+        else:
+            raise TankDescriptorError("%r cannot be copied." % self)
+
+    def _copy(self, target_path):
+        """
+        Copy the contents of the descriptor to an external location, if supported.
 
         :param target_path: target path to copy the descriptor to.
         """
@@ -345,12 +364,15 @@ class IODescriptorBase(object):
         # copy descriptor in
         filesystem.copy_folder(self.get_path(), target_path)
 
-    def get_manifest(self):
+    def get_manifest(self, file_location):
         """
         Returns the info.yml metadata associated with this descriptor.
         Note that this call involves deep introspection; in order to
         access the metadata we normally need to have the code content
         local, so this method may trigger a remote code fetch if necessary.
+
+        :param file_location: Path relative to the root of the bundle where info.yml
+            can be found.
 
         :returns: dictionary with the contents of info.yml
         """
@@ -366,13 +388,14 @@ class IODescriptorBase(object):
                 self.download_local()
 
             # get the metadata
+
             bundle_root = self.get_path()
-            file_path = os.path.join(bundle_root, constants.BUNDLE_METADATA_FILE)
+            file_path = os.path.join(bundle_root, file_location)
 
             if not os.path.exists(file_path):
                 # at this point we have downloaded the bundle, but it may have
                 # an invalid internal structure.
-                raise TankDescriptorError("Toolkit metadata file '%s' missing." % file_path)
+                raise TankMissingManifestError("Toolkit metadata file '%s' missing." % file_path)
 
             try:
                 file_data = open(file_path)
@@ -446,7 +469,6 @@ class IODescriptorBase(object):
         else:
             path = parsed_uri.path
             query = parsed_uri.query
-
 
         split_path = path.split(constants.DESCRIPTOR_URI_SEPARATOR)
         # e.g. 'descriptor:app_store' -> ('descriptor', 'app_store')
