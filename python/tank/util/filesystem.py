@@ -127,7 +127,7 @@ def ensure_folder_exists(path, permissions=0775, create_placeholder_file=False):
         try:
             # os.makedirs(path, permissions)
             # Use JSTOOLS instead.
-            success = dd_jstools_utils.makedir_with_jstools(path=path)
+            success = dd_jstools_utils.makedir_with_jstools(path, permissions)
             # this returns a success-bool, but no need to use it here (in this 'try')
             # If success=False, the "placeholder" code here will fail with an IOError -
             # so the second "except" was also added
