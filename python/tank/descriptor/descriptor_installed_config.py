@@ -86,9 +86,8 @@ class InstalledConfigDescriptor(ConfigDescriptor):
         :returns: dictionary with the contents of info.yml
         """
         try:
-            manifest = self._io_descriptor.get_manifest(
-                os.path.join("config", constants.BUNDLE_METADATA_FILE)
-            )
+            manifest = self._io_descriptor.get_manifest(constants.BUNDLE_METADATA_FILE)
+
             # We need to tolerate empty manifests since these exists currently.
             return manifest or {}
         except TankMissingManifestError:
