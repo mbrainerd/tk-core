@@ -64,6 +64,9 @@ class PipelineConfiguration(object):
         """
         self._pc_root = pipeline_configuration_path
 
+        # To cover a very stupid use case
+        os.environ["TANK_CURRENT_PC"] = self._pc_root
+
         # validate that the current code version matches or is compatible with
         # the code that is locally stored in this config!!!!
         our_associated_api_version = self.get_associated_core_version()
@@ -95,7 +98,7 @@ class PipelineConfiguration(object):
 
         # get the project tank disk name (Project.tank_name),
         # stored in the pipeline config metadata file.
-        pipeline_config_metadata = pipelineconfig_utils.get_pipeline_metadata(self._pc_root)
+        pipeline_config_metadata = pipelineconfig_utils.get_metadata(self._pc_root)
         self._project_name = pipeline_config_metadata.get("project_name")
         self._project_id = pipeline_config_metadata.get("project_id")
         self._pc_id = pipeline_config_metadata.get("pc_id")
@@ -246,7 +249,7 @@ class PipelineConfiguration(object):
         :param updates: Dictionary of values to update in the pipeline configuration
         """
         # get current settings
-        curr_settings = pipelineconfig_utils.get_pipeline_metadata(self._pc_root)
+        curr_settings = pipelineconfig_utils.get_metadata(self._pc_root)
         
         # apply updates to existing cache
         curr_settings.update(updates)
