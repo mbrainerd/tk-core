@@ -108,31 +108,42 @@ def get_metadata(pipeline_config_path):
     if not data.get("pc_id", None):
         dd_show = os.environ.get("DD_SHOW", None)
         if dd_show:
-            # Get the matching project entity
-            proj_entity = shotgun.get_entity(dd_show, "Project")
-            if proj_entity:
 
-                # Default is "Primary"
+            try:
+                # Get the matching project entity
+                proj_entity = shotgun.get_entity(dd_show, "Project")
+
+                # Default PipelineConfiguration name is "Primary"
                 pc_name = data.get("pc_name", "Primary")
 
                 # Get the PipelineConfiguration, filtered by this project
                 pc_entity = shotgun.get_entity(pc_name, "PipelineConfiguration", [["project", "is", proj_entity]])
-                if pc_entity:
-                    data["project_name"]    = proj_entity.get("name")
-                    data["project_id"]      = proj_entity.get("id")
-                    data["pc_id"]           = pc_entity.get("id")
-                    data["pc_name"]         = pc_entity.get("code")
+
+                data["project_name"]    = proj_entity.get("name")
+                data["project_id"]      = proj_entity.get("id")
+                data["pc_id"]           = pc_entity.get("id")
+                data["pc_name"]         = pc_entity.get("code")
+
+            except TankError:
+                log.warning("Cannot get PipelineConfiguration for Show '%s'. " \
+                        "Falling back on Site PipelineConfiguration." % dd_show)
+                pass
 
         # Else return the Site PipelineConfiguration
         if not data.get("pc_id", None):
-            # Default is "Primary"
-            pc_name = data.get("pc_name", "Primary")
 
-            # Get the PipelineConfiguration, filtered by this project
-            pc_entity = shotgun.get_entity(pc_name, "PipelineConfiguration", [["id", "is", 1]])
-            if pc_entity:
+            try:
+                # Default PipelineConfiguration name is "Primary"
+                pc_name = data.get("pc_name", "Primary")
+
+                # Get the PipelineConfiguration, filtered by ID 1
+                pc_entity = shotgun.get_entity(pc_name, "PipelineConfiguration", [["id", "is", 1]])
+
                 data["pc_id"]           = pc_entity.get("id")
                 data["pc_name"]         = pc_entity.get("code")
+
+            except TankError:
+                raise TankError("Cannot find Site PipelineConfiguration '%s'" % pc_name)
 
     return data
 
