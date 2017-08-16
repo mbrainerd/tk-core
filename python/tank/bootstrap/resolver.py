@@ -100,7 +100,22 @@ class ConfigurationResolver(object):
             # convert to dict so we can introspect
             config_descriptor = descriptor_uri_to_dict(config_descriptor)
 
-        if config_descriptor["type"] == constants.BAKED_DESCRIPTOR_TYPE:
+        if config_descriptor["type"] == constants.INSTALLED_DESCRIPTOR_TYPE:
+
+            config_path = os.path.expanduser(os.path.expandvars(config_descriptor["path"]))
+            if not os.path.exists(config_path):
+                raise TankBootstrapError(
+                    "Installed pipeline configuration '%s' does not exist on disk!" % (config_path,)
+                )
+
+            cfg_descriptor = create_descriptor(
+                sg_connection,
+                Descriptor.INSTALLED_CONFIG,
+                dict(path=config_path, type="path"),
+                fallback_roots=self._bundle_cache_fallback_paths,
+                resolve_latest=False
+            )
+        elif config_descriptor["type"] == constants.BAKED_DESCRIPTOR_TYPE:
             # special case -- this is a full configuration scaffold that
             # has been pre-baked and can be used directly at runtime
             # without having to do lots of copying into temp space.
@@ -165,9 +180,9 @@ class ConfigurationResolver(object):
                 resolve_latest=resolve_latest
             )
 
-            return self._create_configuration_from_descriptor(
-                cfg_descriptor, sg_connection, pc_id=None
-            )
+        return self._create_configuration_from_descriptor(
+            cfg_descriptor, sg_connection, pc_id=None
+        )
 
     def _create_configuration_from_descriptor(self, cfg_descriptor, sg_connection, pc_id):
         """
