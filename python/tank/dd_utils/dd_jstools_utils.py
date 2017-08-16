@@ -46,37 +46,41 @@ def copy_using_jstools(src=None, dst=None):
     logger.debug("jstools.execute result: %s", result)
 
 
-def makedir_with_jstools(path=None):
+def makedir_with_jstools(path=None, permissions=0775):
     """
     Attempts to create directories AT OR BELOW jstemplate-leaf-paths
     """
-
     result = 1
-    template = jstools.Template(os.environ.get("DD_SHOW"))
 
-    if template.isValidPath(path):
-        # this is a jstemplate area (and the path is valid against the template)
+    dd_show = os.environ.get("DD_SHOW", None)
+    if dd_show:
+        template = jstools.Template(dd_show)
+
+        # If its not a valid path, don't make it
+        if not template.isValidPath(path):
+            logger.error("Attempting to create INVALID PATH in jstemplate area: %s" % path)
+            return 0
+
+        # Get the leaf path owned by the jstemplate
         leaf_path = template.getLeafPath(path)
+        if leaf_path:
+            # Use jsmk to create the leaf-level directory
+            result = _do_makedir_with_jstools(leaf_path)
+            if not result:
+                return result
 
-        if leaf_path:  # ... or below
-            # First, use jstools to create the directories up to the leaf
-            if not os.path.isdir(leaf_path):
-                result = _do_makedir_with_jstools(leaf_path)
-                if result:
-
-                    # Finally, use os to create the remaining directories
-                    if not os.path.isdir(path):
-                        result = _do_makedir_with_os_makedirs(path)
-
-        else:  # above leaf
-            if not os.path.isdir(path):
+        # If we've reached here, we're either somewhere in the jstemplate hierarchy
+        # but not at the leaf level, or somewhere outside the jstemplate
+        else:
+            # First see if we are still in the jstemplate area
+            if path.startswith(template.root.full_path):
                 result = _do_makedir_with_jstools(path)
+            else:
+                result = _do_makedir_with_os_makedirs(path, permissions)
+
     else:
-        # Not in jstemplate area, or in the area but invalid jstemplate path
-        msg = "Attempting to use jstools outside the jstemplate area OR, "
-        msg += "attempting to create INVALID PATH in jstemplate area: %s" % path
-        logger.error(msg)
-        result = 0
+        # Finally, use os to create the remaining directories
+        result = _do_makedir_with_os_makedirs(path, permissions)
 
     return result
 
@@ -90,13 +94,17 @@ def symlink_with_jstools(link_target=None, link_location=None):
     logger.debug("jstools.execute result:%s", result)
 
 
-def _do_makedir_with_os_makedirs(path):
-    logger.info("\tcreating folders with OS.MAKEDIRS: %s", path)
-    return os.makedirs(path, 770)
+def _do_makedir_with_os_makedirs(path, permissions):
+    if os.path.isdir(path): return 1
+
+    logger.debug("\tcreating folders with OS.MAKEDIRS: %s", path)
+    return os.makedirs(path, permissions)
 
 
 def _do_makedir_with_jstools(path):
-    logger.info("\tcreating folders with JSTOOLS.JSMK: %s", path)
+    if os.path.isdir(path): return 1
+
+    logger.debug("\tcreating folders with JSTOOLS.JSMK: %s", path)
     result, msg = jstools.jsmk(path)
     if not result:
         logger.error("Cannot jsmk folder: %s %s", path, msg)
