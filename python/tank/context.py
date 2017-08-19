@@ -1301,7 +1301,7 @@ def from_path(tk, path, previous_context=None):
                         entities_from_template = True
                     except TankError, e:
                         log.warning(str(e))
-                        log.debug("Could not get entities from path '%s' for template '%s'", (curr_path, template))
+                        log.debug("Could not get entities from path '%s' for template '%s'" % (curr_path, template))
                         pass
 
         # add secondary entities
