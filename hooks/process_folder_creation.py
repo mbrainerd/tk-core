@@ -11,20 +11,15 @@
 """
 I/O Hook which creates folders on disk.
 
-* Added jstools to handle disk operations
 """
-# STANDARD
+
+from tank import Hook
 import os
 import sys
-# import shutil
-
-# SHOTGUN
-from tank import Hook
+import shutil
 
 # DD
 from tank.dd_utils import dd_jstools_utils
-
-
 
 
 class ProcessFolderCreation(Hook):
@@ -116,15 +111,12 @@ class ProcessFolderCreation(Hook):
                     # folder creation
                     path = i.get("path")
                     if not os.path.exists(path):
-                        success = False
                         if not preview_mode:
                             # create the folder using open permissions
                             # os.makedirs(path, 0777)
-                        # folders.append(path)
                             # Use JSTOOLS instead.
-                            success = dd_jstools_utils.makedir_with_jstools(path=path)
-                        if success:
-                            folders.append(path)
+                            dd_jstools_utils.makedir_with_jstools(path)
+                        folders.append(path)
 
                 elif action == "remote_entity_folder":
                     # Remote folder creation
@@ -165,9 +157,7 @@ class ProcessFolderCreation(Hook):
                         if not preview_mode:
                             # os.symlink(target, path)
                             # Use JSTOOLS instead.
-                            dd_jstools_utils.symlink_with_jstools(link_target=target,
-                                                               link_location=path)
-
+                            dd_jstools_utils.symlink_with_jstools(target, path)
                         folders.append(path)
 
                 elif action == "copy":
@@ -177,11 +167,9 @@ class ProcessFolderCreation(Hook):
                     if not os.path.exists(target_path):
                         if not preview_mode:
                             # do a standard file copy
-                            # shutil.copy(source_path, target_path)
-                            # os.chmod(target_path, 0666)
-
-                            # Use JSTOOLS instead.
-                            dd_jstools_utils.copy_using_jstools(src=source_path, dst=target_path)
+                            shutil.copy(source_path, target_path)
+                            # set permissions to open
+                            os.chmod(target_path, 0666)
                         folders.append(target_path)
 
                 elif action == "create_file":
@@ -189,13 +177,12 @@ class ProcessFolderCreation(Hook):
                     path = i.get("path")
                     parent_folder = os.path.dirname(path)
                     content = i.get("content")
-                    success = False
                     if not os.path.exists(parent_folder) and not preview_mode:
                         # os.makedirs(parent_folder, 0777)
                         # Use JSTOOLS instead.
-                        success = dd_jstools_utils.makedir_with_jstools(path=parent_folder)
+                        dd_jstools_utils.makedir_with_jstools(parent_folder)
 
-                    if success and not os.path.exists(path):
+                    if not os.path.exists(path):
                         if not preview_mode:
                             # create the file
                             fp = open(path, "wb")

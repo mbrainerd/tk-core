@@ -23,7 +23,7 @@ from .. import LogManager
 log = LogManager.get_logger(__name__)
 
 # DD
-from .. dd_utils import dd_jstools_utils
+from ..dd_utils import dd_jstools_utils
 
 
 def with_cleared_umask(func):
@@ -103,7 +103,7 @@ def touch_file(path, permissions=0666):
         try:
             fh = open(path, "wb")
             fh.close()
-            # os.chmod(path, permissions)
+            os.chmod(path, permissions)
         except OSError, e:
             # Race conditions are perfectly possible on some network storage
             # setups so make sure that we ignore any file already exists errors,
@@ -127,7 +127,7 @@ def ensure_folder_exists(path, permissions=0775, create_placeholder_file=False):
         try:
             # os.makedirs(path, permissions)
             # Use JSTOOLS instead.
-            success = dd_jstools_utils.makedir_with_jstools(path, permissions)
+            dd_jstools_utils.makedir_with_jstools(path, permissions)
             # this returns a success-bool, but no need to use it here (in this 'try')
             # If success=False, the "placeholder" code here will fail with an IOError -
             # so the second "except" was also added
@@ -163,11 +163,8 @@ def copy_file(src, dst, permissions=0666):
                         be readable and writable for all users.
     """
     # do a standard file copy
-    # shutil.copy(src, dst)
-    # os.chmod(dst, permissions)
-
-    # Use JSTOOLS instead.
-    dd_jstools_utils.copy_using_jstools(src=src, dst=dst)
+    shutil.copy(src, dst)
+    os.chmod(dst, permissions)
 
 def safe_delete_file(path):
     """
@@ -235,7 +232,9 @@ def copy_folder(src, dst, folder_permissions=0775, skip_list=None):
     files = []
 
     if not os.path.exists(dst):
-        os.mkdir(dst, folder_permissions)
+        # os.mkdir(dst, folder_permissions)
+        # Use JSTOOLS instead.
+        dd_jstools_utils.makedir_with_jstools(dst, folder_permissions)
 
     names = os.listdir(src)
     for name in names:
@@ -251,9 +250,7 @@ def copy_folder(src, dst, folder_permissions=0775, skip_list=None):
             if os.path.isdir(srcname):
                 files.extend(copy_folder(srcname, dstname, folder_permissions))
             else:
-                # shutil.copy(srcname, dstname)
-                # Use JSTOOLS instead.
-                dd_jstools_utils.copy_using_jstools(src=srcname, dst=dstname)
+                shutil.copy(srcname, dstname)
                 files.append(srcname)
                 # if the file extension is sh, set executable permissions
                 if dstname.endswith(".sh") or dstname.endswith(".bat") or dstname.endswith(".exe"):
@@ -413,7 +410,9 @@ def safe_delete_folder(path):
             # On Windows, Python's shutil can't delete read-only files, so if we were trying to delete one,
             # remove the flag.
             # Inspired by http://stackoverflow.com/a/4829285/1074536
-            shutil.rmtree(path, onerror=_on_rm_error)
+            # shutil.rmtree(path, onerror=_on_rm_error)
+            # Use JSTOOLS instead.
+            dd_jstools_utils.delete_with_jstools(path)
         except Exception, e:
             log.warning("Could not delete %s: %s" % (path, e))
     else:
