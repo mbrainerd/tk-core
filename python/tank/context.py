@@ -1234,7 +1234,7 @@ def from_entity_dictionary(tk, entity_dictionary):
             context.update(task_context)
 
     # Get any cache data
-    if "entity" in context:
+    if context["entity"]:
         cache_content = _context_data_from_cache(tk, context["entity"]["type"], context["entity"]["id"])
 
         # Populate from path cache with non-None values
