@@ -601,6 +601,9 @@ class TemplatePath(Template):
         seq_entity = _get_entity_from_key("Sequence", sg_filters)
         if seq_entity:
 
+            # Append the sequence entity
+            entities.append(seq_entity)
+
             # Filter shot-level entity by this sequence
             shot_filters = sg_filters + [["sg_sequence", "is", seq_entity]]
 
@@ -608,8 +611,6 @@ class TemplatePath(Template):
             shot_entity = _get_entity_from_key("Shot", shot_filters)
             if shot_entity:
                 entities.append(shot_entity)
-            else:
-                entities.append(seq_entity)
 
         # Get the asset type if defined
         if "sg_asset_type" in path_fields:

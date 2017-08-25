@@ -31,8 +31,10 @@ class PickEnvironment(Hook):
                 env_name = context.entity["type"].lower()
 
                 if context.entity["type"] == "Asset":
-                    if len(context.parent_entities):
-                        env_name = context.parent_entities[0]["type"].lower() + "_" + env_name
+                    if "Shot" in context.parent_entities:
+                        env_name = "shot_" + env_name
+                    elif "Sequence" in context.parent_entities:
+                        env_name = "sequence_" + env_name
 
             if context.step:
                 env_name += "_step"
