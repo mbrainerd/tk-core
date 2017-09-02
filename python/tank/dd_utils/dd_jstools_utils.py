@@ -62,30 +62,15 @@ def makedir_with_jstools(path, permissions=0775):
     if dd_show:
         template = jstools.Template(dd_show)
 
-        # If its not a valid path, don't make it
+        # If its not a valid template path, don't make it
         if not template.isValidPath(path):
             raise IOError("Path is not valid. Check your jstemplate.xml: %s" % path)
 
-        # Get the leaf path owned by the jstemplate
-        leaf_path = template.getLeafPath(path)
-        if leaf_path:
-            # Use jsmk to create the leaf-level directory
-            _do_makedir_with_jstools(leaf_path)
-
-            # Now make the rest of the path with os.makedirs
-            _do_makedir_with_os_makedirs(path, permissions)
-
-        # If we've reached here, we're either somewhere in the jstemplate hierarchy
-        # but not at the leaf level, or somewhere outside the jstemplate
-        elif path.startswith(template.root.full_path):
-            # First see if we are still in the jstemplate area
-            _do_makedir_with_jstools(path)
-        else:
-            # Finally, use os.makedirs to create the non template directories
-            _do_makedir_with_os_makedirs(path, permissions)
+        # Use jsmk to create the template directory
+        _do_makedir_with_jstools(path)
 
     else:
-        # Finally, use os.makedirs to create the non template directories
+        # Else use os.makedirs to create the non template directory
         _do_makedir_with_os_makedirs(path, permissions)
 
 
