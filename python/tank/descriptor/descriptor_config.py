@@ -11,6 +11,7 @@
 from __future__ import with_statement
 
 import sys, os
+from ..util.process import subprocess_check_output, SubprocessCalledProcessError
 
 from tank_vendor import yaml
 
@@ -160,16 +161,29 @@ class ConfigDescriptor(Descriptor):
             with open(interpreter_config_file, "r") as f:
                 path_to_python = f.read().strip()
 
-            if not path_to_python or not os.path.exists(path_to_python):
-                log.info("No interpreter file for the current platform found at '%s'." % interpreter_config_file)
-                log.info("Using current python interpreter: '%s'" % sys.executable)
-                return sys.executable
+            if not path_to_python:
+                raise TankInvalidInterpreterLocationError(
+                    "Cannot find interpreter '%s' defined in "
+                    "config file '%s'." % (path_to_python, interpreter_config_file)
+                )
+
+            if not os.path.exists(path_to_python):
+                try:
+                    # Python interpreter could be a bash function
+                    subprocess_check_output("type {0}".format(path_to_python), shell=True)
+                except SubprocessCalledProcessError:
+                    raise TankInvalidInterpreterLocationError(
+                        "Cannot find interpreter '%s' defined in "
+                        "config file '%s'." % (path_to_python, interpreter_config_file)
+                    )
+                else:
+                    return path_to_python
             else:
                 return path_to_python
         else:
-            raise TankFileDoesNotExistError(
-                "No interpreter file for the current platform found at '%s'." % interpreter_config_file
-            )
+            log.info("No interpreter file for the current platform found at '%s'." % interpreter_config_file)
+            log.info("Using current python interpreter: '%s'" % sys.executable)
+            return sys.executable
 
     def _get_roots_data(self):
         """
