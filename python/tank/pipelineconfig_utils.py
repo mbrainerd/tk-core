@@ -343,73 +343,71 @@ def resolve_all_os_paths_to_config(pc_path):
     return _get_install_locations(pc_path)
 
 
-def get_core_install_location(project_or_path='current'):
+def get_core_install_location(level_or_path=None):
     """
     Given a project name or path on disk, return the location of the core api location
     """
-    return get_package_install_location('sgtk_core', project_or_path)
+    return get_package_install_location('sgtk_core', level_or_path)
 
 
-def get_config_install_location(project_or_path='current'):
+def get_config_install_location(level_or_path=None):
     """
     Given a project name or path on disk, return the location of the core api location
     """
-    return get_package_install_location('sgtk_config', project_or_path)
+    return get_package_install_location('sgtk_config', level_or_path)
 
 
-def get_package_install_location(package_name, project_or_path='current'):
+def get_package_install_location(package_name, level_or_path=None):
     """
     Given a project name or path on disk, return the location of a given package
     """
-    from dd import ddos
-    from dd.runtime.info import getVersionToBeLoaded, locateNearestDistribution
     import prez
 
-    # Get the current platform    
-    platform = ddos.getOsInfo()
-
-    # First check if the package has a local override
+    # HACK: Use dd.runtime to resolve test branches until #99460 is resolved
     if "DD_TEST_BRANCHES" in os.environ:
+        from dd import ddos
+        from dd.runtime.info import getVersionToBeLoaded, locateNearestDistribution
+
         version = getVersionToBeLoaded(package_name)
-        path = locateNearestDistribution(package_name, version, platform)
+        path = locateNearestDistribution(package_name, version, ddos.getOsInfo())
 
         # If the resolved distribution comes from the local work area, return that
         if prez.Level.parse(prez.derive(path).source.name).isWorkarea:
             return path
 
-    # Backup the current environment
-    _environ = dict(os.environ)
+    # Get the current environment
+    env = prez.Environment.current()
 
-    # If nothing is specified, override to operate at the facility level
-    if project_or_path is None or project_or_path == 'facility':
-        if "DD_SHOW"     in os.environ: del os.environ["DD_SHOW"]
-        if "DD_SEQ"      in os.environ: del os.environ["DD_SEQ"]
-        if "DD_SHOT"     in os.environ: del os.environ["DD_SHOT"]
-        if "DD_WORKAREA" in os.environ: del os.environ["DD_WORKAREA"]
+    # HACK: First check if there is an override for this package until #99460 is resolved
+    spec = os.environ.get("DD_WITH_OVERRIDE", "")
+    withOverrides = dict(x.split("=", 1) for x in spec.split(",") if x != "")
+    if withOverrides.get(package_name):
+        package_version = prez.Version.parse(withOverrides[package_name])
+        return env.getDistribution(package_name, package_version).path
 
-    # Else if it is a path, derive the level from the path
-    elif os.path.exists(os.path.expandvars(project_or_path)):
-        level = prez.Level.derive(project_or_path)
-        os.environ["DD_SHOW"]     = level.show
-        os.environ["DD_SEQ"]      = level.sequence
-        os.environ["DD_SHOW"]     = level.show
-        os.environ["DD_WORKAREA"] = level.workarea
+    # If site is specified, override env to operate at the facility level
+    if level_or_path:
+        if level_or_path == 'site':
+            # Start with the current configuration so we maintain role, site, etc
+            config = env.configuration.replace(level=prez.Level.facility())
 
-    # Else if not 'current', assume it is a project name and evaluate for the project
-    elif project_or_path != 'current':
-        os.environ["DD_SHOW"] = project_or_path.upper()
-        if "DD_SEQ"      in os.environ: del os.environ["DD_SEQ"]
-        if "DD_SHOT"     in os.environ: del os.environ["DD_SHOT"]
-        if "DD_WORKAREA" in os.environ: del os.environ["DD_WORKAREA"]
+        # Else if it is a path, derive the level from the path
+        elif os.path.exists(os.path.expandvars(level_or_path)):
+            config = env.configuration.replace(level=prez.Level.derive(level_or_path))
 
-    version = getVersionToBeLoaded(package_name)
-    path = locateNearestDistribution(package_name, version, platform)
+        # Else assume it is a level spec
+        else:
+            config = env.configuration.replace(level=prez.Level.parse(level_or_path.upper()))
 
-    # Restore original environment
-    os.environ.clear()
-    os.environ.update(_environ)
+    # Else just use the current configuration
+    else:
+        config = env.configuration
 
-    return path
+    # Get the environment for the updated configuration
+    env = prez.Environment.forConfiguration(config)
+
+    # Return the path to the resolved distribution
+    return env.resolveDistribution(package_name).path
 
 
 def _get_install_locations(path):

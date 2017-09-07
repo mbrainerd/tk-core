@@ -345,7 +345,7 @@ class ConfigurationResolver(object):
         # 1. windows/linux/mac path
         # 2. descriptor
         # 3. sg_descriptor
-        project_name = shotgun_pc_data["project"]["name"] if shotgun_pc_data["project"] is not None else None
+        project_name = shotgun_pc_data["project"]["name"] if shotgun_pc_data["project"] is not None else 'site'
         pc_path = pipelineconfig_utils.get_config_install_location(project_name)
 
         # Create an installed descriptor

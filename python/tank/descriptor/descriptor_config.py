@@ -181,8 +181,8 @@ class ConfigDescriptor(Descriptor):
             else:
                 return path_to_python
         else:
-            log.info("No interpreter file for the current platform found at '%s'." % interpreter_config_file)
-            log.info("Using current python interpreter: '%s'" % sys.executable)
+            log.debug("No interpreter file for the current platform found at '%s'." % interpreter_config_file)
+            log.debug("Using current python interpreter: '%s'" % sys.executable)
             return sys.executable
 
     def _get_roots_data(self):

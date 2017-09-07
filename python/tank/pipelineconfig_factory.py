@@ -74,7 +74,7 @@ def _from_entity(entity_type, entity_id, force_reread_shotgun_cache):
                         "enabled project." % (entity_type, entity_id))
 
     # We use the project name for path resolution
-    project_name = project_info["name"]
+    project_name = project_info.get("name", "site")
 
     # Get the path to the pipeline configuration for this path
     pc_path = pipelineconfig_utils.get_config_install_location(project_name)
