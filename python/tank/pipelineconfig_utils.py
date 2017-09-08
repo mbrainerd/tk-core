@@ -379,9 +379,8 @@ def get_package_install_location(package_name, level_or_path=None):
     env = prez.Environment.current()
 
     # HACK: First check if there is an override for this package until #99460 is resolved
-    spec = os.environ.get("DD_WITH_OVERRIDE", "")
-    withList = [x.split("=", 1) for x in spec.split(",") if x != ""]
-    withOverrides = dict((d[0], d[1]) for d in withList if len(d) > 1)
+    spec = os.environ.get("DD_WITH_OVERRIDE") or ""
+    withOverrides = dict(x.partition("=")[::2] for x in spec.split(",") if x != "")
     if withOverrides.get(package_name):
         package_version = prez.Version.parse(withOverrides[package_name])
         return env.getDistribution(package_name, package_version).path
