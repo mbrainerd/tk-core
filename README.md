@@ -4,7 +4,7 @@ This repository is a clone of the official Shotgun Pipeline Toolkit Core API rep
 
 ## Shotgun Reference Documentation and Release Notes
 
-For our *latest released API Documentation*, head over to the Toolkit App Store:
+For the *latest official released API Documentation*, head over to the Toolkit App Store:
 https://support.shotgunsoftware.com/entries/95441257
 
 Release Notes for the Core API are also maintained as a wiki document
