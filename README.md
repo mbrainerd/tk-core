@@ -1,6 +1,6 @@
 # Overview
 
-This repository is a clone of the official Shotgun Pipeline Toolkit Core API repository with DD-specific modifications.
+This repository is a forked clone of the official Shotgun Pipeline Toolkit Core API repository with DD-specific modifications.
 
 ## Shotgun Reference Documentation and Release Notes
 
