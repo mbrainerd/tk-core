@@ -15,7 +15,8 @@ from ...errors import TankError
 from .base import Folder
 from .entity import Entity
 from .util import translate_filter_tokens, resolve_shotgun_filters
-
+from ...template import TemplatePath
+from ...templatekey import StringKey
 
 class Static(Folder):
     """
@@ -92,9 +93,7 @@ class Static(Folder):
     def __init__(self, parent, full_path, metadata, tk, create_with_parent, constrain_node, constraints_filter):
         """
         Constructor.
-        """
-        Folder.__init__(self, parent, full_path, metadata)
-        
+        """        
         # The name parameter represents the folder name that will be created in the file system.
         self._name = os.path.basename(full_path)
         
@@ -104,6 +103,26 @@ class Static(Folder):
         self._tk = tk
         
         self._cached_sg_data = {}
+
+        Folder.__init__(self, parent, full_path, metadata)
+
+    def _create_template_key(self):
+        """
+        TemplateKey creation implementation. Implemented by all subclasses.
+        """
+        return None
+
+    def _create_template_path(self):
+        """
+        Template path creation implementation. Implemented by all subclasses.
+        
+        Should return a TemplatePath object for the path of form: "{Project}/{Sequence}/{Shot}/user/{user_workspace}/{Step}"
+        """
+        template_path = self._name
+        if self._parent:
+            template_path = os.path.join(str(self._parent.template_path), template_path)
+
+        return TemplatePath(template_path, self.template_keys, self.get_storage_root(), self.name)
     
     def is_dynamic(self):
         """
