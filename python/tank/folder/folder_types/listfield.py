@@ -13,8 +13,6 @@ import copy
 
 from ...errors import TankError
 from ...util import shotgun_entity
-from ...template import TemplatePath
-from ...templatekey import StringKey
 
 from .base import Folder
 from .expression_tokens import FilterExpressionToken
@@ -55,6 +53,9 @@ class ListField(Folder):
         """
         Constructor
         """
+
+        Folder.__init__(self, parent, full_path, metadata)
+        
         self._tk = tk
         self._entity_type = entity_type
         self._create_with_parent = create_with_parent 
@@ -70,30 +71,7 @@ class ListField(Folder):
         sg_fields = self._field_expr_obj.get_shotgun_fields()
         # get the first element of the returned set
         self._field_name = list(sg_fields)[0]
-
-        Folder.__init__(self, parent, full_path, metadata)
-
-    def _create_template_key(self):
-        """
-        TemplateKey creation implementation. Implemented by all subclasses.
-        """
-        return StringKey(self._field_name,
-                         shotgun_entity_type=self._entity_type,
-                         shotgun_field_name=self._field_name
-                        )
-
-    def _create_template_path(self):
-        """
-        TemplatePath creation implementation. Implemented by all subclasses.
         
-        Should return a TemplatePath object for the path of form: "{Project}/{Sequence}/{Shot}/user/{user_workspace}/{Step}"
-        """
-        template_path = "{%s}" % self._field_name
-        if self._parent:
-            template_path = os.path.join(str(self._parent.template_path), template_path)
-
-        return TemplatePath(template_path, self.template_keys, self.get_storage_root(), self.name)
-
     def _should_item_be_processed(self, engine_str, is_primary):
         """
         Checks if this node should be processed, given its deferred status.        

@@ -54,7 +54,6 @@ class FolderConfiguration(object):
         Constructor
         """
         self._tk = tk
-        self._folders = []
         
         # access shotgun nodes by their entity_type
         self._entity_nodes_by_type = {}
@@ -77,12 +76,6 @@ class FolderConfiguration(object):
         Returns all the nodes representing a particular sg entity type
         """
         return self._entity_nodes_by_type.get(entity_type, [])
-
-    def get_folders(self):
-        """
-        Returns a list of associated folder objs
-        """
-        return self._folders
 
     def get_task_step_nodes(self):
         """
@@ -241,9 +234,6 @@ class FolderConfiguration(object):
             # store it in our lookup tables
             self._entity_nodes_by_type["Project"].append(project_obj)
 
-            # Add to the global list of folders
-            self._folders.append(project_obj)
-
             # recursively process the rest
             self._process_config_r(project_obj, project_folder)
 
@@ -264,6 +254,12 @@ class FolderConfiguration(object):
                 if node_type == "shotgun_entity":
                     cur_node = Entity.create(self._tk, parent_node, full_path, metadata)
 
+                    # put it into our list where we group entity nodes by entity type
+                    et = cur_node.get_entity_type()
+                    if et not in self._entity_nodes_by_type:
+                        self._entity_nodes_by_type[et] = []
+                    self._entity_nodes_by_type[et].append(cur_node)
+
                 elif node_type == "shotgun_list_field":
                     cur_node = ListField.create(self._tk, parent_node, full_path, metadata)
 
@@ -283,14 +279,6 @@ class FolderConfiguration(object):
                 else:
                     # don't know this metadata
                     raise TankError("Error in %s. Unknown metadata type '%s'" % (full_path, node_type))
-
-                # put it into our list where we group entity nodes by entity type
-                if hasattr(cur_node, 'get_entity_type'):
-                    et = cur_node.get_entity_type()
-                    if et not in self._entity_nodes_by_type:
-                        self._entity_nodes_by_type[et] = []
-                    self._entity_nodes_by_type[et].append(cur_node)
-
             else:
                 # no metadata - so this is just a static folder!
                 # specify the type in the metadata chunk for completeness
@@ -300,9 +288,6 @@ class FolderConfiguration(object):
             # and process children
             self._process_config_r(cur_node, full_path)
 
-            # Add to the global list of folders
-            self._folders.append(cur_node)
-
         # process symlinks
         for (path, target, metadata) in self._get_symlinks_in_folder(parent_path):
             parent_node.add_symlink(path, target, metadata)
@@ -311,3 +296,15 @@ class FolderConfiguration(object):
         # now process all files and add them to the parent_node token
         for f in self._get_files_in_folder(parent_path):
             parent_node.add_file(f)
+
+
+
+
+
+
+
+
+
+
+
+

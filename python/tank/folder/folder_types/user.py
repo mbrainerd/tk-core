@@ -8,12 +8,8 @@
 # agreement to the Shotgun Pipeline Toolkit Source Code License. All rights 
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
-import os
-
 from ...util import login
 from ...errors import TankError
-from ...template import TemplatePath
-from ...templatekey import StringKey
 
 from .entity import Entity
 from .util import translate_filter_tokens
@@ -71,27 +67,6 @@ class UserWorkspace(Entity):
                         field_name_expression, 
                         entity_filter, 
                         create_with_parent=True)
-
-    def _create_template_key(self):
-        """
-        TemplateKey creation implementation. Implemented by all subclasses.
-        """
-        return StringKey("login",
-                         shotgun_entity_type=self._entity_type,
-                         shotgun_field_name="login"
-                        )
-
-    def _create_template_path(self):
-        """
-        Template path creation implementation. Implemented by all subclasses.
-        
-        Should return a TemplatePath object for the path of form: "{Project}/{Sequence}/{Shot}/user/{user_workspace}/{Step}"
-        """
-        template_path = self._field_name
-        if self._parent:
-            template_path = os.path.join(str(self._parent.template_path), template_path)
-
-        return TemplatePath(template_path, self.template_keys, self.get_storage_root(), self.name)
         
     def create_folders(self, io_receiver, path, sg_data, is_primary, explicit_child_list, engine):
         """

@@ -24,7 +24,7 @@ from .util import login
 from .util import shotgun_entity
 from .util import shotgun
 from . import constants
-from .errors import TankError, TankContextDeserializationError, TankMultipleMatchingTemplatesError
+from .errors import TankError, TankContextDeserializationError
 from .path_cache import PathCache
 from .template import TemplatePath
 from . import LogManager
@@ -1400,8 +1400,7 @@ def from_path(tk, path, previous_context=None):
     entities = []
     secondary_entities = []
     curr_path = path
-    entities_from_template = []
-    folder_obj = None
+    entities_from_template = False
     while True:
         curr_entity = path_cache.get_entity(curr_path)
         if curr_entity:
@@ -1411,62 +1410,22 @@ def from_path(tk, path, previous_context=None):
         else:
             log.debug("Entry missing from path_cache: '%s'" % curr_path)
 
-            if not folder_obj:
-                # Check if we can parse the path using a schema configuration folder object
-                try:
-                    folder_obj = tk.schema_folder_from_path(curr_path)
-                except TankMultipleMatchingTemplatesError, e:
-                    log.warning(str(e))
-                    log.debug("Cannot find a schema folder matching path '%s'" % curr_path)
-                    pass
-
-            if folder_obj:
-                # Since we are processing the path in descending order, its safe to
-                # just process this once and avoid hitting SG more than we need to.
-                if len(entities_from_template) == 0:
+            # Since we are processing the path in descending order, its safe to
+            # just process this once and avoid hitting SG more than we need to.
+            if not entities_from_template:
+                # Check if we can parse the path using a template
+                template = tk.template_from_path(curr_path)
+                if template is not None:
                     # Get the embedded entities from the path
                     log.debug("Getting entities from path template")
-                    entities = folder_obj.template_path.get_entities(tk, curr_path)
-
-                    entities_from_template.extend(entities)
-                    entities.extend(entities)
-
-                # Create a new entry for entity folders
-                if hasattr(folder_obj, 'get_entity_type'):
-
-                    # Get the entity this directory should be associated with
-                    entity_type = folder_obj.get_entity_type()
-
-                    if len(entities_from_template) == 0:
-                        log.warning("Cannot create path_cache entry for '%s': %s" % (entity_type, curr_path))
-
-                    else:
-                        entities_by_type = dict((x["type"], x) for x in entities_from_template)
-                        if entity_type not in entities_by_type:
-                            raise TankError("Entity type '%s' missing from path: %s" % (entity_type, curr_path))
-
-                        entity = _build_clean_entity(entities_by_type[entity_type])
-                        entity_id = entity["id"]
-            
-                        db_entries = [{ "entity": entity, 
-                                        "path": curr_path,
-                                        "primary": True, 
-                                        "metadata": folder_obj.get_metadata()
-                                     }]
-
-                        # validate the data before we push it into the database. 
-                        # to properly cover some edge cases        
-                        try:
-                            path_cache.validate_mappings(db_entries)
-                        except TankError, e:
-                            raise TankError("path_cache population aborted: %s" % e)
-
-                        log.debug("Adding path_cache mapping %s(%s): %s" % (entity_type, entity_id, curr_path))
-                        path_cache.add_mappings(db_entries, entity_type, [entity_id])
-
-                        # Use the parent folder obj as the next folder obj
-                        folder_obj = folder_obj.get_parent()                    
-
+                    try:
+                        entities.extend(template.get_entities(curr_path, additional_types))
+                        entities_from_template = True
+                    except TankError, e:
+                        log.warning(str(e))
+                        log.debug("Could not get entities from path '%s' for template '%s'" % (curr_path, template))
+                        pass
+        
         # add secondary entities
         secondary_entities.extend( path_cache.get_secondary_entities(curr_path) )
 
