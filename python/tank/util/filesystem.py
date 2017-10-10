@@ -23,6 +23,9 @@ from .. import LogManager
 
 log = LogManager.get_logger(__name__)
 
+# DD
+from ..dd_utils import dd_jstools_utils
+
 
 def with_cleared_umask(func):
     """
@@ -123,8 +126,12 @@ def ensure_folder_exists(path, permissions=0775, create_placeholder_file=False):
     """
     if not os.path.exists(path):
         try:
-            os.makedirs(path, permissions)
-
+            # os.makedirs(path, permissions)
+            # Use JSTOOLS instead.
+            dd_jstools_utils.makedir_with_jstools(path, permissions)
+            # this returns a success-bool, but no need to use it here (in this 'try')
+            # If success=False, the "placeholder" code here will fail with an IOError -
+            # so the second "except" was also added
             if create_placeholder_file:
                 ph_path = os.path.join(path, "placeholder")
                 if not os.path.exists(ph_path):
@@ -143,7 +150,8 @@ def ensure_folder_exists(path, permissions=0775, create_placeholder_file=False):
             if e.errno != errno.EEXIST:
                 # re-raise
                 raise
-
+        except IOError:
+            raise
 
 @with_cleared_umask
 def copy_file(src, dst, permissions=0666):
@@ -225,7 +233,9 @@ def copy_folder(src, dst, folder_permissions=0775, skip_list=None):
     files = []
 
     if not os.path.exists(dst):
-        os.mkdir(dst, folder_permissions)
+        # os.mkdir(dst, folder_permissions)
+        # Use JSTOOLS instead.
+        dd_jstools_utils.makedir_with_jstools(dst, folder_permissions)
 
     names = os.listdir(src)
     for name in names:
@@ -352,7 +362,7 @@ def get_permissions(path):
     given path.
 
     :param filename: Path to the file to be queried for permissions
-    :returns: permissions bits of the file 
+    :returns: permissions bits of the file
     :raises: OSError - if there was a problem retrieving permissions for the path
     """
     return stat.S_IMODE(os.stat(path)[stat.ST_MODE])
@@ -360,10 +370,10 @@ def get_permissions(path):
 def safe_delete_folder(path):
     """
     Deletes a folder and all of its contents recursively, even if it has read-only
-    items. 
+    items.
 
     .. note::
-        Problems deleting any items will be reported as warnings in the log 
+        Problems deleting any items will be reported as warnings in the log
         output but otherwise ignored and skipped; meaning the function will continue
         deleting as much as it can.
 
@@ -374,8 +384,8 @@ def safe_delete_folder(path):
         """
         Error function called whenever shutil.rmtree fails to remove a file system
         item. Exceptions raised by this function will not be caught.
-        
-        :param func: The function which raised the exception; it will be: 
+
+        :param func: The function which raised the exception; it will be:
                      os.path.islink(), os.listdir(), os.remove() or os.rmdir().
         :param path: The path name passed to function.
         :param exc_info: The exception information return by sys.exc_info().
@@ -401,7 +411,9 @@ def safe_delete_folder(path):
             # On Windows, Python's shutil can't delete read-only files, so if we were trying to delete one,
             # remove the flag.
             # Inspired by http://stackoverflow.com/a/4829285/1074536
-            shutil.rmtree(path, onerror=_on_rm_error)
+            # shutil.rmtree(path, onerror=_on_rm_error)
+            # Use JSTOOLS instead.
+            dd_jstools_utils.delete_with_jstools(path)
         except Exception, e:
             log.warning("Could not delete %s: %s" % (path, e))
     else:

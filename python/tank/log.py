@@ -375,6 +375,43 @@ class LogManager(object):
             """
             return not self._disable_rollover and RotatingFileHandler.shouldRollover(self, record)
 
+
+    class DCCStartupLoggingHandler(logging.Handler):
+        """
+        This will intercept all log messages in the stream to allow
+        them to be emitted to the calling DCC from outside an engine.
+        This should only be used during DCC startup before the engine
+        has been initialized.
+        """
+        def __init__(self, emitter):
+            """
+            :param emitter: Emitter method to which log messages should be forwarded.
+            :type emitter: :class:`Method`
+            """
+            # avoiding super in order to be py25-compatible
+            logging.Handler.__init__(self)
+
+            self.setFormatter(logging.Formatter(
+                "[%(levelname)s %(basename)s] %(message)s"))
+
+            self._emitter = emitter
+
+        def emit(self, record):
+            """
+            Emit a log message back to the engine logging callback.
+
+            :param record: std log record to handle logging for
+            """
+            # for simplicity, add a 'basename' property to the record to
+            # only contain the leaf part of the logging name
+            # sgtk.env.asset.tk-maya -> tk-maya
+            # sgtk.env.asset.tk-maya.tk-multi-publish -> tk-multi-publish
+            record.basename = record.name.rsplit(".", 1)[-1]
+
+            # emit log message from log handler to display implementation.
+            self._emitter(self, record)
+
+
     def __new__(cls, *args, **kwargs):
         #
         # note - this init isn't currently threadsafe.

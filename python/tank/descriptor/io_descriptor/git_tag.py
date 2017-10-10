@@ -33,6 +33,10 @@ class IODescriptorGitTag(IODescriptorGit):
         https://github.com/manneohrstrom/tk-hiero-publish.git
         git://github.com/manneohrstrom/tk-hiero-publish.git
         /full/path/to/local/repo.git
+
+    Name is optional and if not specified will be determined based on git project name.
+    If name is not specified and project is git@github.com:manneohrstrom/tk-hiero-publish.git,
+    the name will set to 'tk-hiero-publish'
     """
 
     def __init__(self, descriptor_dict, bundle_type):
@@ -47,7 +51,7 @@ class IODescriptorGitTag(IODescriptorGit):
         self._validate_descriptor(
             descriptor_dict,
             required=["type", "path", "version"],
-            optional=[]
+            optional=["name"]
         )
 
         # call base class
@@ -58,6 +62,17 @@ class IODescriptorGitTag(IODescriptorGit):
         self._version = descriptor_dict.get("version")
 
         self._type = bundle_type
+
+        # if there is a name defined in the descriptor dict then lets use
+        # this, otherwise we'll fall back to the git project name:
+        self._name = descriptor_dict.get("name")
+        if not self._name:
+            # fall back to the folder name
+            bn = os.path.basename(self._path)
+
+            # git@github.com:manneohrstrom/tk-hiero-publish.git -> tk-hiero-publish
+            # /full/path/to/local/repo.git -> repo
+            self._name, _ = os.path.splitext(bn)
 
     def __str__(self):
         """
@@ -74,14 +89,10 @@ class IODescriptorGitTag(IODescriptorGit):
         :param bundle_cache_root: Bundle cache root path
         :return: Path to bundle cache location
         """
-        # git@github.com:manneohrstrom/tk-hiero-publish.git -> tk-hiero-publish.git
-        # /full/path/to/local/repo.git -> repo.git
-        name = os.path.basename(self._path)
-
         return os.path.join(
             bundle_cache_root,
             "git",
-            name,
+            self._name,
             self.get_version()
         )
 
@@ -107,15 +118,11 @@ class IODescriptorGitTag(IODescriptorGit):
         # If the bundle cache root changes across core versions, then this will
         # need to be refactored.
 
-        # git@github.com:manneohrstrom/tk-hiero-publish.git -> tk-hiero-publish.git
-        # /full/path/to/local/repo.git -> repo.git
-        name = os.path.basename(self._path)
-
         legacy_folder = self._get_legacy_bundle_install_folder(
             "git",
             self._bundle_cache_root,
             self._type,
-            name,
+            self._name,
             self.get_version()
         )
         if legacy_folder:
@@ -128,6 +135,18 @@ class IODescriptorGitTag(IODescriptorGit):
         Returns the version number string for this item, .e.g 'v1.2.3'
         """
         return self._version
+
+    def get_changelog(self):
+        """
+        Returns information about the changelog for this item.
+
+        :returns: A tuple (changelog_summary, changelog_url). Values may be None
+                  to indicate that no changelog exists.
+        """
+        summary = "placeholder"
+        url = self._path
+
+        return (summary, url)
 
     def download_local(self):
         """
@@ -151,7 +170,8 @@ class IODescriptorGitTag(IODescriptorGit):
 
         try:
             # clone the repo, checkout the given tag
-            commands = ["checkout -q \"%s\"" % self._version]
+            commands = ["checkout -q \"%s\"" % self._version,
+                        "ls-files info.yml | xargs sed -i \"s/HEAD/%s/g\"" % self._version]
             self._clone_then_execute_git_commands(target, commands)
 
         except Exception, e:

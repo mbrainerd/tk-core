@@ -8,7 +8,7 @@
 # agreement to the Shotgun Pipeline Toolkit Source Code License. All rights
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
-import sys
+import sys, os
 
 
 class ShotgunPath(object):
@@ -134,6 +134,15 @@ class ShotgunPath(object):
         windows_path = sg_dict.get("windows_path")
         linux_path = sg_dict.get("linux_path")
         macosx_path = sg_dict.get("mac_path")
+
+        # this file may contain environment variables. Try to expand these.
+        if linux_path:
+            linux_path = os.path.expandvars(linux_path)     
+        if macosx_path:
+            macosx_path = os.path.expandvars(macosx_path) 
+        if windows_path:
+            windows_path = os.path.expandvars(windows_path)
+
         return cls(windows_path, linux_path, macosx_path)
 
     @classmethod

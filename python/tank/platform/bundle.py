@@ -16,6 +16,7 @@ Base class for Abstract classes for Engines, Apps and Frameworks
 import os
 import re
 import sys
+import types
 import imp
 import uuid
 from .. import hook
@@ -1012,6 +1013,9 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default):
     # processing code to further resolve the value.
     if value and schema:
         value = _post_process_settings_r(tk, key, value, schema)
+
+    if isinstance(value, types.StringTypes):
+        value = os.path.expandvars(os.path.expanduser(value))
 
     return value
 

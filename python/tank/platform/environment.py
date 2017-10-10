@@ -212,7 +212,7 @@ class Environment(object):
         try:
             return self.__load_data(self._env_path)
         except TankUnreadableFileError:
-            logger.exception("Missing environment file:")
+            logger.exception("Missing environment file: %s" % self._env_path)
             raise TankMissingEnvironmentFile("Missing environment file: %s" % self._env_path)
 
     ##########################################################################################

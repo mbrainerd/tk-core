@@ -17,6 +17,7 @@ from __future__ import with_statement
 import os
 import re
 import sys
+import copy
 import logging
 import pprint
 import traceback
@@ -808,7 +809,7 @@ class Engine(TankBundle):
             # will repopulate the __applications dict to contain the appropriate
             # apps for the new context, and will pull apps that have already
             # been loaded from the __application_pool, which is persistent.
-            old_context = self.context
+            old_context = copy.deepcopy(self.context)
             new_engine_settings = new_env.get_engine_settings(self.__engine_instance_name)
             self.__env = new_env
             self._set_context(new_context)
@@ -820,7 +821,7 @@ class Engine(TankBundle):
             self.log_debug(
                 "Executing post_context_change for %r, changing from %r to %r." % (
                     self,
-                    self.context,
+                    old_context,
                     new_context
                 )
             )

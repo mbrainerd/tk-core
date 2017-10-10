@@ -31,6 +31,14 @@ from .. import yaml_cache
 log = LogManager.get_logger(__name__)
 
 
+def __get_api_core_hook_location():
+    """
+    Returns the path to the currently running core hooks location
+    """
+    from ...pipelineconfig_utils import get_path_to_current_core
+    core_api_root = get_path_to_current_core()
+    return os.path.join(core_api_root, "hooks")
+
 def __get_api_core_config_location():
     """
 
@@ -50,7 +58,7 @@ def __get_api_core_config_location():
     # local import to avoid cyclic references
     from ...pipelineconfig_utils import get_path_to_current_core
     core_api_root = get_path_to_current_core()
-    core_cfg = os.path.join(core_api_root, "config", "core")
+    core_cfg = os.path.join(core_api_root, "config")
 
     if not os.path.exists(core_cfg):
         path_to_file = os.path.abspath(os.path.dirname(__file__))
@@ -84,7 +92,7 @@ def get_project_name_studio_hook_location():
     # an API or set of functions which can be executed outside the remit of a 
     # pipeline configuration/Toolkit project.
     
-    core_cfg = __get_api_core_config_location()
+    core_cfg = __get_api_core_hook_location()
     path = os.path.join(core_cfg, constants.STUDIO_HOOK_PROJECT_NAME)
     return path
 
@@ -172,7 +180,7 @@ def _parse_config_data(file_data, user, shotgun_cfg_path):
         config_data = file_data
 
     # now check if there is a studio level override hook which want to refine these settings
-    sg_hook_path = os.path.join(__get_api_core_config_location(), constants.STUDIO_HOOK_SG_CONNECTION_SETTINGS)
+    sg_hook_path = os.path.join(__get_api_core_hook_location(), constants.STUDIO_HOOK_SG_CONNECTION_SETTINGS)
 
     if os.path.exists(sg_hook_path):
         # custom hook is available!
@@ -189,6 +197,9 @@ def _parse_config_data(file_data, user, shotgun_cfg_path):
 
     if not config_data.get("host"):
         _raise_missing_key("host")
+
+    # Expand the host name if variable-ized
+    config_data["host"] = os.path.expandvars(config_data["host"])
 
     # The script authentication credentials need to be complete in order to work. They can be completely
     # omitted or fully specified, but not halfway configured.

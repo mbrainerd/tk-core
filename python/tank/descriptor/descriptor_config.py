@@ -10,7 +10,8 @@
 
 from __future__ import with_statement
 
-import os
+import sys, os
+from ..util.process import subprocess_check_output, SubprocessCalledProcessError
 
 from tank_vendor import yaml
 
@@ -49,6 +50,20 @@ class ConfigDescriptor(Descriptor):
         :returns: Path value stored in the interpreter file.
         """
         raise NotImplementedError("ConfigDescriptor.python_interpreter is not implemented.")
+
+    @property
+    def version(self):
+        """
+        The version number string for this item.
+        """
+        try:
+            meta = self._get_manifest()
+            version = meta.get("version")
+            if version is None:
+                raise Exception
+        except Exception:
+            version = self._io_descriptor.get_version()
+        return version
 
     @property
     def version_constraints(self):
@@ -114,7 +129,7 @@ class ConfigDescriptor(Descriptor):
         :rtype: str
         """
         return ShotgunPath.get_file_name_from_template(
-            os.path.join(install_root, "core", "interpreter_%s.cfg")
+            os.path.join(install_root, "config", "interpreter_%s.cfg")
         )
 
     def _find_interpreter_location(self, path):
@@ -137,17 +152,29 @@ class ConfigDescriptor(Descriptor):
             with open(interpreter_config_file, "r") as f:
                 path_to_python = f.read().strip()
 
-            if not path_to_python or not os.path.exists(path_to_python):
+            if not path_to_python:
                 raise TankInvalidInterpreterLocationError(
                     "Cannot find interpreter '%s' defined in "
                     "config file '%s'." % (path_to_python, interpreter_config_file)
                 )
+
+            if not os.path.exists(path_to_python):
+                try:
+                    # Python interpreter could be a bash function
+                    subprocess_check_output("type {0}".format(path_to_python), shell=True)
+                except SubprocessCalledProcessError:
+                    raise TankInvalidInterpreterLocationError(
+                        "Cannot find interpreter '%s' defined in "
+                        "config file '%s'." % (path_to_python, interpreter_config_file)
+                    )
+                else:
+                    return path_to_python
             else:
                 return path_to_python
         else:
-            raise TankFileDoesNotExistError(
-                "No interpreter file for the current platform found at '%s'." % interpreter_config_file
-            )
+            log.debug("No interpreter file for the current platform found at '%s'." % interpreter_config_file)
+            log.debug("Using current python interpreter: '%s'" % sys.executable)
+            return sys.executable
 
     def _get_roots_data(self):
         """
@@ -159,7 +186,6 @@ class ConfigDescriptor(Descriptor):
         # get the roots definition
         root_file_path = os.path.join(
             self._get_config_folder(),
-            "core",
             constants.STORAGE_ROOTS_FILE)
 
         roots_data = {}

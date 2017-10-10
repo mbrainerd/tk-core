@@ -30,6 +30,7 @@ from ..descriptor.descriptor_installed_config import InstalledConfigDescriptor
 from ..util import filesystem
 from ..util import ShotgunPath
 from ..util import LocalFileStorageManager
+from .. import pipelineconfig_utils
 from .. import LogManager
 from . import constants
 
@@ -99,7 +100,22 @@ class ConfigurationResolver(object):
             # convert to dict so we can introspect
             config_descriptor = descriptor_uri_to_dict(config_descriptor)
 
-        if config_descriptor["type"] == constants.BAKED_DESCRIPTOR_TYPE:
+        if config_descriptor["type"] == constants.INSTALLED_DESCRIPTOR_TYPE:
+
+            config_path = os.path.expanduser(os.path.expandvars(config_descriptor["path"]))
+            if not os.path.exists(config_path):
+                raise TankBootstrapError(
+                    "Installed pipeline configuration '%s' does not exist on disk!" % (config_path,)
+                )
+
+            cfg_descriptor = create_descriptor(
+                sg_connection,
+                Descriptor.INSTALLED_CONFIG,
+                dict(path=config_path, type="path"),
+                fallback_roots=self._bundle_cache_fallback_paths,
+                resolve_latest=False
+            )
+        elif config_descriptor["type"] == constants.BAKED_DESCRIPTOR_TYPE:
             # special case -- this is a full configuration scaffold that
             # has been pre-baked and can be used directly at runtime
             # without having to do lots of copying into temp space.
@@ -165,9 +181,9 @@ class ConfigurationResolver(object):
                 resolve_latest=resolve_latest
             )
 
-            return self._create_configuration_from_descriptor(
-                cfg_descriptor, sg_connection, pc_id=None
-            )
+        return self._create_configuration_from_descriptor(
+            cfg_descriptor, sg_connection, pc_id=None
+        )
 
     def _create_configuration_from_descriptor(self, cfg_descriptor, sg_connection, pc_id):
         """
@@ -290,7 +306,7 @@ class ConfigurationResolver(object):
         log.debug(pprint.pformat(filters))
 
         pipeline_configs = sg_connection.find(
-            "PipelineConfiguration",
+            constants.PIPELINE_CONFIGURATION_ENTITY_TYPE,
             filters,
             self._PIPELINE_CONFIG_FIELDS,
             order=[{"field_name": "id", "direction": "asc"}]
@@ -307,40 +323,11 @@ class ConfigurationResolver(object):
             # operations to remove those if desired.
             #
 
-            path = ShotgunPath.from_shotgun_dict(pipeline_config)
-            # If we have a plugin based pipeline.
-            if (
-                self._match_plugin_id(pipeline_config.get("plugin_ids")) or
-                self._match_plugin_id(pipeline_config.get("sg_plugin_ids"))
-            ):
-
-                # If a location was specified to get access to that pipeline, return it. Note that
-                # we are potentially returning pipeline configurations that have been configured for
-                # one platform but not all.
-                if pipeline_config.get("descriptor") or pipeline_config.get("sg_descriptor") or path:
-                    # Create a descriptor only if the pipeline is valid.
-                    pipeline_config["config_descriptor"] = self._create_config_descriptor(
-                        sg_connection, pipeline_config
-                    )
-                    yield pipeline_config
-                else:
-                    log.warning(
-                        "Pipeline configuration's 'path' and 'descriptor' "
-                        "fields are not set: %s" % pipeline_config
-                    )
-            elif self._is_classic_pc(pipeline_config):
-                # We have a classic pipeline, those only supported the path fields.
-                # If a location was specified to get access to that pipeline, return it. Note that
-                # we are potentially returning pipeline configurations that have been configured for
-                # one platform but not all.
-                if path:
-                    # Create a descriptor only if the pipeline is valid.
-                    pipeline_config["config_descriptor"] = self._create_config_descriptor(
-                        sg_connection, pipeline_config
-                    )
-                    yield pipeline_config
-                else:
-                    log.debug("Pipeline configuration's 'path' fields are not set: %s" % pipeline_config)
+            # Create a descriptor only if the pipeline is valid.
+            pipeline_config["config_descriptor"] = self._create_config_descriptor(
+                sg_connection, pipeline_config
+            )
+            yield pipeline_config
 
     def _create_config_descriptor(self, sg_connection, shotgun_pc_data):
         """
@@ -358,55 +345,16 @@ class ConfigurationResolver(object):
         # 1. windows/linux/mac path
         # 2. descriptor
         # 3. sg_descriptor
-        path = ShotgunPath.from_shotgun_dict(shotgun_pc_data)
+        project_name = shotgun_pc_data["project"]["name"] if shotgun_pc_data["project"] is not None else 'site'
+        pc_path = pipelineconfig_utils.get_config_install_location(project_name)
 
-        if path:
-            if shotgun_pc_data.get("descriptor") or shotgun_pc_data.get("sg_descriptor"):
-                log.debug(
-                    "Fields for path based and descriptor based pipeline configuration are both "
-                    "set on pipeline configuration %s. Using path based field.", shotgun_pc_data["id"])
-
-            # Make sure that the config has a path for the current OS.
-            if path.current_os is None:
-                log.debug("Config isn't setup for %s: %s", sys.platform, shotgun_pc_data)
-                cfg_descriptor = None
-            else:
-                # Create an installed descriptor
-                descriptor_dict = path.as_shotgun_dict()
-                descriptor_dict["type"] = "path"
-                cfg_descriptor = create_descriptor(
-                    sg_connection,
-                    Descriptor.INSTALLED_CONFIG,
-                    descriptor_dict,
-                    fallback_roots=self._bundle_cache_fallback_paths,
-                )
-        elif shotgun_pc_data.get("descriptor"):
-            if shotgun_pc_data.get("sg_descriptor"):
-                log.debug(
-                    "Both sg_descriptor and descriptor fields are set on pipeline configuration "
-                    "%s. Using descriptor field.", shotgun_pc_data["id"]
-                )
-
-            cfg_descriptor = create_descriptor(
-                sg_connection,
-                Descriptor.CONFIG,
-                shotgun_pc_data.get("descriptor"),
-                fallback_roots=self._bundle_cache_fallback_paths,
-                resolve_latest=is_descriptor_version_missing(shotgun_pc_data.get("descriptor"))
-            )
-        elif shotgun_pc_data.get("sg_descriptor"):
-            cfg_descriptor = create_descriptor(
-                sg_connection,
-                Descriptor.CONFIG,
-                shotgun_pc_data.get("sg_descriptor"),
-                fallback_roots=self._bundle_cache_fallback_paths,
-                resolve_latest=is_descriptor_version_missing(shotgun_pc_data.get("sg_descriptor"))
-            )
-        else:
-            # If we have neither a uri, nor a path, then we can't get
-            # a descriptor for this config.
-            log.debug("No uri or path found for config: %s", shotgun_pc_data)
-            cfg_descriptor = None
+        # Create an installed descriptor
+        cfg_descriptor = create_descriptor(
+            sg_connection,
+            Descriptor.INSTALLED_CONFIG,
+            dict(path=pc_path, type="path"),
+            fallback_roots=self._bundle_cache_fallback_paths,
+        )
 
         if cfg_descriptor is None:
             log.debug("Unable to create descriptor for config: %s", shotgun_pc_data)
@@ -669,7 +617,7 @@ class ConfigurationResolver(object):
 
             # Fetch the one and only config that matches this id.
             pipeline_config = sg_connection.find_one(
-                "PipelineConfiguration",
+                constants.PIPELINE_CONFIGURATION_ENTITY_TYPE,
                 [
                     ["id", "is", pipeline_config_identifier],
                 ],

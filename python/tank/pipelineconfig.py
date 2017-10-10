@@ -24,6 +24,7 @@ from . import constants
 from .platform.environment import InstalledEnvironment, WritableEnvironment
 from .util import shotgun, yaml_cache
 from .util import ShotgunPath
+from .util import LocalFileStorageManager
 from . import hook
 from . import pipelineconfig_utils
 from . import template_includes
@@ -63,6 +64,9 @@ class PipelineConfiguration(object):
         """
         self._pc_root = pipeline_configuration_path
 
+        # To cover a very stupid use case
+        os.environ["TANK_CURRENT_PC"] = self._pc_root
+
         # validate that the current code version matches or is compatible with
         # the code that is locally stored in this config!!!!
         our_associated_api_version = self.get_associated_core_version()
@@ -88,13 +92,13 @@ class PipelineConfiguration(object):
                             "which is associated with this configuration." % (current_api_version, 
                                                                               current_api_path, 
                                                                               our_associated_api_version, 
-                                                                              self.get_install_location()))            
+                                                                              self.get_core_root_location()))            
 
         self._roots = pipelineconfig_utils.get_roots_metadata(self._pc_root)
 
         # get the project tank disk name (Project.tank_name),
         # stored in the pipeline config metadata file.
-        pipeline_config_metadata = self._get_metadata()
+        pipeline_config_metadata = pipelineconfig_utils.get_metadata(self._pc_root)
         self._project_name = pipeline_config_metadata.get("project_name")
         self._project_id = pipeline_config_metadata.get("project_id")
         self._pc_id = pipeline_config_metadata.get("pc_id")
@@ -116,7 +120,7 @@ class PipelineConfiguration(object):
             self._bundle_cache_root_override = None
         else:
             # use cache relative to core install
-            self._bundle_cache_root_override = os.path.join(self.get_install_location(), "install")
+            self._bundle_cache_root_override = pipelineconfig_utils.get_package_install_location("sgtk_apps")
 
         if pipeline_config_metadata.get("bundle_cache_fallback_roots"):
             self._bundle_cache_fallback_paths = pipeline_config_metadata.get("bundle_cache_fallback_roots")
@@ -235,40 +239,8 @@ class PipelineConfiguration(object):
     def __repr__(self):
         return "<Sgtk Configuration %s>" % self._pc_root
 
-    ########################################################################################
-    # handling pipeline config metadata
-    
-    def _get_metadata(self):
-        """
-        Loads the pipeline config metadata (the pipeline_configuration.yml) file from disk.
-        
-        :param pipeline_config_path: path to a pipeline configuration root folder
-        :returns: deserialized content of the file in the form of a dict.
-        """
-    
-        # now read in the pipeline_configuration.yml file
-        cfg_yml = os.path.join(
-            self.get_config_location(),
-            "core",
-            constants.PIPELINECONFIG_FILE
-        )
-    
-        if not os.path.exists(cfg_yml):
-            raise TankError("Configuration metadata file '%s' missing! "
-                            "Please contact support." % cfg_yml)
-    
-        fh = open(cfg_yml, "rt")
-        try:
-            data = yaml.load(fh)
-            if data is None:
-                raise Exception("File contains no data!")
-        except Exception, e:
-            raise TankError("Looks like a config file is corrupt. Please contact "
-                            "support! File: '%s' Error: %s" % (cfg_yml, e))
-        finally:
-            fh.close()
-    
-        return data
+########################################################################################
+# handling pipeline config metadata
     
     def _update_metadata(self, updates):
         """
@@ -277,7 +249,7 @@ class PipelineConfiguration(object):
         :param updates: Dictionary of values to update in the pipeline configuration
         """
         # get current settings
-        curr_settings = self._get_metadata()
+        curr_settings = pipelineconfig_utils.get_metadata(self._pc_root)
         
         # apply updates to existing cache
         curr_settings.update(updates)
@@ -285,7 +257,6 @@ class PipelineConfiguration(object):
         # write the record to disk
         pipe_config_sg_id_path = os.path.join(
             self.get_config_location(),
-            "core",
             constants.PIPELINECONFIG_FILE
         )
         
@@ -320,12 +291,13 @@ class PipelineConfiguration(object):
         self._pc_id = curr_settings.get("pc_id")
         self._pc_name = curr_settings.get("pc_name")
 
+
     def _populate_yaml_cache(self):
         """
         Loads pickled yaml_cache items if they are found and merges them into
         the global YamlCache.
         """
-        cache_file = os.path.join(self._pc_root, "yaml_cache.pickle")
+        cache_file = os.path.join(self.get_cache_location(), "yaml_cache.pickle")
         if not os.path.exists(cache_file):
             return
 
@@ -627,12 +599,12 @@ class PipelineConfiguration(object):
 
         :returns: version str e.g. 'v1.2.3', None if no version could be determined. 
         """
-        associated_api_root = self.get_install_location()
+        associated_api_root = self.get_core_root_location()
         return pipelineconfig_utils.get_core_api_version(associated_api_root)
 
-    def get_install_location(self):
+    def get_core_root_location(self):
         """
-        Returns the core api install location associated with this pipeline configuration.
+        Returns the core api root location associated with this pipeline configuration.
 
         Tries to resolve it via the explicit link which exists between
         the pipeline config and the its core. If this fails, it uses
@@ -648,13 +620,42 @@ class PipelineConfiguration(object):
         
         return core_api_root
 
+    def get_core_install_location(self):
+        """
+        Returns the core api install location associated with this pipeline configuration.
+
+        Tries to resolve it via the explicit link which exists between
+        the pipeline config and the its core. If this fails, it uses
+        runtime introspection to resolve it.
+        
+        :returns: path string to the current core API install root location
+        """
+        return os.path.join(self.get_core_root_location(), "")
+
     def get_core_python_location(self):
         """
         Returns the python root for this install.
         
         :returns: path string
         """
-        return os.path.join(self.get_install_location(), "install", "core", "python")
+        return pipelineconfig_utils.get_core_python_path_for_config(self._pc_root)
+
+    def get_documentation_url(self):
+        """
+        Returns a url pointing at relevant documentation for the version of the Toolkit Core
+        associated with this pipeline configuration.
+        """
+        # read this from info.yml
+        info_yml_path = os.path.join(self.get_core_install_location(), constants.BUNDLE_METADATA_FILE)
+        try:
+            data = yaml_cache.g_yaml_cache.get(info_yml_path, deepcopy_data=False)
+            data = str(data.get("documentation_url"))
+            if data == "":
+                data = None
+        except Exception:
+            data = None
+
+        return data
 
     ########################################################################################
     # descriptors and locations
@@ -852,22 +853,6 @@ class PipelineConfiguration(object):
     ########################################################################################
     # configuration disk locations
 
-    def get_core_hooks_location(self):
-        """
-        Returns the path to the core hooks location
-        
-        :returns: path string
-        """
-        return os.path.join(self._pc_root, "config", "core", "hooks")
-
-    def get_schema_config_location(self):
-        """
-        Returns the location of the folder schema
-        
-        :returns: path string
-        """
-        return os.path.join(self._pc_root, "config", "core", "schema")
-
     def get_config_location(self):
         """
         Returns the config folder for the project
@@ -882,7 +867,35 @@ class PipelineConfiguration(object):
         
         :returns: path string
         """
-        return os.path.join(self._pc_root, "config", "hooks")
+        return os.path.join(self.get_config_location(), "hooks")
+
+    def get_core_hooks_location(self):
+        """
+        Returns the path to the core hooks location
+        
+        :returns: path string
+        """
+        return os.path.join(self.get_hooks_location(), "core")
+
+    def get_schema_config_location(self):
+        """
+        Returns the location of the folder schema
+        
+        :returns: path string
+        """
+        return os.path.join(self.get_config_location(), "schema")
+
+    def get_cache_location(self):
+        """
+        return the folder where config related cache files are stored.
+        """
+        return LocalFileStorageManager.get_configuration_root(
+                        shotgun.get_sg_connection().base_url,
+                        self._project_id,
+                        self._plugin_id,
+                        self._pc_id,
+                        LocalFileStorageManager.CACHE
+                )
 
     def get_shotgun_menu_cache_location(self):
         """
@@ -891,7 +904,8 @@ class PipelineConfiguration(object):
         
         :returns: path string
         """
-        return os.path.join(self._pc_root, "cache")
+        return os.path.join(self.get_cache_location, "menu")
+
 
     ########################################################################################
     # configuration data access
@@ -900,7 +914,7 @@ class PipelineConfiguration(object):
         """
         Returns a list with all the environments in this configuration.
         """
-        env_root = os.path.join(self._pc_root, "config", "env")
+        env_root = os.path.join(self.get_config_location(), "env")
         env_names = []
         for f in glob.glob(os.path.join(env_root, "*.yml")):
             file_name = os.path.basename(f)
@@ -933,17 +947,15 @@ class PipelineConfiguration(object):
         :param env_name:    The name of the environment.
         :returns:           String path to the environment yaml file.
         """
-        return os.path.join(self._pc_root, "config", "env", "%s.yml" % env_name)
+        return os.path.join(self.get_config_location(), "env", "%s.yml" % env_name)
     
     def get_templates_config(self):
         """
         Returns the templates configuration as an object
         """
         templates_file = os.path.join(
-            self._pc_root,
-            "config",
-            "core",
-            constants.CONTENT_TEMPLATES_FILE,
+            self.get_config_location(),
+            constants.CONTENT_TEMPLATES_FILE
         )
 
         try:
@@ -979,7 +991,7 @@ class PipelineConfiguration(object):
             # no custom hook detected in the pipeline configuration
             # fall back on the hooks that come with the currently running version
             # of the core API.
-            hooks_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "hooks"))
+            hooks_path = os.path.abspath(os.path.join(self.get_core_install_location(), "hooks"))
             hook_path = os.path.join(hooks_path, file_name)
         else:
             # some hooks are always custom. ignore those and log the rest.
@@ -1019,7 +1031,7 @@ class PipelineConfiguration(object):
         
         # first add the built-in core hook to the chain
         file_name = "%s.py" % hook_name
-        hooks_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "hooks"))
+        hooks_path = os.path.abspath(os.path.join(self.get_core_install_location(), "hooks"))
         hook_paths = [os.path.join(hooks_path, file_name)]
 
         # the hook.method display name used when logging the metric
@@ -1048,5 +1060,3 @@ class PipelineConfiguration(object):
             raise
 
         return return_value
-
-

@@ -325,9 +325,10 @@ def check_for_updates(log,
     for x in processed_items:
         if x["was_updated"]:
 
-            summary.append("%s was updated from %s to %s" % (x["new_descriptor"],
+            summary.append("%s was updated from %s to %s in %s" % (x["new_descriptor"].system_name,
                                                              x["old_descriptor"].version,
-                                                             x["new_descriptor"].version))
+                                                             x["new_descriptor"].version,
+                                                             x["env_name"].name))
             (_, url) = x["new_descriptor"].changelog
             if url:
                 summary.append("Change Log: %s" % url)
@@ -508,6 +509,7 @@ def _process_item(log, suppress_prompts, tk, env, engine_name=None, app_name=Non
     updated_items = []
 
     if status["can_update"]:
+        curr_descriptor = status["current"]
         new_descriptor = status["latest"]
 
         required_framework_updates = _get_framework_requirements(
@@ -519,13 +521,13 @@ def _process_item(log, suppress_prompts, tk, env, engine_name=None, app_name=Non
         # print summary of changes
         console_utils.format_bundle_info(
             log,
+            curr_descriptor,
             new_descriptor,
             required_framework_updates,
         )
         
         # ask user
         if suppress_prompts or console_utils.ask_question("Update to the above version?"):
-            curr_descriptor = status["current"]            
             _update_item(log, 
                          suppress_prompts, 
                          tk, 
@@ -542,9 +544,9 @@ def _process_item(log, suppress_prompts, tk, env, engine_name=None, app_name=Non
             # the proper functioning of the bundle that was just updated.
             # This will be due to a minimum-required version setting for
             # the bundle in its info.yml that isn't currently satisfied.
-            for fw_name in required_framework_updates:
+            for data in required_framework_updates:
                 updated_items.extend(
-                    _process_item(log, True, tk, env, framework_name=fw_name)
+                    _process_item(log, True, tk, env, framework_name=data[0])
                 )
 
             item_was_updated = True
@@ -615,7 +617,7 @@ def _check_item_update_status(environment_obj, engine_name=None, app_name=None, 
 
 
     # out of date check
-    out_of_date = (latest_desc.version != curr_desc.version)
+    out_of_date = is_version_newer(latest_desc.version, curr_desc.version)
     
     # check deprecation
     (is_dep, dep_msg) = latest_desc.deprecation_status
@@ -724,7 +726,7 @@ def _get_framework_requirements(log, environment, descriptor):
             )
 
         if is_version_newer(min_version, env_fw_version):
-            frameworks_to_update.append(name)
+            frameworks_to_update.append((name, env_fw_version, min_version))
 
     return frameworks_to_update
 

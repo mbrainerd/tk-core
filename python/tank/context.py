@@ -27,6 +27,9 @@ from . import constants
 from .errors import TankError, TankContextDeserializationError
 from .path_cache import PathCache
 from .template import TemplatePath
+from . import LogManager
+
+log = LogManager.get_logger(__name__)
 
 
 class Context(object):
@@ -62,7 +65,7 @@ class Context(object):
 
     def __init__(
         self, tk, project=None, entity=None, step=None, task=None, user=None,
-        additional_entities=None, source_entity=None
+         parent_entities=None, additional_entities=None, source_entity=None
     ):
         """
         Context objects are not constructed by hand but are fabricated by the
@@ -75,6 +78,7 @@ class Context(object):
         self.__step = step
         self.__task = task
         self.__user = user
+        self.__parent_entities = parent_entities or {}
         self.__additional_entities = additional_entities or []
         self.__source_entity = source_entity
         self._entity_fields_cache = {}
@@ -88,6 +92,7 @@ class Context(object):
         msg.append("  Task: %s" % str(self.__task))
         msg.append("  User: %s" % str(self.__user))
         msg.append("  Shotgun URL: %s" % self.shotgun_url)
+        msg.append("  Parent Entities: %s" % str(self.__parent_entities))
         msg.append("  Additional Entities: %s" % str(self.__additional_entities))
         msg.append("  Source Entity: %s" % str(self.__source_entity))
         
@@ -191,6 +196,10 @@ class Context(object):
         
         if not _entity_dicts_eq(self.task, other.task):
             return False
+
+        # compare parent entities
+        if self.parent_entities != other.parent_entities:
+            return False
         
         # compare additional entities
         if self.additional_entities and other.additional_entities:
@@ -237,6 +246,7 @@ class Context(object):
         ctx_copy.__step = copy.deepcopy(self.__step, memo)
         ctx_copy.__task = copy.deepcopy(self.__task, memo)
         ctx_copy.__user = copy.deepcopy(self.__user, memo)        
+        ctx_copy.__parent_entities = copy.deepcopy(self.__parent_entities, memo)
         ctx_copy.__additional_entities = copy.deepcopy(self.__additional_entities, memo)
         ctx_copy.__source_entity = copy.deepcopy(self.__source_entity, memo)
         
@@ -366,6 +376,16 @@ class Context(object):
                                "id": user.get("id"), 
                                "name": user.get("name")}
         return self.__user
+
+    @property
+    def parent_entities(self):
+        """
+        List of parent entities that are required to provide a full context.
+
+        :returns: A list of std shotgun link dictionaries.
+                  Will be an empty list in most cases.
+        """
+        return self.__parent_entities
 
     @property
     def additional_entities(self):
@@ -585,6 +605,12 @@ class Context(object):
         if self.project:
             entities["Project"] = self.project
 
+        # If there are any parent entities, use them as long as they don't
+        # conflict with types we already have values for (Step, Task, Shot/Asset/etc)
+        for par_entity in self.parent_entities.values():
+            if par_entity["type"] not in entities:
+                entities[par_entity["type"]] = par_entity
+
         # If there are any additional entities, use them as long as they don't
         # conflict with types we already have values for (Step, Task, Shot/Asset/etc)
         for add_entity in self.additional_entities:
@@ -707,6 +733,7 @@ class Context(object):
             "user": self.user,
             "step": self.step,
             "task": self.task,
+            "parent_entities": self.parent_entities,
             "additional_entities": self.additional_entities,
             "source_entity": self.source_entity,
             "_pc_path": self.tank.pipeline_configuration.get_path()
@@ -1102,6 +1129,7 @@ def _from_entity_type_and_id(tk, entity, source_entity=None):
         "step": None,
         "user": None,
         "task": None,
+        "parent_entities": {},
         "additional_entities": [],
         "source_entity": source_entity,
     }
@@ -1110,6 +1138,13 @@ def _from_entity_type_and_id(tk, entity, source_entity=None):
         # For tasks get data from shotgun query
         task_context = _task_from_sg(tk, entity_id)
         context.update(task_context)
+
+        # Get any parent entities
+        if "entity" in context:
+            cache_content = _context_data_from_cache(tk, context["entity"]["type"], context["entity"]["id"])
+
+            # Populate from path cache with non-None values
+            context.update((k,v) for k,v in cache_content.iteritems() if v is not None)
 
     elif entity_type in ["PublishedFile", "TankPublishedFile"]:
         
@@ -1206,6 +1241,7 @@ def _from_entity_dictionary(tk, entity_dictionary, source_entity=None):
         "step": None,
         "user": None,
         "task": None,
+        "parent_entities": {},
         "additional_entities": [],
         "source_entity": copy.deepcopy(source_entity or entity_dictionary),
     }
@@ -1266,27 +1302,6 @@ def _from_entity_dictionary(tk, entity_dictionary, source_entity=None):
             project = entity["project"]
 
     if not fallback_to_ctx_from_entity:
-        # clean up entities and populate context structure:
-        def _build_clean_entity(ent):
-            """
-            Ensure entity has id, type and name fields and build a clean
-            entity dictionary containing just those fields to return, stripping
-            out all other fields.
-
-            :param ent: The entity dictionary to build a clean dictionary from
-            :returns:   A clean entity dictionary containing just 'type', 'id' 
-                        and 'name' if all three exist in the input dictionary
-                        or None if they don't.
-            """
-            # make sure we have id, type and name:
-            if "id" not in ent or "type" not in ent:
-                return None
-            ent_name = _get_entity_name(ent)
-            if ent_name == None:
-                return None
-            # return a clean dictionary:
-            return {"type":ent["type"], "id":ent["id"], "name":ent_name}
-        
         if project:
             context["project"] = _build_clean_entity(project)
             if not context["project"]:
@@ -1324,6 +1339,13 @@ def _from_entity_dictionary(tk, entity_dictionary, source_entity=None):
             task_context = _task_from_sg(tk, task["id"], additional_fields)
             context.update(task_context)
 
+    # Get any cache data
+    if context["entity"]:
+        cache_content = _context_data_from_cache(tk, context["entity"]["type"], context["entity"]["id"])
+
+        # Populate from path cache with non-None values
+        context.update((k,v) for k,v in cache_content.iteritems() if v is not None)
+
     return Context(**context)
 
 def from_path(tk, path, previous_context=None):
@@ -1351,6 +1373,7 @@ def from_path(tk, path, previous_context=None):
         "step": None,
         "user": None,
         "task": None,
+        "parent_entities": {},
         "additional_entities": []
     }
 
@@ -1367,12 +1390,31 @@ def from_path(tk, path, previous_context=None):
     entities = []
     secondary_entities = []
     curr_path = path
+    entities_from_template = False
     while True:
         curr_entity = path_cache.get_entity(curr_path)
         if curr_entity:
             # Don't worry about entity types we've already got in the context. In the future
             # we should look for entity ids that conflict in order to flag a degenerate schema.
             entities.append(curr_entity)
+        else:
+            log.debug("Entry missing from path_cache: '%s'" % curr_path)
+
+            # Since we are processing the path in descending order, its safe to
+            # just process this once and avoid hitting SG more than we need to.
+            if not entities_from_template:
+                # Check if we can parse the path using a template
+                template = tk.template_from_path(curr_path)
+                if template is not None:
+                    # Get the embedded entities from the path
+                    log.debug("Getting entities from path template")
+                    try:
+                        entities.extend(template.get_entities(curr_path, additional_types))
+                        entities_from_template = True
+                    except TankError, e:
+                        log.warning(str(e))
+                        log.debug("Could not get entities from path '%s' for template '%s'" % (curr_path, template))
+                        pass
         
         # add secondary entities
         secondary_entities.extend( path_cache.get_secondary_entities(curr_path) )
@@ -1397,53 +1439,73 @@ def from_path(tk, path, previous_context=None):
     # go from the root down, so that in the case there are a path with
     # multiple entities (like PROJECT/SEQUENCE/SHOT), the last entry
     # is the most relevant one, and will be assigned as the entity
-    for curr_entity in entities[::-1]:
+    for curr_entity in entities:
         # handle the special context fields first
         if curr_entity["type"] == "Project":
-            context["project"] = curr_entity
+            context["project"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] == "Step":
-            context["step"] = curr_entity
+            context["step"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] == "Task":
-            context["task"] = curr_entity
+            context["task"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] == "HumanUser":
-            context["user"] = curr_entity
+            context["user"] = _build_clean_entity(curr_entity)
         elif curr_entity["type"] in additional_types:
-            context["additional_entities"].append(curr_entity)
+            context["additional_entities"].append(_build_clean_entity(curr_entity))
+        elif not context["entity"]:
+            context["entity"] = _build_clean_entity(curr_entity)
         else:
-            context["entity"] = curr_entity
+            # We need to hard code the hierarchy... :/ Sequence-->Shot-->Asset
+            if curr_entity["type"] == "Asset":
+                context["parent_entities"][context["entity"]["type"]] = context["entity"]
+                context["entity"] = _build_clean_entity(curr_entity)
+
+            elif curr_entity["type"] == "Shot":
+                if context["entity"]["type"] == "Asset":
+                    context["parent_entities"][curr_entity["type"]] = _build_clean_entity(curr_entity)
+
+                elif context["entity"]["type"] == "Sequence":
+                    context["parent_entities"][context["entity"]["type"]] = context["entity"]
+                    context["entity"] = _build_clean_entity(curr_entity)
+
+            elif curr_entity["type"] == "Sequence":
+                context["parent_entities"][curr_entity["type"]] = _build_clean_entity(curr_entity)
+
+            else:
+                raise TankError("Unknown entity type '%s'" % curr_entity["type"])
 
     # now that the context has been populated as much as possible using the
     # primary entities, fill in any blanks based on the secondary entities.
-    for curr_entity in secondary_entities[::-1]:
+    for curr_entity in secondary_entities:
         # handle the special context fields first
         if curr_entity["type"] == "Project":
             if context["project"] is None:
-                context["project"] = curr_entity
+                context["project"] = _build_clean_entity(curr_entity)
         
         elif curr_entity["type"] == "Step":
             if context["step"] is None:
-                context["step"] = curr_entity
+                context["step"] = _build_clean_entity(curr_entity)
         
         elif curr_entity["type"] == "Task":
             if context["task"] is None:
-                context["task"] = curr_entity
+                context["task"] = _build_clean_entity(curr_entity)
         
         elif curr_entity["type"] == "HumanUser":
             if context["user"] is None:
-                context["user"] = curr_entity
+                context["user"] = _build_clean_entity(curr_entity)
         
         elif curr_entity["type"] in additional_types:
             # is this entity in the list already
             if curr_entity not in context["additional_entities"]:            
-                context["additional_entities"].append(curr_entity)
+                context["additional_entities"].append(_build_clean_entity(curr_entity))
         
         else:
             if context["entity"] is None:
-                context["entity"] = curr_entity
+                context["entity"] = _build_clean_entity(curr_entity)
 
     # see if we can populate it based on the previous context
     if previous_context and \
        context.get("entity") == previous_context.entity and \
+       context.get("parent_entities") == previous_context.parent_entities and \
        context.get("additional_entities") == previous_context.additional_entities:
 
         # cool, everything is matching down to the step/task level.
@@ -1461,6 +1523,28 @@ def from_path(tk, path, previous_context=None):
     if context["project"] and context["entity"] and context["entity"]["type"] == "Project":
         # remove double entry!
         context["entity"] = None
+
+    # DD-specific hack: If "Step" is not defined in the path, look for DD_ROLE
+    # in the environment and use that for a lookup instead
+    # Only process step if there is a project
+    if context["entity"] and not context["step"]:
+        dd_role = os.environ.get("DD_ROLE", None)
+        if dd_role:
+
+            # We probably don't want to have corresponding subrole pipeline steps, so
+            # treat subroles the same as primary roles by removing the suffix
+            dd_role = dd_role.split('_')[0]
+
+            # Filter step entity by the parent entity type
+            sg_filters = [["entity_type", "is", context["entity"]["type"]]]
+
+            try:
+                step_entity = shotgun.get_entity(dd_role, "Step", sg_filters)
+                context["step"] = _build_clean_entity(step_entity)
+            except TankError:
+                log.warning("Unable to get Step '%s' for %s '%s' for Path '%s'" \
+                        % (dd_role, context["entity"]["type"], context["entity"]["name"], path))
+                pass
 
     return Context(**context)
 
@@ -1509,6 +1593,7 @@ def context_yaml_representer(dumper, context):
         "user": context.user,
         "step": context.step,
         "task": context.task,
+        "parent_entities": context.parent_entities,
         "additional_entities": context.additional_entities
     }
     
@@ -1562,9 +1647,11 @@ def _get_entity_type_sg_name_field(entity_type):
     :param entity_type:     The entity type to get the name field for
     :returns:               The name field for the specified entity type
     """
-    return {"HumanUser":"name", 
+    return {    "HumanUser": "login", 
             "Task":"content", 
-            "Project":"name"}.get(entity_type, "code")
+                "Project":   "name",
+                "Step":      "short_name"
+            }.get(entity_type, "code")
 
 def _get_entity_name(entity_dictionary):
     """
@@ -1582,6 +1669,26 @@ def _get_entity_name(entity_dictionary):
         if name_field != "name":
             entity_name = entity_dictionary.get("name")
     return entity_name
+
+def _build_clean_entity(ent):
+    """
+    Ensure entity has id, type and name fields and build a clean
+    entity dictionary containing just those fields to return, stripping
+    out all other fields.
+
+    :param ent: The entity dictionary to build a clean dictionary from
+    :returns:   A clean entity dictionary containing just 'type', 'id'
+               and 'name' if all three exist in the input dictionary
+               or None if they don't.
+    """
+    # make sure we have id, type and name:
+    if "id" not in ent or "type" not in ent:
+       return None
+    ent_name = _get_entity_name(ent)
+    if ent_name == None:
+       return None
+    # return a clean dictionary:
+    return {"type":ent["type"], "id":ent["id"], "name":ent_name}
 
 def _task_from_sg(tk, task_id, additional_fields = None):
     """
@@ -1695,6 +1802,7 @@ def _context_data_from_cache(tk, entity_type, entity_id):
 
     # Set entity info for input entity
     context["entity"] = {"type": entity_type, "id": entity_id}
+    context["parent_entities"] = {}
 
     # Map entity types to context fields
     types_fields = {"Project": "project",
@@ -1748,7 +1856,9 @@ def _context_data_from_cache(tk, entity_type, entity_id):
                 cur_type = curr_entity["type"]
                 if cur_type in types_fields:
                     field_name = types_fields[cur_type]
-                    context[field_name] = curr_entity
+                    context[field_name] = _build_clean_entity(curr_entity)
+                else:
+                    context["parent_entities"][curr_entity["type"]] = _build_clean_entity(curr_entity)
 
     path_cache.close()
     return context

@@ -21,6 +21,7 @@ from . import templatekey
 from .errors import TankError
 from . import constants
 from .template_path_parser import TemplatePathParser
+from .util import shotgun
 
 class Template(object):
     """
@@ -526,6 +527,113 @@ class TemplatePath(Template):
         if parent_definition:
             return TemplatePath(parent_definition, self.keys, self.root_path, None, self._per_platform_roots)
         return None
+
+
+    def get_entities(self, input_path, additional_types=None, skip_keys=None):
+        """
+        Extracts a list of entities from a string that can be used for building a context. Example:
+
+            >>> input_path = '/studio_root/sgtk/demo_project_1/sequences/seq_1/shot_2/comp/dirk.gently'
+            >>> template_path.get_entities(input_path)
+
+            [{'type': 'Project',   'id': 10, 'name': 'demo_project_1'},
+             {'type': 'Shot',      'id': 60, 'code': 'shot_2'},
+             {'type': 'Step',      'id': 14, 'code': 'comp'},
+             {'type': 'HumanUser', 'id': 23, 'name': 'Dirk Gently'}]
+        
+        :param input_path: Source path for values
+        :type input_path: String
+        :param additional_types: Optional additional types to search for
+        :type additional_types: List
+        :param skip_keys: Optional keys to skip
+        :type skip_keys: List
+
+        :returns: Values found in the path based on keys in template
+        :rtype: Dictionary
+        """
+        entities = []
+
+        sg_filters = []
+
+        # Get fields parsed from the path
+        path_fields = self.get_fields(input_path, skip_keys)
+
+        # Get the project name separately since it isn't typically parsed by get_fields
+        path_fields["Project"] = os.path.basename(self.root_path)
+
+        def _get_entity_from_key(key, sg_filters, sg_type=None):
+            """
+            Helper function to get a Shotgun entity from a given path field key
+            """
+            # Set sg_type to key if its not set
+            sg_type = sg_type if sg_type else key
+
+            entity = None
+            if key in path_fields:
+                sg_name = path_fields[key]
+                entity = shotgun.get_entity(sg_name, sg_type, sg_filters)
+
+            return entity
+
+        # Get the user from the login key if its been parsed
+        user_entity = _get_entity_from_key("login", sg_filters, "HumanUser")
+        if user_entity:
+            entities.append(user_entity)
+
+        # Search for any additional requested entity types
+        for key in additional_types:
+            entity = _get_entity_from_key(key, sg_filters)
+            if entity:
+                entities.append(entity)
+
+        # Get the project entity
+        proj_entity = _get_entity_from_key("Project", sg_filters)
+        if proj_entity:
+            entities.append(proj_entity)
+
+            # Filter all further entities by this project
+            sg_filters.append(["project", "is", proj_entity])
+        else:
+            # We can't resolve anything else if we're outside a project
+            return entities
+
+        # Get the sequence entity if defined
+        seq_entity = _get_entity_from_key("Sequence", sg_filters)
+        if seq_entity:
+
+            # Append the sequence entity
+            entities.append(seq_entity)
+
+            # Filter shot-level entity by this sequence
+            shot_filters = sg_filters + [["sg_sequence", "is", seq_entity]]
+
+            # Get the shot entity if defined
+            shot_entity = _get_entity_from_key("Shot", shot_filters)
+            if shot_entity:
+                entities.append(shot_entity)
+
+        # Get the asset type if defined
+        if "sg_asset_type" in path_fields:
+            # Filter asset-level entity by this asset type (optional)
+            asset_type = path_fields["sg_asset_type"]
+            asset_filters = sg_filters + [["sg_asset_type", "is", asset_type]]
+        else:
+            asset_filters = sg_filters
+
+        # Get the asset entity if defined
+        asset_entity = _get_entity_from_key("Asset", asset_filters)
+        if asset_entity:
+            entities.append(asset_entity)
+
+        # Filter step entity by the parent entity type
+        step_filters = [["entity_type", "is", entities[-1]["type"]]]
+
+        step_entity = _get_entity_from_key("Step", step_filters)
+        if step_entity:
+            entities.append(step_entity)
+
+        return entities
+
 
     def _apply_fields(self, fields, ignore_types=None, platform=None):
         """
