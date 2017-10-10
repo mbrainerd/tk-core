@@ -13,6 +13,8 @@ import copy
 
 from ...errors import TankError
 from ...util import shotgun_entity
+from ...template import TemplatePath
+from ...templatekey import StringKey
 
 from .errors import EntityLinkTypeMismatch
 from .base import Folder
@@ -81,25 +83,46 @@ class Entity(Folder):
         (e.g. the FilterExpressionToken object). Tank will resolve any Token fields prior to 
         passing the filter to Shotgun for evaluation.
         """
-        
-        # the schema name is the same as the SG entity type
-        Folder.__init__(self, parent, full_path, metadata)
-        
         self._tk = tk
         self._entity_type = entity_type
-        self._entity_expression = shotgun_entity.EntityExpression(self._tk, self._entity_type, field_name_expression)
+        self._field_name = field_name_expression
+        self._entity_expression = shotgun_entity.EntityExpression(self._tk, self._entity_type, self._field_name)
         self._filters = filters
-        self._create_with_parent = create_with_parent    
+        self._create_with_parent = create_with_parent
+
+        # the schema name is the same as the SG entity type
+        Folder.__init__(self, parent, full_path, metadata)
+
+    def _create_template_key(self):
+        """
+        TemplateKey creation implementation. Implemented by all subclasses.
+        """
+        return StringKey(self._entity_type,
+                         shotgun_entity_type=self._entity_type,
+                         shotgun_field_name=self._field_name
+                        )
+
+    def _create_template_path(self):
+        """
+        Template path creation implementation. Implemented by all subclasses.
+        
+        Should return a TemplatePath object for the path of form: "{Project}/{Sequence}/{Shot}/user/{user_workspace}/{Step}"
+        """
+        template_path = "{%s}" % self._entity_type
+        if self._parent:
+            template_path = os.path.join(str(self._parent.template_path), template_path)
+
+        return TemplatePath(template_path, self.template_keys, self.get_storage_root(), self.name)
     
     def __get_name_field_for_et(self, entity_type):
         """
         return the special name field for a given entity
         """
-        spec_name_fields = {"Project": "name", "Task": "content", "HumanUser": "name"}
-        if entity_type in spec_name_fields:
-            return spec_name_fields[entity_type]
-        else:
-            return "code"
+        return {    "HumanUser": "login", 
+                    "Task":      "content", 
+                    "Project":   "name",
+                    "Step":      "short_name"
+                }.get(entity_type, "code")
     
     def get_entity_type(self):
         """
