@@ -16,12 +16,15 @@ Management of file and directory templates.
 import os
 import re
 import sys
+import copy
 
 from . import templatekey
 from .errors import TankError
 from . import constants
 from .template_path_parser import TemplatePathParser
-from .util import shotgun
+from . import LogManager
+
+log = LogManager.get_logger(__name__)
 
 class Template(object):
     """
@@ -112,6 +115,9 @@ class Template(object):
         else:
             return "<Sgtk %s %s>" % (class_name, self._repr_def)
 
+    def __str__(self):
+        return self._definitions[0]
+
     @property
     def definition(self):
         """
@@ -120,6 +126,15 @@ class Template(object):
         # Use first definition as it should be most inclusive in case of variations
         return self._definitions[0]
 
+    @property
+    def static_tokens(self):
+        """
+        A list of static tokens for the first definition
+        as it should be the most inclusive in case of variations
+
+        :returns: a list of strings
+        """
+        return [y for x in self._static_tokens[0] for y in x.split(self._token) if y]
 
     @property
     def keys(self):
@@ -328,8 +343,6 @@ class Template(object):
 
         return definitions
 
-
-
     def _fix_key_names(self, definition, keys):
         """
         Substitutes key name for name used in definition
@@ -492,6 +505,7 @@ class TemplatePath(Template):
         super(TemplatePath, self).__init__(definition, keys, name=name)
         self._prefix = root_path
         self._per_platform_roots = per_platform_roots
+        self._token = os.path.sep
 
         # Make definition use platform separator
         for index, rel_definition in enumerate(self._definitions):
@@ -529,7 +543,7 @@ class TemplatePath(Template):
         return None
 
 
-    def get_entities(self, input_path, additional_types=None, skip_keys=None):
+    def get_entities(self, tk, input_path, skip_keys=None):
         """
         Extracts a list of entities from a string that can be used for building a context. Example:
 
@@ -548,43 +562,57 @@ class TemplatePath(Template):
         :param skip_keys: Optional keys to skip
         :type skip_keys: List
 
-        :returns: Values found in the path based on keys in template
-        :rtype: Dictionary
+        :returns: A list of entity dictionaries
+        :rtype: List
         """
         entities = []
-
         sg_filters = []
+        processed_keys = []
 
         # Get fields parsed from the path
         path_fields = self.get_fields(input_path, skip_keys)
 
-        # Get the project name separately since it isn't typically parsed by get_fields
-        path_fields["Project"] = os.path.basename(self.root_path)
+        if "Project" not in path_fields:
+            # Get the project name separately since it isn't typically parsed by get_fields
+            path_fields["Project"] = os.path.basename(self.root_path)
 
-        def _get_entity_from_key(key, sg_filters, sg_type=None):
+        def _get_entity_from_key(key_name, sg_filters):
             """
             Helper function to get a Shotgun entity from a given path field key
             """
-            # Set sg_type to key if its not set
-            sg_type = sg_type if sg_type else key
+            processed_keys.append(key_name)
 
-            entity = None
-            if key in path_fields:
-                sg_name = path_fields[key]
-                entity = shotgun.get_entity(sg_name, sg_type, sg_filters)
+            if key_name not in path_fields:
+                return None
+
+            if key_name not in self.keys:
+                log.warning("Cannot find TemplateKey for '%s'. Skipping..." % key_name)
+                return None
+
+            key = self.keys[key_name]
+            value = path_fields[key_name]
+
+            # Only process this key if it is an entity field
+            if not key.shotgun_field_name:
+                return None
+
+            entity_type = key.shotgun_entity_type
+            field_name  = key.shotgun_field_name
+
+            filters = sg_filters + [[field_name, "is", value]]
+            fields = ["type", "id", field_name]
+
+            entity = tk.shotgun.find_one(entity_type, filters, fields)
+            if entity is None:
+                raise TankError("Cannot find %s Entity: '%s' in Shotgun using filter: %s"
+                        % (entity_type, value, filters))
 
             return entity
 
         # Get the user from the login key if its been parsed
-        user_entity = _get_entity_from_key("login", sg_filters, "HumanUser")
+        user_entity = _get_entity_from_key("login", sg_filters)
         if user_entity:
             entities.append(user_entity)
-
-        # Search for any additional requested entity types
-        for key in additional_types:
-            entity = _get_entity_from_key(key, sg_filters)
-            if entity:
-                entities.append(entity)
 
         # Get the project entity
         proj_entity = _get_entity_from_key("Project", sg_filters)
@@ -612,13 +640,19 @@ class TemplatePath(Template):
             if shot_entity:
                 entities.append(shot_entity)
 
+                # Filter further asset entities by this shot
+                sg_filters += [["sg_shot", "is", shot_entity]]
+            else:
+                # Filter further asset entities by this sequence
+                sg_filters += [["sg_sequence", "is", seq_entity]]
+
         # Get the asset type if defined
+        asset_filters = copy.deepcopy(sg_filters)
         if "sg_asset_type" in path_fields:
-            # Filter asset-level entity by this asset type (optional)
+            # Filter asset entities by this asset type (optional)
             asset_type = path_fields["sg_asset_type"]
-            asset_filters = sg_filters + [["sg_asset_type", "is", asset_type]]
-        else:
-            asset_filters = sg_filters
+            asset_filters += [["sg_asset_type", "is", asset_type]]
+            processed_keys.append("sg_asset_type")
 
         # Get the asset entity if defined
         asset_entity = _get_entity_from_key("Asset", asset_filters)
@@ -631,6 +665,19 @@ class TemplatePath(Template):
         step_entity = _get_entity_from_key("Step", step_filters)
         if step_entity:
             entities.append(step_entity)
+
+        # Now process the remaining fields
+        for key_name in path_fields.keys():
+            # Skip the ones we processed manually
+            if key_name in processed_keys:
+                continue
+
+            entity = tk.execute_core_hook("template_additional_entities",
+                                          key_name=key_name,
+                                          sg_filters=sg_filters,
+                                          query_function=_get_entity_from_key)
+            if entity:
+                entities.append(entity)
 
         return entities
 
@@ -715,6 +762,7 @@ class TemplateString(Template):
         super(TemplateString, self).__init__(definition, keys, name=name)
         self.validate_with = validate_with
         self._prefix = "@"
+        self._token = "_"
 
         # split by format strings the definition string into tokens 
         self._static_tokens = []
