@@ -482,7 +482,7 @@ def main():
         splash.show()
 
         # Initialize shotgun authenticator and ensure we login as a human user
-        core_dm = sgtk.util.CoreDefaultsManager(mask_script_user=True)
+        core_dm = sgtk.authentication.CoreDefaultsManager(mask_script_user=True)
         shotgun_authenticator = sgtk.authentication.ShotgunAuthenticator(core_dm)
         user = shotgun_authenticator.get_user()
         if user.are_credentials_expired():
