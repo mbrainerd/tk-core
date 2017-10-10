@@ -35,6 +35,8 @@ class Folder(object):
         self._parent = parent
         self._files = []
         self._symlinks = []
+        self._template_key = self._create_template_key()
+        self._template_path = self._create_template_path()
         
         if self._parent:
             # add me to parent's child list
@@ -42,7 +44,10 @@ class Folder(object):
 
     def __repr__(self):
         class_name = self.__class__.__name__
-        return "<%s %s>" % (class_name, self._full_path)
+        return "<%s Folder %s: %s>" % (class_name, self.name, self._template_path)
+
+    def __str__(self):
+        return str(self._template_path)
             
     ###############################################################################################
     # public methods
@@ -59,6 +64,50 @@ class Folder(object):
         Returns the path on disk to this configuration item
         """
         return self._full_path
+
+    @property
+    def name(self):
+        """
+        Return a unique name for this folder object
+        """
+        base_dir = os.path.join(self._tk.pipeline_configuration.get_path(), "config")
+        return os.path.relpath(self._full_path, base_dir).replace(os.path.sep, "_").lower() + "_dir"
+
+    @property
+    def template_keys(self):
+        """
+        Returns a dict of template keys for this folder and all parent folders
+        """
+        template_keys = {}
+        if self._template_key:
+            template_keys[self._template_key.name] = self._template_key
+
+        if self._parent:
+            template_keys.update(self._parent.template_keys)
+
+        return template_keys
+
+    @property
+    def template_path(self):
+        """
+        Returns the template path for this configuration item
+        """
+        return self._template_path
+
+    def get_storage_root(self):
+        """
+        Returns the storage root path for this configuration item
+        """
+        if self._parent:
+            return self._parent.get_storage_root()
+
+        return None
+
+    def get_metadata(self):
+        """
+        Returns the folder object's metadata
+        """
+        return self._config_metadata
             
     def get_parent(self):
         """
@@ -219,6 +268,20 @@ class Folder(object):
         Folder creation implementation. Implemented by all subclasses.
         
         Should return a list of tuples. Each tuple is a path + a matching shotgun data dictionary
+        """
+        raise NotImplementedError
+
+    def _create_template_key(self):
+        """
+        TemplateKey creation implementation. Implemented by all subclasses.
+        """
+        raise NotImplementedError
+
+    def _create_template_path(self):
+        """
+        Template path creation implementation. Implemented by all subclasses.
+        
+        Should return a TemplatePath object for the path of form: "{Project}/{Sequence}/{Shot}/user/{user_workspace}/{Step}"
         """
         raise NotImplementedError
     

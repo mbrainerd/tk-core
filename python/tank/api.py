@@ -332,7 +332,7 @@ class Sgtk(object):
         
     def template_from_path(self, path):
         """
-        Finds a template that matches the given path::
+        Finds a template that matches the given path:
 
             >>> import sgtk
             >>> tk = sgtk.sgtk_from_path("/studio/project_root")
@@ -353,17 +353,88 @@ class Sgtk(object):
         elif len(matched_templates) == 1:
             return matched_templates.pop()
         else:
-            # ambiguity!
-            # We're erroring out anyway, take the time to create helpful debug info!
-            matched_fields = []
+            # First check to see how many static tokens match
+            templates_by_token_num = {}
             for template in matched_templates:
-                matched_fields.append(template.get_fields(path))
+                num_tokens = len(template.static_tokens)
+                if num_tokens in templates_by_token_num:
+                    templates_by_token_num[num_tokens].append(template)
+                else:
+                    templates_by_token_num[num_tokens] = [template]
 
-            msg = "%d templates are matching the path '%s'.\n" % (len(matched_templates), path)
-            msg += "The overlapping templates are:\n"
-            for fields, template in zip(matched_fields, matched_templates):
-                msg += "%s\n%s\n" % (template, fields)
-            raise TankMultipleMatchingTemplatesError(msg)
+            # Get the template(s) with the max number of static tokens
+            max_token_templates = templates_by_token_num[sorted(templates_by_token_num.keys())[-1]]
+
+            # The template with the most matched static tokens wins
+            if len(max_token_templates) == 1:
+                return max_token_templates[0]
+            else:
+                # ambiguity!
+                # We're erroring out anyway, take the time to create helpful debug info!
+                matched_fields = []
+                for template in max_token_templates:
+                    matched_fields.append(template.get_fields(path))
+
+                msg = "%d templates are matching the path '%s'.\n" % (len(max_token_templates), path)
+                msg += "The overlapping templates are:\n"
+                for fields, template in zip(matched_fields, max_token_templates):
+                    msg += "%r\n%s\n" % (template, fields)
+                raise TankMultipleMatchingTemplatesError(msg)
+
+    def schema_folder_from_path(self, path):
+        """
+        Finds a schema configuration folder that matches the given path:
+
+            >>> import sgtk
+            >>> tk = sgtk.sgtk_from_path("/studio/project_root")
+            >>> tk.schema_folder_from_path("/studio/my_proj/assets/Car/Anim/work")
+            <Folder "{Project}/{Sequence}/{Shot}/user/{user_workspace}/{Step}">
+
+
+        :param path: Path to match against a schema configuraiton folder
+        :returns: :class:`Folder` or derived class or None if no match could be found.
+        """
+        # create schema builder
+        schema_cfg_folder = self.pipeline_configuration.get_schema_config_location()
+        config = folder.configuration.FolderConfiguration(self, schema_cfg_folder)
+
+        matched_folders = []
+        for folder_obj in config.get_folders():
+            if folder_obj.template_path.validate(path):
+                matched_folders.append(folder_obj)
+
+        if len(matched_folders) == 0:
+            return None
+        elif len(matched_folders) == 1:
+            return matched_folders[0]
+        else:
+            # First check to see how many static tokens match
+            folders_by_token_num = {}
+            for folder_obj in matched_folders:
+                num_tokens = len(folder_obj.template_path.static_tokens)
+                if num_tokens in folders_by_token_num:
+                    folders_by_token_num[num_tokens].append(folder_obj)
+                else:
+                    folders_by_token_num[num_tokens] = [folder_obj]
+
+            # Get the folder(s) with the max number of static tokens
+            max_token_folders = folders_by_token_num[sorted(folders_by_token_num.keys())[-1]]
+
+            # The template with the most matched static tokens wins
+            if len(max_token_folders) == 1:
+                return max_token_folders[0]
+            else:
+                # ambiguity!
+                # We're erroring out anyway, take the time to create helpful debug info!
+                matched_fields = []
+                for folder_obj in max_token_folders:
+                    matched_fields.append(folder_obj.template_path.get_fields(path))
+
+                msg = "%d schema folders are matching the path '%s'.\n" % (len(max_token_folders), path)
+                msg += "The overlapping schema folders are:\n"
+                for fields, folder_obj in zip(matched_fields, max_token_folders):
+                    msg += "%r\n%s\n" % (folder_obj, fields)
+                raise TankMultipleMatchingTemplatesError(msg)
 
     def paths_from_template(self, template, fields, skip_keys=None, skip_missing_optional_keys=False):
         """
