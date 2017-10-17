@@ -498,7 +498,7 @@ def main():
                 splash, app, progress_value, message)
 
         # Get the facility level pipeline config location
-        splash.set_message("Looking up site configuration.")
+        splash.set_message("Looking up pipeline configuration.")
         pc_path = sgtk.pipelineconfig_utils.get_config_install_location()
 
         # Validate that this package is indeed a site config
