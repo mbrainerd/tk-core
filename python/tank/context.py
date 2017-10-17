@@ -765,7 +765,7 @@ class Context(object):
 
         try:
             data = pickle.loads(context_str)
-        except Exception, e:
+        except Exception as e:
             raise TankContextDeserializationError(str(e))
 
         # first get the pipeline config path out of the dict

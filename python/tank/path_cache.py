@@ -113,7 +113,14 @@ class PathCache(object):
             
             if len(table_names) == 0:
                 # we have a brand new database. Create all tables and indices
+
+                # note that because some clients are writing to NFS storage, we
+                # up the default page size somewhat (from 4k -> 8k) to improve
+                # performance. See https://sqlite.org/pragma.html#pragma_page_size
+
                 c.executescript("""
+                    PRAGMA page_size=8192;
+
                     CREATE TABLE path_cache (entity_type text, entity_id integer, entity_name text, root text, path text, primary_entity integer);
                 
                     CREATE INDEX path_cache_entity ON path_cache(entity_type, entity_id);
@@ -127,6 +134,8 @@ class PathCache(object):
                     CREATE TABLE shotgun_status (path_cache_id integer, shotgun_id integer);
                     
                     CREATE UNIQUE INDEX shotgun_status_id ON shotgun_status(path_cache_id);
+
+                    CREATE INDEX shotgun_status_shotgun_id ON shotgun_status(shotgun_id);
                     """)
                 self._connection.commit()
                 
@@ -201,7 +210,7 @@ class PathCache(object):
             if not os.path.exists(cache_folder):
                 old_umask = os.umask(0)
                 try:
-                    os.mkdir(cache_folder, 0777)
+                    os.mkdir(cache_folder, 0o777)
                 finally:
                     os.umask(old_umask)
 
@@ -211,7 +220,7 @@ class PathCache(object):
                 try:
                     fh = open(path, "wb")
                     fh.close()
-                    os.chmod(path, 0666)
+                    os.chmod(path, 0o666)
                 finally:
                     os.umask(old_umask)
 
@@ -473,7 +482,7 @@ class PathCache(object):
         
         try:    
             response = self._tk.shotgun.batch(sg_batch_data)
-        except Exception, e:
+        except Exception as e:
             raise TankError("Critical! Could not update Shotgun with folder "
                             "data. Please contact support. Error details: %s" % e)
         
@@ -513,7 +522,7 @@ class PathCache(object):
         try:
             log.debug("Creating event log entry %s" % sg_event_data)
             response = self._tk.shotgun.create("EventLogEntry", sg_event_data)
-        except Exception, e:
+        except Exception as e:
             raise TankError("Critical! Could not update Shotgun with folder data event log "
                             "history marker. Please contact support. Error details: %s" % e)            
         
@@ -595,7 +604,7 @@ class PathCache(object):
 
         try:
             tk.shotgun.batch(sg_batch_data)
-        except Exception, e:
+        except Exception as e:
             raise TankError("Shotgun reported an error while attempting to delete FilesystemLocation entities. "
                             "Please contact support. Details: %s Data: %s" % (e, sg_batch_data))
 
@@ -633,7 +642,7 @@ class PathCache(object):
 
         try:
             tk.shotgun.create("EventLogEntry", sg_event_data)
-        except Exception, e:
+        except Exception as e:
             raise TankError("Shotgun Reported an error while trying to write a Toolkit_Folders_Delete event "
                             "log entry after having successfully removed folders. Please contact support for "
                             "assistance. Error details: %s Data: %s" % (e, sg_event_data))
@@ -944,7 +953,7 @@ class PathCache(object):
         # an exception which will stop execution entirely.
         try:
             root_name, relative_path = self._separate_root(local_os_path)
-        except TankError, e:
+        except TankError as e:
             log.debug("Could not resolve storages - skipping: %s" % e)
             return None
 
