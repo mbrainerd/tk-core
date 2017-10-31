@@ -213,16 +213,6 @@ class Context(object):
         elif self.additional_entities or other.additional_entities:
             return False
 
-        if self.source_entity and other.source_entity:
-            # If the source entities do not match types and ids, then we're not equal.
-            if self.source_entity["type"] != other.source_entity["type"]:
-                return False
-            if self.source_entity["id"] != other.source_entity["id"]:
-                return False
-        elif self.source_entity or other.source_entity:
-            # If one has a source entity and the other does not, we're not equal.
-            return False
-
         # finally compare the user - this may result in a Shotgun look-up 
         # so do this last!
         if not _entity_dicts_eq(self.user, other.user):
@@ -1462,7 +1452,7 @@ def from_path(tk, path, previous_context=None):
                                      }]
 
                         # validate the data before we push it into the database. 
-                        # to properly cover some edge cases        
+                        # to properly cover some edge cases
                         try:
                             path_cache.validate_mappings(db_entries)
                         except TankError, e:
@@ -1472,7 +1462,7 @@ def from_path(tk, path, previous_context=None):
                         path_cache.add_mappings(db_entries, entity_type, [entity_id])
 
                         # Use the parent folder obj as the next folder obj
-                        folder_obj = folder_obj.get_parent()                    
+                        folder_obj = folder_obj.get_parent()
 
         # add secondary entities
         secondary_entities.extend( path_cache.get_secondary_entities(curr_path) )
