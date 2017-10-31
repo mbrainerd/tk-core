@@ -73,6 +73,13 @@ def __get_sg_config():
     
     :returns: full path to to shotgun.yml config file
     """
+    if 'SGTK_SHOTGUN_CONFIG' in os.environ:
+        path = os.path.expandvars(os.path.expanduser(os.environ['SGTK_SHOTGUN_CONFIG']))
+        if os.path.exists(path):
+            return path
+        else:
+            log.warning("Shotgun config path '%s' specified by SGTK_SHOTGUN_CONFIG does not exist." % path)
+
     core_cfg = __get_api_core_config_location()
     path = os.path.join(core_cfg, "shotgun.yml")
     return path
