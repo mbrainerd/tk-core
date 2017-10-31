@@ -247,6 +247,7 @@ class MetricsDispatchWorkerThread(Thread):
         "Launched Command",
         "Launched Software",
         "Loaded Published File",
+        "New Workfile",
         "Opened Workfile",
         "Published",
         "Saved Workfile",
