@@ -63,7 +63,7 @@ class Engine(TankBundle):
 
     _ASYNC_INVOKER, _SYNC_INVOKER = range(2)
 
-    def __init__(self, tk, context, engine_instance_name, env):
+    def __init__(self, tk, context, instance_name, env):
         """
         Engine instances are constructed by the toolkit launch process
         and various factory methods such as :meth:`start_engine`.
@@ -71,13 +71,12 @@ class Engine(TankBundle):
         :param tk: :class:`~sgtk.Sgtk` instance
         :param context: A context object to define the context on disk where the engine is operating
         :type context: :class:`~sgtk.Context`
-        :param engine_instance_name: The name of the engine as it has been defined in the environment.
+        :param instance_name: The name of the engine as it has been defined in the environment.
         :param env: An Environment object to associate with this engine.
 
         """
         
         self.__env = env
-        self.__engine_instance_name = engine_instance_name
         self.__applications = {}
         self.__application_pool = {}
         self.__shared_frameworks = {}
@@ -105,17 +104,17 @@ class Engine(TankBundle):
         self._async_invoker = None
 
         # get the engine settings
-        settings = self.__env.get_engine_settings(self.__engine_instance_name)
+        settings = self.__env.get_engine_settings(instance_name)
         
         # get the descriptor representing the engine        
-        descriptor = self.__env.get_engine_descriptor(self.__engine_instance_name)        
+        descriptor = self.__env.get_engine_descriptor(instance_name)        
 
         # create logger for this engine.
-        # log will be parented in a sgtk.env.environment_name.engine_instance_name hierarchy
-        logger = LogManager.get_logger("env.%s.%s" % (env.name, engine_instance_name))
+        # log will be parented in a sgtk.env.environment_name.instance_name hierarchy
+        logger = LogManager.get_logger("env.%s.%s" % (env.name, instance_name))
 
         # init base class
-        TankBundle.__init__(self, tk, context, settings, descriptor, env, logger)
+        TankBundle.__init__(self, tk, context, settings, instance_name, descriptor, env, logger)
 
         # create a log handler to handle log dispatch from self.log
         # (and the rest of the sgtk logging ) to the user
@@ -127,24 +126,8 @@ class Engine(TankBundle):
             LogManager().global_debug = True
             self.log_debug(
                 "Detected setting 'config/env/%s.yml:%s.debug_logging: true' "
-                "in your environment configuration. Turning on debug output." % (env.name, engine_instance_name)
+                "in your environment configuration. Turning on debug output." % (env.name, instance_name)
             )
-
-        # check that the context contains all the info that the app needs
-        validation.validate_context(descriptor, context)
-        
-        # make sure the current operating system platform is supported
-        validation.validate_platform(descriptor)
-
-        # Get the settings for the engine and then validate them
-        engine_schema = descriptor.configuration_schema
-        validation.validate_settings(
-            self.__engine_instance_name,
-            tk,
-            context,
-            engine_schema,
-            settings
-        )
         
         # set up any frameworks defined
         setup_frameworks(self, self, self.__env, descriptor)
@@ -285,6 +268,25 @@ class Engine(TankBundle):
         and the object returned may also change. Do not use outside of the core api.
         """
         return self.__env
+
+    def _get_engine_name(self):
+        """
+        Returns the bundle's engine name if available. None otherwise.
+        Convenience method to avoid try/except everywhere.
+
+        :return: The engine name or None
+        """
+        # note - this technically violates the generic nature of the bundle
+        # base class implementation because the engine member is not defined
+        # in the bundle base class (only in App and Framework, not Engine) - an
+        # engine trying to define a hook using the {engine_name} construct will
+        # therefore get an error.
+        try:
+            engine_name = self.name
+        except:
+            engine_name = None
+
+        return engine_name
 
     def __toggle_debug_logging(self):
         """
@@ -544,16 +546,6 @@ class Engine(TankBundle):
         data["disk_location"] = self.__env.disk_location
         
         return data
-
-    @property
-    def instance_name(self):
-        """
-        The instance name for this engine. The instance name
-        is the entry that is defined in the environment file.
-        
-        :returns: instance name as string, e.g. ``tk-maya``
-        """
-        return self.__engine_instance_name
 
     @property
     def apps(self):
@@ -816,10 +808,10 @@ class Engine(TankBundle):
             # apps for the new context, and will pull apps that have already
             # been loaded from the __application_pool, which is persistent.
             old_context = copy.deepcopy(self.context)
-            new_engine_settings = new_env.get_engine_settings(self.__engine_instance_name)
+            new_engine_settings = new_env.get_engine_settings(self.__instance_name)
             self.__env = new_env
-            self._set_context(new_context)
-            self._set_settings(new_engine_settings)
+            self.context = new_context
+            self.settings = new_engine_settings
             self.__load_apps(reuse_existing_apps=True, old_context=old_context)
 
             # Call the post_context_change method to allow for any engine
@@ -2327,10 +2319,10 @@ class Engine(TankBundle):
         self.__commands = dict()
         self.__register_reload_command()
 
-        for app_instance_name in self.__env.get_apps(self.__engine_instance_name):
+        for app_instance_name in self.__env.get_apps(self.__instance_name):
             # Get a handle to the app bundle.
             descriptor = self.__env.get_app_descriptor(
-                self.__engine_instance_name,
+                self.__instance_name,
                 app_instance_name,
             )
 
@@ -2343,12 +2335,12 @@ class Engine(TankBundle):
                 # get the app settings data and validate it.
                 app_schema = descriptor.configuration_schema
                 app_settings = self.__env.get_app_settings(
-                    self.__engine_instance_name,
+                    self.__instance_name,
                     app_instance_name,
                 )
 
                 # check that the context contains all the info that the app needs
-                if self.__engine_instance_name != constants.SHOTGUN_ENGINE_NAME: 
+                if self.__instance_name != constants.SHOTGUN_ENGINE_NAME: 
                     # special case! The shotgun engine is special and does not have a 
                     # context until you actually run a command, so disable the validation.
                     validation.validate_context(descriptor, self.context)
@@ -2403,10 +2395,10 @@ class Engine(TankBundle):
 
                     try:
                         # Update the app's internal context pointer.
-                        app._set_context(self.context)
+                        app.context = self.context
 
                         # Update the app settings.
-                        app._set_settings(app_settings)
+                        app.settings = app_settings
 
                         # Set the instance name.
                         app.instance_name = app_instance_name

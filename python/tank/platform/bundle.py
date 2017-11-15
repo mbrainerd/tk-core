@@ -32,7 +32,7 @@ class TankBundle(object):
     Abstract Base class for any engine, framework app etc in tank
     """
 
-    def __init__(self, tk, context, settings, descriptor, env, log):
+    def __init__(self, tk, context, settings, instance_name, descriptor, env, log):
         """
         Constructor.
 
@@ -45,15 +45,18 @@ class TankBundle(object):
         :param log: A python logger to associate with this bundle
         """
         self.__tk = tk
-        self.__context = context
-        self.__settings = settings
         self.__sg = None
         self.__cache_location = {}
         self.__module_uid = None
-        self.__descriptor = descriptor    
         self.__frameworks = {}
         self.__environment = env
         self.__log = log
+
+        # Set the internal properties
+        self.instance_name = instance_name
+        self.descriptor = descriptor
+        self.context = context
+        self.settings = settings
 
         # emit an engine started event
         tk.execute_core_hook(constants.TANK_BUNDLE_INIT_HOOK_NAME, bundle=self)
@@ -87,7 +90,7 @@ class TankBundle(object):
 
     ##########################################################################################
     # properties used by internal classes, not part of the public interface
-    
+
     @property
     def descriptor(self):
         """
@@ -98,6 +101,21 @@ class TankBundle(object):
         """
         return self.__descriptor
 
+    @descriptor.setter
+    def descriptor(self, descriptor):
+        """
+        Sets the current descriptor associated with this item.
+
+        :param descriptor: The new descriptor to associate with the bundle.
+        """
+        # try to avoid cyclical imports
+        from . import validation
+
+        # make sure the current operating system platform is supported
+        validation.validate_platform(descriptor)
+
+        self.__descriptor = descriptor
+
     @property
     def settings(self):
         """
@@ -107,6 +125,27 @@ class TankBundle(object):
         do not use in any app code. 
         """
         return self.__settings
+
+    @settings.setter
+    def settings(self, settings):
+        """
+        Sets the bundle's internal settings dictionary.
+
+        :param settings:    The new settings dict to store.
+        """
+        # try to avoid cyclical imports
+        from . import validation
+
+        # Get the settings for the engine and then validate them
+        validation.validate_settings(
+            self.__instance_name,
+            self.__tk,
+            self.__context,
+            self.__descriptor.configuration_schema,
+            settings,
+            self
+        )
+        self.__settings = settings
     
     ##########################################################################################
     # methods used by internal classes, not part of the public interface
@@ -265,6 +304,20 @@ class TankBundle(object):
         return self.get_project_cache_location(project_id)
 
     @property
+    def instance_name(self):
+        """
+        The name for this bundle instance.
+        """
+        return self.__instance_name
+
+    @instance_name.setter
+    def instance_name(self, instance_name):
+        """
+        Sets the instance name of the bundle.
+        """
+        self.__instance_name = instance_name
+
+    @property
     def context(self):
         """
         The context associated with this item.
@@ -272,6 +325,21 @@ class TankBundle(object):
         :returns: :class:`~sgtk.Context`
         """
         return self.__context
+
+    @context.setter
+    def context(self, context):
+        """
+        Sets the current context associated with this item.
+
+        :param context: The new context to associate with the bundle.
+        """
+        # try to avoid cyclical imports
+        from . import validation
+
+        # check that the context contains all the info that the app needs
+        validation.validate_context(self.__descriptor, context)
+
+        self.__context = context
 
     @property
     def context_change_allowed(self):
@@ -666,22 +734,6 @@ class TankBundle(object):
     ##########################################################################################
     # internal helpers
 
-    def _set_context(self, new_context):
-        """
-        Sets the current context associated with this item.
-
-        :param new_context: The new context to associate with the bundle.
-        """
-        self.__context = new_context
-
-    def _set_settings(self, settings):
-        """
-        Sets the bundle's internal settings dictionary.
-
-        :param settings:    The new settings dict to store.
-        """
-        self.__settings = settings
-
     def __resolve_hook_path(self, settings_name, hook_expression):
         """
         Resolves a hook settings path into an absolute path.
@@ -824,8 +876,8 @@ class TankBundle(object):
             
         else:
             # old school config hook name, e.g. just 'foo'
-            hook_folder = self.tank.pipeline_configuration.get_hooks_location()
-            path = os.path.join(hook_folder, "%s.py" % hook_expression)            
+            hooks_folder = self.tank.pipeline_configuration.get_hooks_location()
+            path = os.path.join(hooks_folder, "%s.py" % hook_expression)            
 
         return path
 
