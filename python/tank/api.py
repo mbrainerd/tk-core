@@ -53,7 +53,7 @@ class Sgtk(object):
             self.__pipeline_config = pipelineconfig_factory.from_path(project_path)
             
         try:
-            self.templates = read_templates(self.__pipeline_config)
+            self.templates, self.template_keys = read_templates(self.__pipeline_config)
         except TankError as e:
             raise TankError("Could not read templates configuration: %s" % e)
 
@@ -343,15 +343,15 @@ class Sgtk(object):
         :param path: Path to match against a template
         :returns: :class:`TemplatePath` or None if no match could be found.
         """
-        matched_templates = []
+        matched_templates = set()
         for key, template in self.templates.items():
             if template.validate(path):
-                matched_templates.append(template)
+                matched_templates.add(template)
 
         if len(matched_templates) == 0:
             return None
         elif len(matched_templates) == 1:
-            return matched_templates[0]
+            return matched_templates.pop()
         else:
             # ambiguity!
             # We're erroring out anyway, take the time to create helpful debug info!

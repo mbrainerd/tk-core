@@ -787,16 +787,18 @@ def read_templates(pipeline_configuration):
     keys = templatekey.make_keys(get_data_section("keys"))
     template_paths = make_template_paths(get_data_section("paths"), keys, per_platform_roots)
     template_strings = make_template_strings(get_data_section("strings"), keys, template_paths)
+    template_aliases = make_template_aliases(get_data_section("aliases"), template_strings, template_paths)
 
     # Detect duplicate names across paths and strings
-    dup_names =  set(template_paths).intersection(set(template_strings))
+    dup_names =  set(template_paths).intersection(set(template_strings).intersection(set(template_aliases)))
     if dup_names:
-        raise TankError("Detected paths and strings with the same name: %s" % str(list(dup_names)))
+        raise TankError("Detected templates with the same name: %s" % str(list(dup_names)))
 
     # Put path and strings together
     templates = template_paths
     templates.update(template_strings)
-    return templates
+    templates.update(template_aliases)
+    return templates, keys
 
 
 def make_template_paths(data, keys, all_per_platform_roots):
@@ -849,7 +851,7 @@ def make_template_strings(data, keys, template_paths):
     :returns: Dictionary of form {<template name> : <TemplateString object>}
     """
     template_strings = {}
-    templates_data = _process_templates_data(data, "path")
+    templates_data = _process_templates_data(data, "string")
 
     for template_name, template_data in templates_data.items():
         definition = template_data["definition"]
@@ -868,6 +870,35 @@ def make_template_strings(data, keys, template_paths):
         template_strings[template_name] = template_string
 
     return template_strings
+
+def make_template_aliases(data, template_strings, template_paths):
+    """
+    Factory function which creates aliases for TemplatePaths or TemplateStrings.
+
+    :param data: Data from which to construct the template aliases.
+    :type data:  Dictionary of form: {<template name>: {<option>: <option value>}}
+    :param template_string: TemplateStrings available for optional validation.
+    :type template_string: Dictionary of form: {<template name>: <TemplateString object>}
+    :param template_paths: TemplatePaths available for optional validation.
+    :type template_paths: Dictionary of form: {<template name>: <TemplatePath object>}
+
+    :returns: Dictionary of form {<template name> : <TemplateString|TemplatePath object>}
+    """
+    template_aliases = {}
+    templates_data = _process_templates_data(data, "string")
+
+    for template_name, template_data in templates_data.items():
+        definition = template_data["definition"]
+
+        if definition in template_paths:
+            template_aliases[template_name] = template_paths[definition]
+        elif definition in template_strings:
+            template_aliases[template_name] = template_strings[definition]
+        else:
+            raise TankError("Template alias '%s' refers to non-existent Template '%s'" %
+                    (template_name, definition))
+
+    return template_aliases
 
 def _conform_template_data(template_data, template_name):
     """
@@ -893,7 +924,8 @@ def _process_templates_data(data, template_type):
     :returns: Processed data.
     """
     templates_data = {}
-    # Track definition to detect duplicates
+
+    # Track path definitions to detect duplicates
     definitions = {}
 
     for template_name, template_data in data.items():
@@ -903,13 +935,9 @@ def _process_templates_data(data, template_type):
             if "root_name" not in cur_data:
                 cur_data["root_name"] = constants.PRIMARY_STORAGE_NAME
             
-            root_name = cur_data["root_name"]
-        else:
-            root_name = None
-
-        # Record this templates definition
-        cur_key = (root_name, definition)
-        definitions[cur_key] = definitions.get(cur_key, []) + [template_name]
+            # Record this templates definition
+            cur_key = (cur_data["root_name"], definition)
+            definitions[cur_key] = definitions.get(cur_key, []) + [template_name]
 
         templates_data[template_name] = cur_data
 
@@ -929,6 +957,3 @@ def _process_templates_data(data, template_type):
                         "templates were detected:\n %s" % dups_msg) 
 
     return templates_data
-
-
-
