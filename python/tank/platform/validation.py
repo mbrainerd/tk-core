@@ -18,7 +18,7 @@ import sys
 from . import constants
 from ..errors import TankError, TankNoDefaultValueError
 from ..template import TemplateString
-from .bundle import resolve_default_value
+from .bundle import resolve_setting_value
 from ..util.version import is_version_older, is_version_number
 from ..log import LogManager
 
@@ -27,18 +27,18 @@ from ..log import LogManager
 # to make use of the standard core logger.
 core_logger = LogManager.get_logger(__name__)
 
-def validate_schema(app_or_engine_display_name, schema):
+def validate_schema(app_or_engine_display_name, schema, bundle=None):
     """
     Validates the schema definition (info.yml) of an app or engine.
     
     Will raise a TankError if validation fails, will return None
     if validation suceeds.
     """
-    v = _SchemaValidator(app_or_engine_display_name, schema)
+    v = _SchemaValidator(app_or_engine_display_name, schema, bundle)
     v.validate()
 
 
-def validate_settings(app_or_engine_display_name, tank_api, context, schema, settings):
+def validate_settings(app_or_engine_display_name, tank_api, context, schema, settings, bundle=None):
     """
     Validates the settings of an app or engine against its
     schema definition (info.yml).
@@ -46,7 +46,7 @@ def validate_settings(app_or_engine_display_name, tank_api, context, schema, set
     Will raise a TankError if validation fails, will return None
     if validation succeeds.
     """
-    v = _SettingsValidator(app_or_engine_display_name, tank_api, schema, context)
+    v = _SettingsValidator(app_or_engine_display_name, tank_api, schema, context, bundle)
     v.validate(settings)
     
     
@@ -248,7 +248,7 @@ def validate_and_return_frameworks(descriptor, environment):
     return required_fw_instance_names
                 
 
-def validate_single_setting(app_or_engine_display_name, tank_api, schema, setting_name, setting_value):
+def validate_single_setting(app_or_engine_display_name, tank_api, schema, setting_name, setting_value, bundle=None):
     """
     Validates a single setting for an app or engine against its 
     schema definition (info.yml).
@@ -259,7 +259,7 @@ def validate_single_setting(app_or_engine_display_name, tank_api, schema, settin
     perform the validation, however it will not be able to fully validate some 
     template types, since a full validaton would require a context.
     """
-    v = _SettingsValidator(app_or_engine_display_name, tank_api, schema)
+    v = _SettingsValidator(app_or_engine_display_name, tank_api, schema, bundle)
     v.validate_setting(setting_name, setting_value)
     
 def convert_string_to_type(string_value, schema_type):
@@ -297,22 +297,23 @@ def convert_string_to_type(string_value, schema_type):
     return evaluated_value
     
 # Helper used by both schema and settings validators
-def _validate_expected_data_type(expected_type, value):
-    value_type_name = type(value).__name__
-
-    expected_type_name = expected_type
-    if expected_type in constants.TANK_SCHEMA_STRING_TYPES:
-        expected_type_name = "str"
+def _validate_expected_data_type(expected_type_name, value):
+    """
+    Validate that the value is of the expected type
+    """
+    if expected_type_name in constants.TANK_SCHEMA_STRING_TYPES:
+        expected_type = str
     else:
-        expected_type_name = expected_type
+        expected_type = eval(expected_type_name)
 
-    return expected_type_name == value_type_name
+    return isinstance(value, expected_type)
         
 class _SchemaValidator:
 
-    def __init__(self, display_name, schema):
+    def __init__(self, display_name, schema, bundle=None):
         self._display_name = display_name
         self._schema = schema
+        self._bundle = bundle
     
     def validate(self):
         for settings_key in self._schema:
@@ -425,54 +426,53 @@ class _SchemaValidator:
             raise TankError("Invalid 'allows_empty' bool in schema '%s' for '%s'!" % params)
 
 class _SettingsValidator:
-    def __init__(self, display_name, tank_api, schema, context=None):
+    def __init__(self, display_name, tank_api, schema, context=None, bundle=None):
         # note! if context is None, context-specific validation will be skipped.
         self._display_name = display_name
         self._tank_api = tank_api
         self._context = context
         self._schema = schema
+        self._bundle = bundle
         
     def validate(self, settings):
         # first sanity check that the schema is correct
-        validate_schema(self._display_name, self._schema)
-        
+        validate_schema(self._display_name, self._schema, self._bundle)
+
         # Ensure that all keys are in the settings or have a default value in
         # the manifest. Also make sure values are appropriate.
         for settings_key in self._schema:
             value_schema = self._schema.get(settings_key, {})
 
-            if settings_key in settings:
-                # value exists in the settings. use it.
-                settings_value = settings[settings_key]
-            else:
-                # Use the fallback default with an unlikely to be used value to
-                # detect cases where there is no default value in the schema.
-                try:
-                    settings_value = resolve_default_value(value_schema,
-                        raise_if_missing=True)
-                except TankNoDefaultValueError:
-                    # could not identify a default value. that may be because
-                    # the default is engine-specific and there is no regular
-                    # "default_value". See if there are any engine-specific
-                    # keys. If so, continue with the assumption that one of them
-                    # is the right one. The default values have already been
-                    # validated against the type. Hopefully this is sufficient!
-                    default_value_keys = [k for k in value_schema
-                        if k.startswith(constants.TANK_SCHEMA_DEFAULT_VALUE_KEY)]
-                    if default_value_keys:
-                        continue
-                    else:
-                        raise TankError(
-                            "Could not determine value for key '%s' in "
-                            "settings! No specified value and no default value."
-                            % (settings_key,)
-                        )
+            settings_value = resolve_setting_value(self._tank_api,
+                                                   None,
+                                                   value_schema,
+                                                   settings,
+                                                   settings_key,
+                                                   None,
+                                                   self._bundle)
+            if not settings_value:
+                # could not identify a default value. that may be because
+                # the default is engine-specific and there is no regular
+                # "default_value". See if there are any engine-specific
+                # keys. If so, continue with the assumption that one of them
+                # is the right one. The default values have already been
+                # validated against the type. Hopefully this is sufficient!
+                default_value_keys = [k for k in value_schema
+                    if k.startswith(constants.TANK_SCHEMA_DEFAULT_VALUE_KEY)]
+                if default_value_keys:
+                    continue
+                else:
+                    raise TankError(
+                        "Could not determine value for key '%s' in "
+                        "settings! No specified value and no default value."
+                        % (settings_key,)
+                    )
 
             self.__validate_settings_value(settings_key, value_schema, settings_value)
     
     def validate_setting(self, setting_name, setting_value):
         # first sanity check that the schema is correct
-        validate_schema(self._display_name, self._schema)
+        validate_schema(self._display_name, self._schema, self._bundle)
         
         # make sure the required key exists in the settings
         value_schema = self._schema.get(setting_name, {})
@@ -750,7 +750,7 @@ class _SettingsValidator:
         """
         Makes sure that the path is relative and not absolute.
         """
-        if config_value.startswith("/"):
+        if not os.path.exists(config_value) and config_value.startswith("/"):
             msg = ("Invalid configuration setting '%s' for %s: "
                    "Config value '%s' starts with a / which is not valid." % (settings_key, 
                                                                               self._display_name,

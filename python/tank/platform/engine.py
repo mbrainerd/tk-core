@@ -2354,15 +2354,6 @@ class Engine(TankBundle):
                     raise TankError("The app could not be loaded since it only supports "
                                     "the following engines: %s. Your current engine has been "
                                     "identified as '%s'" % (supported_engines, self.name))
-                
-                # now validate the configuration                
-                validation.validate_settings(
-                    app_instance_name,
-                    self.tank,
-                    self.context,
-                    app_schema,
-                    app_settings,
-                )
 
             except TankError as e:
                 # validation error - probably some issue with the settings!
@@ -2860,12 +2851,7 @@ def find_app_settings(engine_name, app_name, tk, context, engine_instance_name=N
                 if supported_engines and engine_name not in supported_engines:
                     raise TankError("The app could not be loaded since it only supports "
                                     "the following engines: %s" % supported_engines)
-                
-                # finally validate the configuration.  
-                # Note: context is set to None as we don't 
-                # want to fail validation because of an 
-                # incomplete context at this stage!
-                validation.validate_settings(app, tk, None, schema, settings)
+
             except TankError:
                 # ignore any Tank exceptions to skip invalid apps
                 continue

@@ -34,7 +34,7 @@ class ConfigItem(QtGui.QWidget):
         if current_engine():
             engine_name = current_engine().name
 
-        default_val = resolve_default_value(params, engine_name=engine_name)
+        default_val = resolve_default_value(params, engine_name=engine_name, bundle=bundle)
         param_type = params.get("type")
 
         self.ui.name.setText("Setting %s" % setting)
@@ -68,7 +68,7 @@ class ConfigItem(QtGui.QWidget):
         elif param_type == "template":
             # resolve the template
             value_str = "<b>Value:</b> %s<br>" % value
-            template_value = bundle.tank.templates.get(value)
+            template_value = bundle.get_template_by_name(value)
             template_def = template_value.definition if template_value else "None"
             value_str += "<b>Resolved Value:</b> <code>%s</code><br>" % template_def  
         
