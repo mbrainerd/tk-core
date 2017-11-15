@@ -1173,7 +1173,7 @@ def _from_entity_type_and_id(tk, entity, source_entity=None):
                     
         # make sure this was actually found in the cache
         # fall back on a shotgun lookup if not found
-        if entity_context["project"] is None:
+        if entity_context["entity"] is None:
             entity_context = _entity_from_sg(tk, entity_type, entity_id)
         
         context.update(entity_context)
@@ -1186,6 +1186,9 @@ def _from_entity_type_and_id(tk, entity, source_entity=None):
     # If there isn't an explicit source_entity, we set it to be
     # the same as the entity property.
     context["source_entity"] = context["source_entity"] or context["entity"]
+
+    if not context["step"] and entity.get("step"):
+        context["step"] = _build_clean_entity(entity.get("step"))
 
     return Context(**context)
 
@@ -1300,6 +1303,10 @@ def _from_entity_dictionary(tk, entity_dictionary, source_entity=None):
             fallback_to_ctx_from_entity = True
         else:
             project = entity["project"]
+
+        # Find "step" if in the dictionary
+        if "step" in entity:
+            context["step"] = _build_clean_entity(entity["step"])
 
     if not fallback_to_ctx_from_entity:
         if project:
@@ -1648,7 +1655,7 @@ def _get_entity_type_sg_name_field(entity_type):
     :returns:               The name field for the specified entity type
     """
     return {    "HumanUser": "login", 
-            "Task":"content", 
+                "Task":      "content", 
                 "Project":   "name",
                 "Step":      "short_name"
             }.get(entity_type, "code")
@@ -1800,10 +1807,6 @@ def _context_data_from_cache(tk, entity_type, entity_id):
     """
     context = {}
 
-    # Set entity info for input entity
-    context["entity"] = {"type": entity_type, "id": entity_id}
-    context["parent_entities"] = {}
-
     # Map entity types to context fields
     types_fields = {"Project": "project",
                     "Step": "step",
@@ -1825,40 +1828,45 @@ def _context_data_from_cache(tk, entity_type, entity_id):
         context["project"] = None
 
     paths = path_cache.get_paths(entity_type, entity_id, primary_only=True)
+    if paths:
 
-    for path in paths:
-        # now recurse upwards and look for entity types we haven't found yet
-        curr_path = path
-        curr_entity = path_cache.get_entity(curr_path)
-        
-        if curr_entity is None:
-            # this is some sort of anomaly! the path returned by get_paths
-            # does not resolve in get_entity. This can happen if the storage
-            # mappings are not consistent or if there is not a 1 to 1 relationship
-            #
-            # This can also happen if there are extra slashes at the end of the path
-            # in the local storage defs and in the pipeline_configuration.yml file.
-            raise TankError("The path '%s' associated with %s id %s does not " 
-                            "resolve correctly. This may be an indication of an issue "
-                            "with the local storage setup. Please contact %s." 
-                            % (curr_path, entity_type, entity_id, constants.SUPPORT_EMAIL))
+        # Set entity info for input entity
+        context["entity"] = {"type": entity_type, "id": entity_id}
+        context["parent_entities"] = {}
 
-        # grab the name for the context entity
-        if curr_entity["type"] == entity_type and curr_entity["id"] == entity_id:
-            context["entity"]["name"] = curr_entity["name"]
-
-        # note - paths returned by get_paths are always prefixed with a
-        # project root so there is no risk we end up with an infinite loop here..
-        while curr_path not in project_roots:
-            curr_path = os.path.abspath(os.path.join(curr_path, ".."))
+        for path in paths:
+            # now recurse upwards and look for entity types we haven't found yet
+            curr_path = path
             curr_entity = path_cache.get_entity(curr_path)
-            if curr_entity:
-                cur_type = curr_entity["type"]
-                if cur_type in types_fields:
-                    field_name = types_fields[cur_type]
-                    context[field_name] = _build_clean_entity(curr_entity)
-                else:
-                    context["parent_entities"][curr_entity["type"]] = _build_clean_entity(curr_entity)
+
+            if curr_entity is None:
+                # this is some sort of anomaly! the path returned by get_paths
+                # does not resolve in get_entity. This can happen if the storage
+                # mappings are not consistent or if there is not a 1 to 1 relationship
+                #
+                # This can also happen if there are extra slashes at the end of the path
+                # in the local storage defs and in the pipeline_configuration.yml file.
+                raise TankError("The path '%s' associated with %s id %s does not " 
+                                "resolve correctly. This may be an indication of an issue "
+                                "with the local storage setup. Please contact %s." 
+                                % (curr_path, entity_type, entity_id, constants.SUPPORT_EMAIL))
+
+            # grab the name for the context entity
+            if curr_entity["type"] == entity_type and curr_entity["id"] == entity_id:
+                context["entity"]["name"] = curr_entity["name"]
+
+            # note - paths returned by get_paths are always prefixed with a
+            # project root so there is no risk we end up with an infinite loop here..
+            while curr_path not in project_roots:
+                curr_path = os.path.abspath(os.path.join(curr_path, ".."))
+                curr_entity = path_cache.get_entity(curr_path)
+                if curr_entity:
+                    cur_type = curr_entity["type"]
+                    if cur_type in types_fields:
+                        field_name = types_fields[cur_type]
+                        context[field_name] = _build_clean_entity(curr_entity)
+                    else:
+                        context["parent_entities"][curr_entity["type"]] = _build_clean_entity(curr_entity)
 
     path_cache.close()
     return context
