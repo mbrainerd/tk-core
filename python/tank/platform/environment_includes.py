@@ -117,6 +117,30 @@ def _resolve_includes(file_name, data, context):
     return list(resolved_includes)
 
 
+def _find_matching_ref(lookup_dict, ref_string):
+    """
+    Find a reference whose name matches a portion of ref_string.  This
+    will find the longest/best match.
+    """
+    matching_refs = []
+    
+    # find all references that match the start of the ref string:
+    for name, definition in lookup_dict.iteritems():
+        if ref_string.startswith(name):
+            matching_refs.append((name, definition))
+
+    # if there is more than one match then choose the one with the longest
+    # name/longest match:
+    best_match = None
+    best_match_len = 0
+    for name, definition in matching_refs:
+        name_len = len(name)
+        if name_len > best_match_len:
+            best_match_len = name_len
+            best_match = (name, definition)
+
+    return best_match
+
 
 def _resolve_refs_r(lookup_dict, data):
     """
@@ -135,16 +159,40 @@ def _resolve_refs_r(lookup_dict, data):
         for (k,v) in data.items():
             processed_val[k] = _resolve_refs_r(lookup_dict, v)
         
-    elif isinstance(data, basestring) and data.startswith("@"):
-        # this is a reference!
-        
-        ref_token = data[1:]
-        if ref_token not in lookup_dict:
-            raise TankError("Undefined Reference %s!" % ref_token)
-        # other parts of the code is making changes nilly-willy to data
-        # structures (ick) so flatten everything out here.... :(
-        processed_val = copy.deepcopy(lookup_dict[ref_token])
-        
+    elif isinstance(data, basestring):
+        # split to find separate @ include parts:
+        ref_parts = data.split("@")
+        processed_val = "".join(ref_parts[:1])
+        for ref_part in ref_parts[1:]:
+
+            if not ref_part:
+                # this would have been an @ so ignore!
+                continue
+
+            # find a reference that matches the start of the ref string:                
+            ref_match = _find_matching_ref(lookup_dict, ref_part)
+            if not ref_match:
+                raise TankError("Failed to resolve reference '@%s'" % ref_part)
+
+            # resolve the reference:
+            ref_name, ref_definition = ref_match
+
+            # other parts of the code are making changes nilly-willy to data
+            # structures (ick) so flatten everything out here.... :(
+            resolved_ref = copy.deepcopy(_resolve_refs_r(lookup_dict, ref_definition))
+
+            # Cannot concatenate non-basestrings
+            if not isinstance(resolved_ref, basestring):
+                # If we have a string prefix or suffix
+                if processed_val or ref_part[len(ref_name):]:
+                    raise TankError("Cannot concatenate a string and non-string value for '%s'" % data)
+
+                # We've evaluated the entire string value, so just return this
+                return resolved_ref
+            else:
+                # Add back any remaining prefix and suffix
+                processed_val += resolved_ref + ref_part[len(ref_name):]
+
     return processed_val
             
 def _resolve_frameworks(lookup_dict, data):
@@ -199,10 +247,13 @@ def _process_includes_r(file_name, data, context):
                         together with a lookup for frameworks to the file 
                         they were loaded from.
     """
+    file_name = os.path.normpath(file_name)
+
     # first build our big fat lookup dict
     include_files = _resolve_includes(file_name, data, context)
-    
-    lookup_dict = {}
+
+    # include local keys first in lookup dictionary
+    lookup_dict = dict((k, v) for k, v in data.items() if not k.startswith("include"))
     fw_lookup = {}
     for include_file in include_files:
                 
