@@ -2857,7 +2857,7 @@ def find_app_settings(engine_name, app_name, tk, context, engine_instance_name=N
                 continue
 
             # settings are valid so add them to return list:
-            app_settings.append({"engine_instance": eng, "app_instance": app, "settings": settings})
+            app_settings.append({"env_instance": env, "engine_instance": eng, "app_instance": app, "settings": settings})
                     
     return app_settings
     
