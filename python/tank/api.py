@@ -57,6 +57,10 @@ class Sgtk(object):
         except TankError as e:
             raise TankError("Could not read templates configuration: %s" % e)
 
+        # create schema builder
+        schema_cfg_folder = self.__pipeline_config.get_schema_config_location()
+        self.folder_config = folder.configuration.FolderConfiguration(self, schema_cfg_folder)
+
         # execute a tank_init hook for developers to use.
         self.execute_core_hook(constants.TANK_INIT_HOOK_NAME)
 
@@ -286,7 +290,7 @@ class Sgtk(object):
         :raises: :class:`TankError`
         """
         try:
-            self.templates = read_templates(self.__pipeline_config)
+            self.templates, self.template_keys = read_templates(self.__pipeline_config)
         except TankError as e:
             raise TankError("Templates could not be reloaded: %s" % e)
 
@@ -394,19 +398,15 @@ class Sgtk(object):
         :param path: Path to match against a schema configuraiton folder
         :returns: :class:`Folder` or derived class or None if no match could be found.
         """
-        # create schema builder
-        schema_cfg_folder = self.pipeline_configuration.get_schema_config_location()
-        config = folder.configuration.FolderConfiguration(self, schema_cfg_folder)
-
-        matched_folders = []
-        for folder_obj in config.get_folders():
+        matched_folders = set()
+        for folder_obj in self.folder_config.get_folders():
             if folder_obj.template_path.validate(path):
-                matched_folders.append(folder_obj)
+                matched_folders.add(folder_obj)
 
         if len(matched_folders) == 0:
             return None
         elif len(matched_folders) == 1:
-            return matched_folders[0]
+            return matched_folders.pop()
         else:
             # First check to see how many static tokens match
             folders_by_token_num = {}

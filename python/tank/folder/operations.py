@@ -137,9 +137,8 @@ def process_filesystem_structure(tk, entity_type, entity_ids, preview, engine):
     if len(entity_ids) == 0:
         return
 
-    # create schema builder
-    schema_cfg_folder = tk.pipeline_configuration.get_schema_config_location()   
-    config = FolderConfiguration(tk, schema_cfg_folder)
+    # get the schema config
+    config = tk.folder_config
 
     # all things to create
     items = []
