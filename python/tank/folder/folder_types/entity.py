@@ -424,4 +424,113 @@ class Entity(Folder):
         else:
             return self._parent.extract_shotgun_data_upwards(sg, tokens)
 
+    def get_entries_from_path(self, input_path):
+        """
+        folder_obj = $project/$sequence/$shot/user/work.$login/$step
+        """
+        # Parse the input path using the folder_obj's template
+        path_fields = self.template_path.get_fields(input_path)
 
+        # Create a list of folder objs to recurse over, including self
+        folder_objs_to_recurse = [self] + self.get_parents()
+
+        sg_data = {}
+        primary_entry = None
+        entries = []
+        secondary_entries = []
+
+        # Recurse "bottom up" to derive all requisite entities and links
+        for folder_obj in folder_objs_to_recurse[::-1]:
+
+            try:
+                entity = folder_obj.get_entity_from_fields(path_fields, sg_data)
+            except AttributeError:
+                # This is not an Entity folder_obj...that's ok, moving on
+                continue
+
+            # get the name field - which depends on the entity type
+            # Note: this is the 'name' that will get stored in the path cache for this entity
+            name_field = self.__get_name_field_for_et(entity["type"])
+            name_value = entity[name_field]            
+
+            # construct a full entity link dict w name, id, type
+            entity_dict = {"type": entity["type"], "id": entity["id"], "name": name_value} 
+
+            # Derive the local path for this folder_obj
+            local_path = folder_obj.template_path.apply_fields(path_fields)
+
+            # Add entity to entries list
+            entries.append({
+                "entity": entity_dict,
+                "path": local_path,
+                "primary": True,
+                "metadata": self._config_metadata
+            })
+
+            # Register any secondary entity links
+            for lf in self._entity_expression.get_shotgun_link_fields():
+                entity_link = entity[lf]
+                secondary_entries.append({
+                    "entity": entity_link,
+                    "path": local_path,
+                    "primary": False,
+                    "metadata": self._config_metadata
+                })
+
+        # Since we recursed backwards, the last element is the primary entity
+        # corresponding to this folder obj, so pop it off the end of the list
+        if entries:
+            primary_entry = entries.pop()
+
+        return primary_entry, entries + secondary_entries
+
+    def get_entity_from_fields(self, path_fields, sg_data):
+        """
+        Returns a SG entity matching this folder's entity_type and the matching
+        value stored in the input path_fields. Also uses sg_data for any
+        additional filtering.
+        """
+        # Get the corresponding entity type for this folder obj
+        entity_type = self.get_entity_type()
+
+        # Confirm there is a value in the path for the entity type
+        if entity_type not in path_fields:
+            raise TankError("Entity type '%s' missing from path fields." % entity_type)
+
+        # Get the path_field value
+        entity_key = path_fields[entity_type]
+
+        # Resolve any filters
+        resolved_filters = resolve_shotgun_filters(self._filters, sg_data)
+
+        # Do lookup by corresponding name field
+        name_field = self.__get_name_field_for_et(entity_type)
+        resolved_filters["conditions"].append({ "path": name_field, "relation": "is", "values": [entity_key] })
+
+        # figure out which fields to retrieve
+        fields = self._entity_expression.get_shotgun_fields()
+
+        # add any shotgun link fields used in the expression
+        fields.update(self._entity_expression.get_shotgun_link_fields())
+        
+        # always retrieve the name field for the entity
+        fields.add(name_field)        
+
+        # add any special stuff in
+        for custom_field in self._get_additional_sg_fields():
+            fields.add(custom_field)
+
+        # convert to a list - sets wont work with the SG API
+        fields_list = list(fields)
+
+        # now find the item matching this query
+        entity = self._tk.shotgun.find_one(entity_type, resolved_filters, fields_list)
+        if not entity:
+            raise TankError("Cannot find %s Entity: '%s' in Shotgun using filter: %s"
+                    % (entity_type, entity_key, resolved_filters))
+
+        # Add this entity to the sg_data dict for further processing
+        sg_data[entity_type] = entity
+
+        # Finally return this entity
+        return entity
