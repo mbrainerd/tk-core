@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-#
 # Confidential and Proprietary Source Code
 #
 # This Digital Domain Productions, Inc. ("DDPI") source code, including without
