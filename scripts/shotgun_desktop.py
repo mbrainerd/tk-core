@@ -501,10 +501,6 @@ def main():
         splash.set_message("Looking up pipeline configuration.")
         pc_path = sgtk.pipelineconfig_utils.get_config_install_location()
 
-        # Validate that this package is indeed a site config
-        if not sgtk.pipelineconfig_utils.is_site_configuration(pc_path):
-            raise Exception("Specified configuration '%s' does not support the site environment." % pc_path)
-
         # Don't resolve the config in Shotgun since we already have the location on disk.
         mgr.do_shotgun_config_lookup = False
 
