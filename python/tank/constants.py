@@ -52,13 +52,16 @@ SINGLE_INCLUDE_SECTION = "include"
 MULTI_INCLUDE_SECTION = "includes"
 
 # the key sections in a template file
-TEMPLATE_SECTIONS = ["keys", "paths", "strings"]
+TEMPLATE_SECTIONS = ["keys", "paths", "strings", "aliases"]
 
 # the path section in a templates file
 TEMPLATE_PATH_SECTION = "paths"
 
 # the string section in a templates file
 TEMPLATE_STRING_SECTION = "strings"
+
+# the alias section in a templates file
+TEMPLATE_ALIAS_SECTION = "aliases"
 
 # a human readable explanation of the above. For error messages.
 VALID_TEMPLATE_KEY_NAME_DESC = "letters, numbers, underscore, space and period"

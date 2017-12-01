@@ -16,6 +16,7 @@ Base class for Abstract classes for Engines, Apps and Frameworks
 import os
 import re
 import sys
+import types
 import imp
 import uuid
 
@@ -31,7 +32,7 @@ class TankBundle(object):
     Abstract Base class for any engine, framework app etc in tank
     """
 
-    def __init__(self, tk, context, settings, descriptor, env, log):
+    def __init__(self, tk, context, settings, instance_name, descriptor, env, log):
         """
         Constructor.
 
@@ -44,15 +45,18 @@ class TankBundle(object):
         :param log: A python logger to associate with this bundle
         """
         self.__tk = tk
-        self.__context = context
-        self.__settings = settings
         self.__sg = None
+        self.__instance_name = instance_name
         self.__cache_location = {}
         self.__module_uid = None
-        self.__descriptor = descriptor    
         self.__frameworks = {}
-        self.__environment = env
+        self.__env = env
         self.__log = log
+
+        # Set the internal properties
+        self.descriptor = descriptor
+        self.context = context
+        self.settings = settings
 
         # emit an engine started event
         tk.execute_core_hook(constants.TANK_BUNDLE_INIT_HOOK_NAME, bundle=self)
@@ -86,7 +90,7 @@ class TankBundle(object):
 
     ##########################################################################################
     # properties used by internal classes, not part of the public interface
-    
+
     @property
     def descriptor(self):
         """
@@ -97,6 +101,21 @@ class TankBundle(object):
         """
         return self.__descriptor
 
+    @descriptor.setter
+    def descriptor(self, descriptor):
+        """
+        Sets the current descriptor associated with this item.
+
+        :param descriptor: The new descriptor to associate with the bundle.
+        """
+        # try to avoid cyclical imports
+        from . import validation
+
+        # make sure the current operating system platform is supported
+        validation.validate_platform(descriptor)
+
+        self.__descriptor = descriptor
+
     @property
     def settings(self):
         """
@@ -106,6 +125,27 @@ class TankBundle(object):
         do not use in any app code. 
         """
         return self.__settings
+
+    @settings.setter
+    def settings(self, settings):
+        """
+        Sets the bundle's internal settings dictionary.
+
+        :param settings:    The new settings dict to store.
+        """
+        # try to avoid cyclical imports
+        from . import validation
+
+        # Get the settings for the engine and then validate them
+        validation.validate_settings(
+            self.__instance_name,
+            self.__tk,
+            self.__context,
+            self.__descriptor.configuration_schema,
+            settings,
+            self
+        )
+        self.__settings = settings
     
     ##########################################################################################
     # methods used by internal classes, not part of the public interface
@@ -264,6 +304,20 @@ class TankBundle(object):
         return self.get_project_cache_location(project_id)
 
     @property
+    def instance_name(self):
+        """
+        The name for this bundle instance.
+        """
+        return self.__instance_name
+
+    @instance_name.setter
+    def instance_name(self, instance_name):
+        """
+        Sets the instance name of the bundle.
+        """
+        self.__instance_name = instance_name
+
+    @property
     def context(self):
         """
         The context associated with this item.
@@ -271,6 +325,21 @@ class TankBundle(object):
         :returns: :class:`~sgtk.Context`
         """
         return self.__context
+
+    @context.setter
+    def context(self, context):
+        """
+        Sets the current context associated with this item.
+
+        :param context: The new context to associate with the bundle.
+        """
+        # try to avoid cyclical imports
+        from . import validation
+
+        # check that the context contains all the info that the app needs
+        validation.validate_context(self.__descriptor, context)
+
+        self.__context = context
 
     @property
     def context_change_allowed(self):
@@ -282,6 +351,15 @@ class TankBundle(object):
         :returns: bool
         """
         return False
+
+    @property
+    def env(self):
+        """
+        Returns the environment object associated with this bundle.
+
+        :returns: :class:`~sgtk.platform.Environment`
+        """
+        return self.__env
 
     @property
     def tank(self):
@@ -665,22 +743,6 @@ class TankBundle(object):
     ##########################################################################################
     # internal helpers
 
-    def _set_context(self, new_context):
-        """
-        Sets the current context associated with this item.
-
-        :param new_context: The new context to associate with the bundle.
-        """
-        self.__context = new_context
-
-    def _set_settings(self, settings):
-        """
-        Sets the bundle's internal settings dictionary.
-
-        :param settings:    The new settings dict to store.
-        """
-        self.__settings = settings
-
     def __resolve_hook_path(self, settings_name, hook_expression):
         """
         Resolves a hook settings path into an absolute path.
@@ -730,7 +792,7 @@ class TankBundle(object):
             #    default_value: maya_publish_file
             #
             resolved_hook_name = resolve_default_value(
-                manifest.get(settings_name), engine_name=engine_name)
+                manifest.get(settings_name), engine_name=engine_name, bundle=self)
 
             # get the full path for the resolved hook name:
             if resolved_hook_name.startswith("{self}"):
@@ -802,14 +864,14 @@ class TankBundle(object):
             # have some implicit rules for handling ambiguity since
             # there can be multiple items (engines, apps etc) potentially
             # having the same instance name.
-            fw_instances = self.__environment.get_frameworks()
+            fw_instances = self.__env.get_frameworks()
             if instance not in fw_instances:
                 raise TankError("%s config setting %s: This hook is referring to the configuration value '%s', "
                                 "but no framework with instance name '%s' can be found in the currently "
                                 "running environment. The currently loaded frameworks "
                                 "are %s." % (self, settings_name, hook_expression, instance, ", ".join(fw_instances)))
 
-            fw_desc = self.__environment.get_framework_descriptor(instance)
+            fw_desc = self.__env.get_framework_descriptor(instance)
             if not(fw_desc.exists_local()):
                 raise TankError("%s config setting %s: This hook is referring to the configuration value '%s', "
                                 "but the framework with instance name '%s' does not exist on disk. Please run "
@@ -823,10 +885,146 @@ class TankBundle(object):
             
         else:
             # old school config hook name, e.g. just 'foo'
-            hook_folder = self.tank.pipeline_configuration.get_hooks_location()
-            path = os.path.join(hook_folder, "%s.py" % hook_expression)            
+            hooks_folder = self.tank.pipeline_configuration.get_hooks_location()
+            path = os.path.join(hooks_folder, "%s.py" % hook_expression)            
 
         return path
+
+    def resolve_setting_expression(self, value):
+        """
+        Resolves any embedded references like {engine_name} or {env_name}.
+        
+        :param value: The value that should be resolved.
+        
+        :returns: An expanded value.
+        """
+        # make sure to replace the `{engine_name}` token if it exists.
+        if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in value:
+            engine_name = self._get_engine_name()
+            if not engine_name:
+                raise TankError(
+                    "No engine could be determined for value '%s'. "
+                    "The setting could not be resolved." % (value,))
+            else:
+                value = value.replace(
+                    constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN,
+                    engine_name,
+                )
+
+        # make sure to replace the `{env_name}` token if it exists.
+        if "{env_name}" in value:
+            env_name = self.__env.name
+            if not env_name:
+                raise TankError(
+                    "No environment could be determined for value '%s'. "
+                    "The setting could not be resolved." % (value,))
+            else:
+                value = value.replace(
+                    "{env_name}",
+                    env_name,
+                )
+
+        return value
+
+
+    def expand_path(self, path):
+        """
+        Resolves a "config_path" type setting into an absolute path.
+        
+        :param path: The path value that should be resolved.
+        
+        :returns: An expanded absolute path to the specified file.
+        """
+
+        # make sure to replace the `{engine_name}` token if it exists.
+        if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in path:
+            engine_name = self._get_engine_name()
+            if not engine_name:
+                raise TankError(
+                    "No engine could be determined for path '%s'. "
+                    "The setting could not be resolved." % (path,))
+            else:
+                path = path.replace(
+                    constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN,
+                    engine_name,
+                )
+
+        if path.startswith("{self}"):
+            # bundle local reference
+            parent_folder = self.disk_location
+            path = path.replace("{self}", parent_folder)
+            path = path.replace("/", os.path.sep)
+
+        elif path.startswith("{config}"):
+            # config dir reference
+            parent_folder = self.tank.pipeline_configuration.get_config_location()
+            path = path.replace("{config}", parent_folder)
+            path = path.replace("/", os.path.sep)
+
+        elif path.startswith("{engine}"):
+            # look for the hook in the currently running engine
+            try:
+                engine = self.engine
+            except AttributeError:
+                raise TankError(
+                    "%s: Could not determine the current "
+                    "engine. Unable to resolve path for: '%s'" %
+                    (self, path)
+                )
+            parent_folder = engine.disk_location
+            path = path.replace("{engine}", parent_folder)
+            path = path.replace("/", os.path.sep)
+        
+        elif path.startswith("{$") and "}" in path:
+            # environment variable: {$HOOK_PATH}/path/to/foo.py
+            env_var = re.match("^\{\$([^\}]+)\}", path).group(1)
+            if env_var not in os.environ:
+                raise TankError("%s: This path is referring to the configuration value '%s', "
+                                "but no environment variable named '%s' can be "
+                                "found!" % (self, path, env_var))
+            env_var_value = os.environ[env_var]
+            path = path.replace("{$%s}" % env_var, env_var_value)
+            path = path.replace("/", os.path.sep)        
+        
+        elif path.startswith("{") and "}" in path:
+            # bundle instance (e.g. '{tk-framework-perforce_v1.x.x}/foo/bar.py' )
+            # first find the bundle instance
+            instance = re.match("^\{([^\}]+)\}", path).group(1)
+            # for now, only look at framework instance names. Later on,
+            # if the request ever comes up, we could consider extending
+            # to supporting app instances etc. However we would need to
+            # have some implicit rules for handling ambiguity since
+            # there can be multiple items (engines, apps etc) potentially
+            # having the same instance name.
+            fw_instances = self.__env.get_frameworks()
+            if instance not in fw_instances:
+                raise TankError("%s: This path is referring to the configuration value '%s', "
+                                "but no framework with instance name '%s' can be found in the currently "
+                                "running environment. The currently loaded frameworks "
+                                "are %s." % (self, path, instance, ", ".join(fw_instances)))
+
+            fw_desc = self.__env.get_framework_descriptor(instance)
+            if not(fw_desc.exists_local()):
+                raise TankError("%s: This path is referring to the configuration value '%s', "
+                                "but the framework with instance name '%s' does not exist on disk. Please run "
+                                "the tank cache_apps command." % (self, path, instance))
+            
+            # get path to framework on disk
+            parent_folder = fw_desc.get_path()
+            # create the path to the file
+            path = path.replace("{%s}" % instance, parent_folder)
+            path = path.replace("/", os.path.sep)
+
+        else:
+            # this is a config path. Stored on the form
+            # foo/bar/baz.png, we should translate that into
+            # PROJECT_PATH/tank/config/foo/bar/baz.png
+            parent_folder = self.tank.pipeline_configuration.get_config_location()
+            path = os.path.join(parent_folder, path)
+            path = path.replace("/", os.path.sep)
+
+        return path
+
 
     def __resolve_hook_expression(self, settings_name, hook_expression):
         """
@@ -888,6 +1086,7 @@ class TankBundle(object):
                 default_value = resolve_default_value(
                     manifest.get(settings_name),
                     engine_name=self._get_engine_name(),
+                    bundle=self
             )
 
             if default_value: # possible not to have a default value!
@@ -958,7 +1157,7 @@ class TankBundle(object):
         """
         raise NotImplementedError
 
-def _post_process_settings_r(tk, key, value, schema, bundle=None):
+def _post_process_settings_r(tk, key, value, schema, engine_name, bundle):
     """
     Recursive post-processing of settings values
 
@@ -969,47 +1168,18 @@ def _post_process_settings_r(tk, key, value, schema, bundle=None):
     :param bundle: The bundle object. This is only used in the case
         the value argument is a string starting with "hook:", which
         then requires the use of a core hook to resolve the setting.
+        If no bundle is given and this situation arises, then the
+        current bundle, as reported by sgtk.platform.current_bundle,
+        will be used.
 
     :returns: Processed value for key setting
     """
+    if not value:
+        return value
+
+    schema = schema or {}
     settings_type = schema.get("type")
-
-    if settings_type == "list":
-        processed_val = []
-        value_schema = schema["values"]
-        for x in value:
-            processed_val.append(
-                _post_process_settings_r(
-                    tk=tk,
-                    key=key,
-                    value=x,
-                    schema=value_schema,
-                    bundle=bundle,
-                )
-            )
-
-    elif settings_type == "dict":
-        items = schema.get("items", {})
-        # note - we assign the original values here because we
-        processed_val = value
-        for (key, value_schema) in items.iteritems():
-            processed_val[key] = _post_process_settings_r(
-                tk=tk,
-                key=key,
-                value=value[key],
-                schema=value_schema,
-                bundle=bundle,
-            )
-
-    elif settings_type == "config_path":
-        # this is a config path. Stored on the form
-        # foo/bar/baz.png, we should translate that into
-        # PROJECT_PATH/tank/config/foo/bar/baz.png
-        config_folder = tk.pipeline_configuration.get_config_location()
-        adjusted_value = value.replace("/", os.path.sep)
-        processed_val = os.path.join(config_folder, adjusted_value)
-
-    elif isinstance(value, basestring) and value.startswith("hook:"):
+    if isinstance(value, basestring) and value.startswith("hook:"):
         # handle the special form where the value is computed in a hook.
         #
         # if the template parameter is on the form
@@ -1023,9 +1193,112 @@ def _post_process_settings_r(tk, key, value, schema, bundle=None):
         chunks = value.split(":")
         hook_name = chunks[1]
         params = chunks[2:]
-        processed_val = tk.execute_core_hook(
-            hook_name, setting=key, bundle_obj=bundle, extra_params=params
+        value = tk.execute_core_hook(
+            hook_name,
+            setting=key,
+            settings_type=settings_type,
+            bundle_obj=bundle,
+            extra_params=params
         )
+
+    if isinstance(value, basestring):
+        # Expand any internal variables (i.e. engine_name, env_name)
+        value = bundle.resolve_setting_expression(value)
+
+        # Expand any environment variables
+        value = os.path.expandvars(os.path.expanduser(value))
+
+        # Check if user-defined "default" and resolve
+        if value == constants.TANK_BUNDLE_DEFAULT_HOOK_SETTING:
+            value = resolve_default_value(
+                schema,
+                default=None,
+                engine_name=engine_name, 
+                raise_if_missing=True,
+                bundle=bundle
+            )
+
+    if settings_type == "list":
+        processed_val = []
+        value_schema = schema["values"]
+        for i, x in enumerate(value):
+            try:
+                processed_val.append(
+                    _post_process_settings_r(
+                        tk=tk,
+                        key=key,
+                        value=x,
+                        schema=value_schema,
+                        engine_name=engine_name,
+                        bundle=bundle
+                    )
+                )
+            except Exception as e:
+                e.args = (e.args[0], "[%d]"%i) + e.args[1:]
+                raise
+
+    elif settings_type == "dict":
+        processed_val = dict()
+        sub_items = dict()
+
+        # If there is an item list, then we are dealing with a strict definition
+        items = schema.get("items")
+        if items:        
+            for sub_key, value_schema in items.iteritems():
+
+                # First check if the user has defined a value for this key
+                if sub_key in value:
+                    sub_value = value[sub_key]
+
+                # Otherwise attempt to get the default value
+                else:
+                    try:
+                        sub_value = resolve_default_value(
+                            value_schema,
+                            default=None,
+                            engine_name=engine_name, 
+                            raise_if_missing=True,
+                            bundle=bundle
+                        )
+                    # No user defined or default value!
+                    except Exception as e:
+                        e.args += (sub_key,)
+                        raise
+
+                try:
+                    # Recursively process each of the sub items
+                    processed_val[sub_key] = _post_process_settings_r(
+                        tk=tk,
+                        key=sub_key,
+                        value=sub_value,
+                        schema=value_schema,
+                        engine_name=engine_name,
+                        bundle=bundle
+                    )
+                except Exception as e:
+                    e.args += (sub_key,)
+                    raise
+
+        # No item list defined, so just process user-defined items
+        else:
+            value_schema = schema.get("values", {})
+            for sub_key, sub_value in value.iteritems():
+                try:
+                    processed_val[sub_key] = _post_process_settings_r(
+                        tk=tk,
+                        key=sub_key,
+                        value=sub_value,
+                        schema=value_schema,
+                        engine_name=engine_name,
+                        bundle=bundle
+                    )
+                except Exception as e:
+                    e.args += (sub_key,)
+                    raise
+
+    elif settings_type == "config_path":
+        # Expand any "config_path" values
+        processed_val = bundle.expand_path(value)
 
     else:
         # pass-through
@@ -1048,10 +1321,15 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     :param str key: setting name
     :param default: a default value to use for the setting
     :param bundle: The bundle object. This is only used in situations where
-        a setting's value must be resolved via calling a hook.
+        a setting's value must be resolved via calling a hook. If None, the
+        current bundle, as provided by sgtk.platform.current_bundle, will
+        be used.
 
     :returns: Resolved value of input setting key
     """
+    from .util import current_bundle
+    bundle = bundle or current_bundle()
+
     # Get the value for the supplied key
     if key in settings:
         # Value provided by the settings
@@ -1060,7 +1338,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     elif schema:
         # Resolve a default value from the schema. This checks various
         # legacy default value forms in the schema keys.
-        value = resolve_default_value(schema, default, engine_name)
+        value = resolve_default_value(schema, default, engine_name, False, bundle)
 
     else:
         # Nothing in the settings, no schema, fallback to the supplied
@@ -1069,13 +1347,16 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
 
     # We have a value of some kind and a schema. Allow the post
     # processing code to further resolve the value.
-    if value and schema:
-        value = _post_process_settings_r(tk, key, value, schema, bundle)
+    try:
+        value = _post_process_settings_r(tk, key, value, schema, engine_name, bundle)
+    except Exception as e:
+        key_name = ".".join((bundle.instance_name, key,) + e.args[1:])
+        raise type(e)("Could not determine settings value for key: '%s' - %s" % (key_name, e.args[0]))
 
     return value
 
 def resolve_default_value(
-        schema, default=None, engine_name=None, raise_if_missing=False
+        schema, default=None, engine_name=None, raise_if_missing=False, bundle=None
     ):
     """
     Extract a default value from the supplied schema.
@@ -1088,9 +1369,20 @@ def resolve_default_value(
     :param engine_name: Optional name of the current engine if there is one.
     :param raise_if_missing: If True, raise TankNoDefaultValueError if no
         default value is found.
+    :param bundle: The bundle object. This is only used in situations where
+        a setting's value must be resolved via calling a hook. If None, the
+        current bundle, as provided by sgtk.platform.current_bundle, will
+        be used.
     :return: The resolved default value
     """
+    from .util import current_bundle
+    bundle = bundle or current_bundle()
+
     default_missing = False
+
+    # If bundle but engine name not specified, get the engine name from the bundle
+    if bundle and not engine_name:
+        engine_name = bundle._get_engine_name()
 
     # Engine-specific default value keys are allowed (ex:
     # "default_value_tk-maya"). If an engine name was supplied,

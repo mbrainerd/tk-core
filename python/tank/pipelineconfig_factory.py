@@ -688,7 +688,6 @@ def _add_to_lookup_cache(key, data):
         )
 
 
-
 def _get_cache_location():
     """
     Get the location of the initializtion lookup cache.
@@ -701,4 +700,3 @@ def _get_cache_location():
     sg_base_url = shotgun.get_associated_sg_base_url()
     root_path = LocalFileStorageManager.get_site_root(sg_base_url, LocalFileStorageManager.CACHE)
     return os.path.join(root_path, constants.TOOLKIT_INIT_CACHE_FILE)
-

@@ -1471,7 +1471,7 @@ if __name__ == "__main__":
     # determine if we are running a localized core API.
     is_localized = pipelineconfig_utils.is_localized(install_root)
 
-    # also we are passing the pipeline config
+    # also check if we are passing the pipeline config
     # at the back of the args as --pc=foo
     if len(cmd_line) > 0 and cmd_line[-1].startswith("--pc="):
         pipeline_config_root = cmd_line[-1][5:]
@@ -1688,4 +1688,3 @@ if __name__ == "__main__":
 
     logger.debug("Exiting with exit code %s" % exit_code)
     sys.exit(exit_code)
-

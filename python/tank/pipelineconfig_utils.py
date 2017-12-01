@@ -41,8 +41,15 @@ def is_localized(pipeline_config_path):
     if not is_pipeline_config(pipeline_config_path):
         return False
 
+    return is_core_install_root(pipeline_config_path)
+
+
+def is_core_install_root(path):
+    """
+    Returns true if the current path is a valid core API install root
+    """
     # look for a localized API by searching for a _core_upgrader.py file
-    api_file = os.path.join(pipeline_config_path, "install", "core", "_core_upgrader.py")
+    api_file = os.path.join(path, "install", "core", "_core_upgrader.py")
     return os.path.exists(api_file)
 
 
@@ -54,7 +61,7 @@ def is_pipeline_config(pipeline_config_path):
     :returns: true if pipeline config, false if not
     """
     # probe by looking for the existence of a key config file.
-    pc_file = os.path.join(pipeline_config_path, "config", "core", constants.STORAGE_ROOTS_FILE)
+    pc_file = os.path.join(pipeline_config_path, "config", "core", constants.PIPELINECONFIG_FILE)
     return os.path.exists(pc_file)
 
 
@@ -296,6 +303,7 @@ def resolve_all_os_paths_to_core(core_path):
     # @todo - refactor this to return a ShotgunPath
     return _get_install_locations(core_path).as_system_dict()
 
+
 def resolve_all_os_paths_to_config(pc_path):
     """
     Given a pipeline configuration path on the current os platform, 
@@ -304,6 +312,7 @@ def resolve_all_os_paths_to_config(pc_path):
     :returns: ShotgunPath object
     """
     return _get_install_locations(pc_path)
+
 
 def get_config_install_location(path):
     """
@@ -325,6 +334,7 @@ def get_config_install_location(path):
     :returns: registered path, may be None.
     """
     return _get_install_locations(path).current_os
+
 
 def _get_install_locations(path):
     """
@@ -402,7 +412,8 @@ def get_core_api_version(core_install_root):
     # now try to get to the info.yml file to get the version number
     info_yml_path = os.path.join(core_install_root, "install", "core", "info.yml")
     return _get_version_from_manifest(info_yml_path)
-    
+
+
 def _get_version_from_manifest(info_yml_path):
     """
     Helper method. 
@@ -418,5 +429,3 @@ def _get_version_from_manifest(info_yml_path):
         data = "unknown"
 
     return data
-
-

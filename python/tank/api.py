@@ -23,7 +23,6 @@ from .path_cache import PathCache
 from .template import read_templates
 from . import constants
 from . import pipelineconfig
-from . import pipelineconfig_utils
 from . import pipelineconfig_factory
 from . import LogManager
 
@@ -54,9 +53,13 @@ class Sgtk(object):
             self.__pipeline_config = pipelineconfig_factory.from_path(project_path)
             
         try:
-            self.templates = read_templates(self.__pipeline_config)
+            self.templates, self.template_keys = read_templates(self.__pipeline_config)
         except TankError as e:
             raise TankError("Could not read templates configuration: %s" % e)
+
+        # create schema builder
+        schema_cfg_folder = self.__pipeline_config.get_schema_config_location()
+        self.folder_config = folder.configuration.FolderConfiguration(self, schema_cfg_folder)
 
         # execute a tank_init hook for developers to use.
         self.execute_core_hook(constants.TANK_INIT_HOOK_NAME)
@@ -249,7 +252,7 @@ class Sgtk(object):
         """
         The version of the tank Core API (e.g. v0.2.3)
         """
-        return pipelineconfig_utils.get_currently_running_api_version()
+        return self.__pipeline_config.get_associated_core_version()
 
     @property
     def documentation_url(self):
@@ -257,17 +260,7 @@ class Sgtk(object):
         A url pointing at relevant documentation for this version of the Toolkit Core
         or None if no documentation is associated.
         """
-        # read this from info.yml
-        info_yml_path = os.path.abspath(os.path.join( os.path.dirname(__file__), "..", "..", "info.yml"))
-        try:
-            data = yaml_cache.g_yaml_cache.get(info_yml_path, deepcopy_data=False)
-            data = str(data.get("documentation_url"))
-            if data == "":
-                data = None
-        except Exception:
-            data = None
-
-        return data
+        return self.__pipeline_config.get_documentation_url()
 
     @property
     def configuration_name(self):
@@ -297,7 +290,7 @@ class Sgtk(object):
         :raises: :class:`TankError`
         """
         try:
-            self.templates = read_templates(self.__pipeline_config)
+            self.templates, self.template_keys = read_templates(self.__pipeline_config)
         except TankError as e:
             raise TankError("Templates could not be reloaded: %s" % e)
 
@@ -343,7 +336,7 @@ class Sgtk(object):
         
     def template_from_path(self, path):
         """
-        Finds a template that matches the given path::
+        Finds a template that matches the given path:
 
             >>> import sgtk
             >>> tk = sgtk.sgtk_from_path("/studio/project_root")
@@ -354,27 +347,94 @@ class Sgtk(object):
         :param path: Path to match against a template
         :returns: :class:`TemplatePath` or None if no match could be found.
         """
-        matched_templates = []
+        matched_templates = set()
         for key, template in self.templates.items():
             if template.validate(path):
-                matched_templates.append(template)
+                matched_templates.add(template)
 
         if len(matched_templates) == 0:
             return None
         elif len(matched_templates) == 1:
-            return matched_templates[0]
+            return matched_templates.pop()
         else:
-            # ambiguity!
-            # We're erroring out anyway, take the time to create helpful debug info!
-            matched_fields = []
+            # First check to see how many static tokens match
+            templates_by_token_num = {}
             for template in matched_templates:
-                matched_fields.append(template.get_fields(path))
+                num_tokens = len(template.static_tokens)
+                if num_tokens in templates_by_token_num:
+                    templates_by_token_num[num_tokens].append(template)
+                else:
+                    templates_by_token_num[num_tokens] = [template]
 
-            msg = "%d templates are matching the path '%s'.\n" % (len(matched_templates), path)
-            msg += "The overlapping templates are:\n"
-            for fields, template in zip(matched_fields, matched_templates):
-                msg += "%s\n%s\n" % (template, fields)
-            raise TankMultipleMatchingTemplatesError(msg)
+            # Get the template(s) with the max number of static tokens
+            max_token_templates = templates_by_token_num[sorted(templates_by_token_num.keys())[-1]]
+
+            # The template with the most matched static tokens wins
+            if len(max_token_templates) == 1:
+                return max_token_templates[0]
+            else:
+                # ambiguity!
+                # We're erroring out anyway, take the time to create helpful debug info!
+                matched_fields = []
+                for template in max_token_templates:
+                    matched_fields.append(template.get_fields(path))
+
+                msg = "%d templates are matching the path '%s'.\n" % (len(max_token_templates), path)
+                msg += "The overlapping templates are:\n"
+                for fields, template in zip(matched_fields, max_token_templates):
+                    msg += "%r\n%s\n" % (template, fields)
+                raise TankMultipleMatchingTemplatesError(msg)
+
+    def schema_folder_from_path(self, path):
+        """
+        Finds a schema configuration folder that matches the given path:
+
+            >>> import sgtk
+            >>> tk = sgtk.sgtk_from_path("/studio/project_root")
+            >>> tk.schema_folder_from_path("/studio/my_proj/assets/Car/Anim/work")
+            <Folder "{Project}/{Sequence}/{Shot}/user/{user_workspace}/{Step}">
+
+
+        :param path: Path to match against a schema configuraiton folder
+        :returns: :class:`Folder` or derived class or None if no match could be found.
+        """
+        matched_folders = set()
+        for folder_obj in self.folder_config.get_folders():
+            if folder_obj.template_path.validate(path):
+                matched_folders.add(folder_obj)
+
+        if len(matched_folders) == 0:
+            return None
+        elif len(matched_folders) == 1:
+            return matched_folders.pop()
+        else:
+            # First check to see how many static tokens match
+            folders_by_token_num = {}
+            for folder_obj in matched_folders:
+                num_tokens = len(folder_obj.template_path.static_tokens)
+                if num_tokens in folders_by_token_num:
+                    folders_by_token_num[num_tokens].append(folder_obj)
+                else:
+                    folders_by_token_num[num_tokens] = [folder_obj]
+
+            # Get the folder(s) with the max number of static tokens
+            max_token_folders = folders_by_token_num[sorted(folders_by_token_num.keys())[-1]]
+
+            # The template with the most matched static tokens wins
+            if len(max_token_folders) == 1:
+                return max_token_folders[0]
+            else:
+                # ambiguity!
+                # We're erroring out anyway, take the time to create helpful debug info!
+                matched_fields = []
+                for folder_obj in max_token_folders:
+                    matched_fields.append(folder_obj.template_path.get_fields(path))
+
+                msg = "%d schema folders are matching the path '%s'.\n" % (len(max_token_folders), path)
+                msg += "The overlapping schema folders are:\n"
+                for fields, folder_obj in zip(matched_fields, max_token_folders):
+                    msg += "%r\n%s\n" % (folder_obj, fields)
+                raise TankMultipleMatchingTemplatesError(msg)
 
     def paths_from_template(self, template, fields, skip_keys=None, skip_missing_optional_keys=False):
         """

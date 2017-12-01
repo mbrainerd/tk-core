@@ -27,7 +27,7 @@ class Application(TankBundle):
     Base class for all Applications (Apps) running in Toolkit.
     """
     
-    def __init__(self, engine, descriptor, settings, instance_name, env):
+    def __init__(self, engine, descriptor, settings, instance_name, env, context):
         """
         Application instances are constructed by the toolkit launch process
         and various factory methods such as :meth:`start_engine`.
@@ -36,15 +36,16 @@ class Application(TankBundle):
         :param app_name: The short name of this app (e.g. tk-nukepublish)
         :param settings: a settings dictionary for this app
         """
+        context = context or engine.context
+
         self.__engine = engine
-        self.__instance_name = instance_name
 
         # create logger for this app
         # log will be parented in a sgtk.env.environment_name.engine_instance_name.app_instance_name hierarchy
-        logger = self.__engine.get_child_logger(self.__instance_name)
+        logger = self.__engine.get_child_logger(instance_name)
 
         # init base class
-        TankBundle.__init__(self, engine.tank, engine.context, settings, descriptor, env, logger)
+        TankBundle.__init__(self, engine.tank, context, settings, instance_name, descriptor, env, logger)
 
         self.log_debug("App init: Instantiating %s" % self)
 
@@ -98,21 +99,7 @@ class Application(TankBundle):
             # tk user agent handler associated.
             pass
         
-        return self.tank.shotgun        
-
-    def _get_instance_name(self):
-        """
-        The name for this app instance.
-        """
-        return self.__instance_name
-
-    def _set_instance_name(self, instance_name):
-        """
-        Sets the instance name of the app.
-        """
-        self.__instance_name = instance_name
-
-    instance_name = property(_get_instance_name, _set_instance_name)
+        return self.tank.shotgun
         
     @property
     def engine(self):
@@ -292,7 +279,7 @@ class Application(TankBundle):
         })
         return properties
 
-def get_application(engine, app_folder, descriptor, settings, instance_name, env):
+def get_application(engine, app_folder, descriptor, settings, instance_name, env, context=None):
     """
     Internal helper method. 
     (Removed from the engine base class to make it easier to run unit tests).
@@ -307,6 +294,6 @@ def get_application(engine, app_folder, descriptor, settings, instance_name, env
         
     # Instantiate the app
     class_obj = load_plugin(plugin_file, Application)
-    obj = class_obj(engine, descriptor, settings, instance_name, env)
+    obj = class_obj(engine, descriptor, settings, instance_name, env, context)
     return obj
 

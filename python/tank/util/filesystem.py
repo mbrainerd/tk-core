@@ -352,7 +352,7 @@ def get_permissions(path):
     given path.
 
     :param filename: Path to the file to be queried for permissions
-    :returns: permissions bits of the file 
+    :returns: permissions bits of the file
     :raises: OSError - if there was a problem retrieving permissions for the path
     """
     return stat.S_IMODE(os.stat(path)[stat.ST_MODE])
@@ -360,10 +360,10 @@ def get_permissions(path):
 def safe_delete_folder(path):
     """
     Deletes a folder and all of its contents recursively, even if it has read-only
-    items. 
+    items.
 
     .. note::
-        Problems deleting any items will be reported as warnings in the log 
+        Problems deleting any items will be reported as warnings in the log
         output but otherwise ignored and skipped; meaning the function will continue
         deleting as much as it can.
 
@@ -374,8 +374,8 @@ def safe_delete_folder(path):
         """
         Error function called whenever shutil.rmtree fails to remove a file system
         item. Exceptions raised by this function will not be caught.
-        
-        :param func: The function which raised the exception; it will be: 
+
+        :param func: The function which raised the exception; it will be:
                      os.path.islink(), os.listdir(), os.remove() or os.rmdir().
         :param path: The path name passed to function.
         :param exc_info: The exception information return by sys.exc_info().

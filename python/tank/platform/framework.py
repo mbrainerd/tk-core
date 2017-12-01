@@ -27,7 +27,7 @@ class Framework(TankBundle):
     Base class for a Toolkit Framework
     """
     
-    def __init__(self, engine, descriptor, settings, env):
+    def __init__(self, engine, descriptor, settings, instance_name, env):
         """
         Called by the bundle loading framework. The constructor
         is not meant to be overridden by deriving classes.
@@ -42,10 +42,10 @@ class Framework(TankBundle):
 
         # create logger for this app
         # log will be parented in a sgtk.env.environment_name.engine_instance_name.framework_name hierarchy
-        logger = self.__engine.get_child_logger(descriptor.system_name)
+        logger = self.__engine.get_child_logger(instance_name)
 
         # init base class
-        TankBundle.__init__(self, engine.tank, engine.context, settings, descriptor, env, logger)
+        TankBundle.__init__(self, engine.tank, engine.context, settings, instance_name, descriptor, env, logger)
 
     def __repr__(self):
         return "<Sgtk Framework 0x%08x: %s, engine: %s>" % (id(self), self.name, self.engine)
@@ -294,7 +294,7 @@ def load_framework(engine_obj, env, fw_instance_name):
     # load the framework
 #    try:
     # initialize fw class
-    fw = _create_framework_instance(engine_obj, descriptor, fw_settings, env)
+    fw = _create_framework_instance(engine_obj, descriptor, fw_settings, fw_instance_name, env)
 
     # if it's a shared framework then add it to the engine so we can re-use it
     # again in the future if needed:
@@ -314,7 +314,7 @@ def load_framework(engine_obj, env, fw_instance_name):
     return fw
 
 
-def _create_framework_instance(engine, descriptor, settings, env):
+def _create_framework_instance(engine, descriptor, settings, instance_name, env):
     """
     Internal helper method. 
     Returns an framework object given an engine and fw settings.
@@ -328,5 +328,5 @@ def _create_framework_instance(engine, descriptor, settings, env):
         
     # Instantiate the app
     class_obj = load_plugin(plugin_file, Framework)
-    obj = class_obj(engine, descriptor, settings, env)
+    obj = class_obj(engine, descriptor, settings, instance_name, env)
     return obj

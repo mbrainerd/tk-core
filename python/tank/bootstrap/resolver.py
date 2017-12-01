@@ -30,6 +30,7 @@ from ..descriptor.descriptor_installed_config import InstalledConfigDescriptor
 from ..util import filesystem
 from ..util import ShotgunPath
 from ..util import LocalFileStorageManager
+from .. import pipelineconfig_utils
 from .. import LogManager
 from . import constants
 
@@ -99,7 +100,22 @@ class ConfigurationResolver(object):
             # convert to dict so we can introspect
             config_descriptor = descriptor_uri_to_dict(config_descriptor)
 
-        if config_descriptor["type"] == constants.BAKED_DESCRIPTOR_TYPE:
+        if config_descriptor["type"] == constants.INSTALLED_DESCRIPTOR_TYPE:
+
+            config_path = os.path.expanduser(os.path.expandvars(config_descriptor["path"]))
+            if not os.path.exists(config_path):
+                raise TankBootstrapError(
+                    "Installed pipeline configuration '%s' does not exist on disk!" % (config_path,)
+                )
+
+            cfg_descriptor = create_descriptor(
+                sg_connection,
+                Descriptor.INSTALLED_CONFIG,
+                dict(path=config_path, type="path"),
+                fallback_roots=self._bundle_cache_fallback_paths,
+                resolve_latest=False
+            )
+        elif config_descriptor["type"] == constants.BAKED_DESCRIPTOR_TYPE:
             # special case -- this is a full configuration scaffold that
             # has been pre-baked and can be used directly at runtime
             # without having to do lots of copying into temp space.
@@ -165,9 +181,9 @@ class ConfigurationResolver(object):
                 resolve_latest=resolve_latest
             )
 
-            return self._create_configuration_from_descriptor(
-                cfg_descriptor, sg_connection, pc_id=None
-            )
+        return self._create_configuration_from_descriptor(
+            cfg_descriptor, sg_connection, pc_id=None
+        )
 
     def _create_configuration_from_descriptor(self, cfg_descriptor, sg_connection, pc_id):
         """
@@ -290,7 +306,7 @@ class ConfigurationResolver(object):
         log.debug(pprint.pformat(filters))
 
         pipeline_configs = sg_connection.find(
-            "PipelineConfiguration",
+            constants.PIPELINE_CONFIGURATION_ENTITY_TYPE,
             filters,
             self._PIPELINE_CONFIG_FIELDS,
             order=[{"field_name": "id", "direction": "asc"}]
@@ -333,14 +349,15 @@ class ConfigurationResolver(object):
                 # If a location was specified to get access to that pipeline, return it. Note that
                 # we are potentially returning pipeline configurations that have been configured for
                 # one platform but not all.
-                if path:
-                    # Create a descriptor only if the pipeline is valid.
-                    pipeline_config["config_descriptor"] = self._create_config_descriptor(
-                        sg_connection, pipeline_config
-                    )
-                    yield pipeline_config
-                else:
+                if not path:
                     log.debug("Pipeline configuration's 'path' fields are not set: %s" % pipeline_config)
+
+                # Create a descriptor only if the pipeline is valid.
+                pipeline_config["config_descriptor"] = self._create_config_descriptor(
+                    sg_connection, pipeline_config
+                )
+                yield pipeline_config
+  
 
     def _create_config_descriptor(self, sg_connection, shotgun_pc_data):
         """
@@ -669,7 +686,7 @@ class ConfigurationResolver(object):
 
             # Fetch the one and only config that matches this id.
             pipeline_config = sg_connection.find_one(
-                "PipelineConfiguration",
+                constants.PIPELINE_CONFIGURATION_ENTITY_TYPE,
                 [
                     ["id", "is", pipeline_config_identifier],
                 ],

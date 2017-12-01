@@ -16,11 +16,15 @@ Management of file and directory templates.
 import os
 import re
 import sys
+import copy
 
 from . import templatekey
 from .errors import TankError
 from . import constants
 from .template_path_parser import TemplatePathParser
+from . import LogManager
+
+log = LogManager.get_logger(__name__)
 
 class Template(object):
     """
@@ -111,6 +115,9 @@ class Template(object):
         else:
             return "<Sgtk %s %s>" % (class_name, self._repr_def)
 
+    def __str__(self):
+        return self._definitions[0]
+
     @property
     def definition(self):
         """
@@ -119,6 +126,15 @@ class Template(object):
         # Use first definition as it should be most inclusive in case of variations
         return self._definitions[0]
 
+    @property
+    def static_tokens(self):
+        """
+        A list of static tokens for the first definition
+        as it should be the most inclusive in case of variations
+
+        :returns: a list of strings
+        """
+        return [y for x in self._static_tokens[0] for y in x.split(self._token) if y]
 
     @property
     def keys(self):
@@ -327,8 +343,6 @@ class Template(object):
 
         return definitions
 
-
-
     def _fix_key_names(self, definition, keys):
         """
         Substitutes key name for name used in definition
@@ -491,6 +505,7 @@ class TemplatePath(Template):
         super(TemplatePath, self).__init__(definition, keys, name=name)
         self._prefix = root_path
         self._per_platform_roots = per_platform_roots
+        self._token = os.path.sep
 
         # Make definition use platform separator
         for index, rel_definition in enumerate(self._definitions):
@@ -526,6 +541,146 @@ class TemplatePath(Template):
         if parent_definition:
             return TemplatePath(parent_definition, self.keys, self.root_path, None, self._per_platform_roots)
         return None
+
+
+    def get_entities(self, tk, input_path, skip_keys=None):
+        """
+        Extracts a list of entities from a string that can be used for building a context. Example:
+
+            >>> input_path = '/studio_root/sgtk/demo_project_1/sequences/seq_1/shot_2/comp/dirk.gently'
+            >>> template_path.get_entities(input_path)
+
+            [{'type': 'Project',   'id': 10, 'name': 'demo_project_1'},
+             {'type': 'Shot',      'id': 60, 'code': 'shot_2'},
+             {'type': 'Step',      'id': 14, 'code': 'comp'},
+             {'type': 'HumanUser', 'id': 23, 'name': 'Dirk Gently'}]
+        
+        :param input_path: Source path for values
+        :type input_path: String
+        :param additional_types: Optional additional types to search for
+        :type additional_types: List
+        :param skip_keys: Optional keys to skip
+        :type skip_keys: List
+
+        :returns: A list of entity dictionaries
+        :rtype: List
+        """
+        entities = []
+        sg_filters = []
+        processed_keys = []
+
+        # Get fields parsed from the path
+        path_fields = self.get_fields(input_path, skip_keys)
+
+        if "Project" not in path_fields:
+            # Get the project name separately since it isn't typically parsed by get_fields
+            path_fields["Project"] = os.path.basename(self.root_path)
+
+        def _get_entity_from_key(key_name, sg_filters):
+            """
+            Helper function to get a Shotgun entity from a given path field key
+            """
+            processed_keys.append(key_name)
+
+            if key_name not in path_fields:
+                return None
+
+            if key_name not in self.keys:
+                log.warning("Cannot find TemplateKey for '%s'. Skipping..." % key_name)
+                return None
+
+            key = self.keys[key_name]
+            value = path_fields[key_name]
+
+            # Only process this key if it is an entity field
+            if not key.shotgun_field_name:
+                return None
+
+            entity_type = key.shotgun_entity_type
+            field_name  = key.shotgun_field_name
+
+            filters = sg_filters + [[field_name, "is", value]]
+            fields = ["type", "id", field_name]
+
+            entity = tk.shotgun.find_one(entity_type, filters, fields)
+            if entity is None:
+                raise TankError("Cannot find %s Entity: '%s' in Shotgun using filter: %s"
+                        % (entity_type, value, filters))
+
+            return entity
+
+        # Get the user from the login key if its been parsed
+        user_entity = _get_entity_from_key("login", sg_filters)
+        if user_entity:
+            entities.append(user_entity)
+
+        # Get the project entity
+        proj_entity = _get_entity_from_key("Project", sg_filters)
+        if proj_entity:
+            entities.append(proj_entity)
+
+            # Filter all further entities by this project
+            sg_filters.append(["project", "is", proj_entity])
+        else:
+            # We can't resolve anything else if we're outside a project
+            return entities
+
+        # Get the sequence entity if defined
+        seq_entity = _get_entity_from_key("Sequence", sg_filters)
+        if seq_entity:
+
+            # Append the sequence entity
+            entities.append(seq_entity)
+
+            # Filter shot-level entity by this sequence
+            shot_filters = sg_filters + [["sg_sequence", "is", seq_entity]]
+
+            # Get the shot entity if defined
+            shot_entity = _get_entity_from_key("Shot", shot_filters)
+            if shot_entity:
+                entities.append(shot_entity)
+
+                # Filter further asset entities by this shot
+                sg_filters += [["sg_shot", "is", shot_entity]]
+            else:
+                # Filter further asset entities by this sequence
+                sg_filters += [["sg_sequence", "is", seq_entity]]
+
+        # Get the asset type if defined
+        asset_filters = copy.deepcopy(sg_filters)
+        if "sg_asset_type" in path_fields:
+            # Filter asset entities by this asset type (optional)
+            asset_type = path_fields["sg_asset_type"]
+            asset_filters += [["sg_asset_type", "is", asset_type]]
+            processed_keys.append("sg_asset_type")
+
+        # Get the asset entity if defined
+        asset_entity = _get_entity_from_key("Asset", asset_filters)
+        if asset_entity:
+            entities.append(asset_entity)
+
+        # Filter step entity by the parent entity type
+        step_filters = [["entity_type", "is", entities[-1]["type"]]]
+
+        step_entity = _get_entity_from_key("Step", step_filters)
+        if step_entity:
+            entities.append(step_entity)
+
+        # Now process the remaining fields
+        for key_name in path_fields.keys():
+            # Skip the ones we processed manually
+            if key_name in processed_keys:
+                continue
+
+            entity = tk.execute_core_hook("template_additional_entities",
+                                          key_name=key_name,
+                                          sg_filters=sg_filters,
+                                          query_function=_get_entity_from_key)
+            if entity:
+                entities.append(entity)
+
+        return entities
+
 
     def _apply_fields(self, fields, ignore_types=None, platform=None):
         """
@@ -607,6 +762,7 @@ class TemplateString(Template):
         super(TemplateString, self).__init__(definition, keys, name=name)
         self.validate_with = validate_with
         self._prefix = "@"
+        self._token = "_"
 
         # split by format strings the definition string into tokens 
         self._static_tokens = []
@@ -679,16 +835,18 @@ def read_templates(pipeline_configuration):
     keys = templatekey.make_keys(get_data_section("keys"))
     template_paths = make_template_paths(get_data_section("paths"), keys, per_platform_roots)
     template_strings = make_template_strings(get_data_section("strings"), keys, template_paths)
+    template_aliases = make_template_aliases(get_data_section("aliases"), template_strings, template_paths)
 
     # Detect duplicate names across paths and strings
-    dup_names =  set(template_paths).intersection(set(template_strings))
+    dup_names =  set(template_paths).intersection(set(template_strings).intersection(set(template_aliases)))
     if dup_names:
-        raise TankError("Detected paths and strings with the same name: %s" % str(list(dup_names)))
+        raise TankError("Detected templates with the same name: %s" % str(list(dup_names)))
 
     # Put path and strings together
     templates = template_paths
     templates.update(template_strings)
-    return templates
+    templates.update(template_aliases)
+    return templates, keys
 
 
 def make_template_paths(data, keys, all_per_platform_roots):
@@ -741,7 +899,7 @@ def make_template_strings(data, keys, template_paths):
     :returns: Dictionary of form {<template name> : <TemplateString object>}
     """
     template_strings = {}
-    templates_data = _process_templates_data(data, "path")
+    templates_data = _process_templates_data(data, "string")
 
     for template_name, template_data in templates_data.items():
         definition = template_data["definition"]
@@ -760,6 +918,35 @@ def make_template_strings(data, keys, template_paths):
         template_strings[template_name] = template_string
 
     return template_strings
+
+def make_template_aliases(data, template_strings, template_paths):
+    """
+    Factory function which creates aliases for TemplatePaths or TemplateStrings.
+
+    :param data: Data from which to construct the template aliases.
+    :type data:  Dictionary of form: {<template name>: {<option>: <option value>}}
+    :param template_string: TemplateStrings available for optional validation.
+    :type template_string: Dictionary of form: {<template name>: <TemplateString object>}
+    :param template_paths: TemplatePaths available for optional validation.
+    :type template_paths: Dictionary of form: {<template name>: <TemplatePath object>}
+
+    :returns: Dictionary of form {<template name> : <TemplateString|TemplatePath object>}
+    """
+    template_aliases = {}
+    templates_data = _process_templates_data(data, "string")
+
+    for template_name, template_data in templates_data.items():
+        definition = template_data["definition"]
+
+        if definition in template_paths:
+            template_aliases[template_name] = template_paths[definition]
+        elif definition in template_strings:
+            template_aliases[template_name] = template_strings[definition]
+        else:
+            raise TankError("Template alias '%s' refers to non-existent Template '%s'" %
+                    (template_name, definition))
+
+    return template_aliases
 
 def _conform_template_data(template_data, template_name):
     """
@@ -785,7 +972,8 @@ def _process_templates_data(data, template_type):
     :returns: Processed data.
     """
     templates_data = {}
-    # Track definition to detect duplicates
+
+    # Track path definitions to detect duplicates
     definitions = {}
 
     for template_name, template_data in data.items():
@@ -795,13 +983,9 @@ def _process_templates_data(data, template_type):
             if "root_name" not in cur_data:
                 cur_data["root_name"] = constants.PRIMARY_STORAGE_NAME
             
-            root_name = cur_data["root_name"]
-        else:
-            root_name = None
-
-        # Record this templates definition
-        cur_key = (root_name, definition)
-        definitions[cur_key] = definitions.get(cur_key, []) + [template_name]
+            # Record this templates definition
+            cur_key = (cur_data["root_name"], definition)
+            definitions[cur_key] = definitions.get(cur_key, []) + [template_name]
 
         templates_data[template_name] = cur_data
 
@@ -821,6 +1005,3 @@ def _process_templates_data(data, template_type):
                         "templates were detected:\n %s" % dups_msg) 
 
     return templates_data
-
-
-

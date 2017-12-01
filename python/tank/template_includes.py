@@ -131,12 +131,14 @@ def process_includes(file_name, data):
     # Would result in:
     #   bar/something/@/_bar_
     template_paths = resolved_includes_data[constants.TEMPLATE_PATH_SECTION]
-    template_strings = resolved_includes_data[constants.TEMPLATE_STRING_SECTION] 
+    template_strings = resolved_includes_data[constants.TEMPLATE_STRING_SECTION]
+    template_aliases = resolved_includes_data[constants.TEMPLATE_ALIAS_SECTION]
     
     # process the template paths section:
     for template_name, template_definition in template_paths.iteritems():
         _resolve_template_r(template_paths, 
                             template_strings, 
+                            template_aliases,
                             template_name, 
                             template_definition, 
                             "path")
@@ -144,13 +146,23 @@ def process_includes(file_name, data):
     # and process the strings section:
     for template_name, template_definition in template_strings.iteritems():
         _resolve_template_r(template_paths, 
-                            template_strings, 
+                            template_strings,
+                            template_aliases, 
                             template_name, 
                             template_definition, 
                             "string")
+
+    # and process the strings section:
+    for template_name, template_definition in template_aliases.iteritems():
+        _resolve_template_r(template_paths, 
+                            template_strings, 
+                            template_aliases,
+                            template_name, 
+                            template_definition, 
+                            "alias")
                 
     # finally, resolve escaped @'s in template definitions:
-    for templates in [template_paths, template_strings]:
+    for templates in [template_paths, template_strings, template_aliases]:
         for template_name, template_definition in templates.iteritems():
             # find the template string from the definition:
             template_str = None
@@ -177,7 +189,7 @@ def process_includes(file_name, data):
                 
     return resolved_includes_data
         
-def _find_matching_ref_template(template_paths, template_strings, ref_string):
+def _find_matching_ref_template(template_paths, template_strings, template_aliases, ref_string):
     """
     Find a template whose name matches a portion of ref_string.  This
     will find the longest/best match and will look at both path and string
@@ -186,7 +198,7 @@ def _find_matching_ref_template(template_paths, template_strings, ref_string):
     matching_templates = []
     
     # find all templates that match the start of the ref string:
-    for templates, template_type in [(template_paths, "path"), (template_strings, "string")]:
+    for templates, template_type in [(template_paths, "path"), (template_strings, "string"), (template_aliases, "alias")]:
         for name, definition in templates.iteritems():
             if ref_string.startswith(name):
                 matching_templates.append((name, definition, template_type))
@@ -203,7 +215,7 @@ def _find_matching_ref_template(template_paths, template_strings, ref_string):
             
     return best_match
 
-def _resolve_template_r(template_paths, template_strings, template_name, template_definition, template_type, template_chain = None):
+def _resolve_template_r(template_paths, template_strings, template_aliases, template_name, template_definition, template_type, template_chain = None):
     """
     Recursively resolve path templates so that they are fully expanded.
     """
@@ -245,7 +257,7 @@ def _resolve_template_r(template_paths, template_strings, template_name, templat
                 continue
                 
             # find a template that matches the start of the template string:                
-            ref_template = _find_matching_ref_template(template_paths, template_strings, ref_part)
+            ref_template = _find_matching_ref_template(template_paths, template_strings, template_aliases, ref_part)
             if not ref_template:
                 raise TankError("Failed to resolve template reference from '@%s' defined by "
                                 "the %s template '%s'" % (ref_part, template_type, template_name))
@@ -253,7 +265,8 @@ def _resolve_template_r(template_paths, template_strings, template_name, templat
             # resolve the referenced template:
             ref_template_name, ref_template_definition, ref_template_type = ref_template
             resolved_ref_str = _resolve_template_r(template_paths, 
-                                                   template_strings, 
+                                                   template_strings,
+                                                   template_aliases, 
                                                    ref_template_name, 
                                                    ref_template_definition, 
                                                    ref_template_type, 
@@ -269,7 +282,7 @@ def _resolve_template_r(template_paths, template_strings, template_name, templat
     resolved_template_str = "@@".join(resolved_template_str_parts)
     
     # put the value back:
-    templates = {"path":template_paths, "string":template_strings}[template_type]
+    templates = {"path":template_paths, "string":template_strings, "alias":template_aliases}[template_type]
     if complex_syntax:
         templates[template_name]["definition"] = resolved_template_str
     else:

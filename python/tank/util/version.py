@@ -10,7 +10,7 @@
 
 import re
 
-from distutils.version import LooseVersion
+from pkg_resources import parse_version as Version
 
 def is_version_head(version):
     """
@@ -50,7 +50,7 @@ def is_version_newer(a, b):
     if b.startswith("v"):
         b = b[1:]
 
-    return LooseVersion(a) > LooseVersion(b)
+    return Version(a) > Version(b)
 
 
 def is_version_older(a, b):
@@ -76,7 +76,7 @@ def is_version_older(a, b):
     if b.startswith("v"):
         b = b[1:]
 
-    return LooseVersion(a) < LooseVersion(b)
+    return Version(a) < Version(b)
 
 def is_version_number(version):
     """

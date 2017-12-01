@@ -57,16 +57,11 @@ class CacheItem(object):
                 )
         else:
             self._stat = stat
-            
 
-    def _get_data(self):
+    @property
+    def data(self):
         """The item's data."""
         return self._data
-
-    def _set_data(self, config_data):
-        self._data = config_data
-
-    data = property(_get_data, _set_data)
 
     @property
     def path(self):
@@ -78,9 +73,9 @@ class CacheItem(object):
         """The stat of the file on disk that the item was sourced from."""
         return self._stat
 
-    def given_item_newer(self, other):
+    def age_differs(self, other):
         """
-        Tests whether the given item is newer than this.
+        Tests whether the age of the given item differs from this item.
 
         :param other:   The CacheItem to test against.
         :raises:        TypeError: Given item is not a CacheItem.
@@ -88,7 +83,7 @@ class CacheItem(object):
         """
         if not isinstance(other, CacheItem):
             raise TypeError("Given item must be of type CacheItem.")
-        return other.stat.st_mtime > self.stat.st_mtime
+        return other.stat.st_mtime != self.stat.st_mtime
 
     def size_differs(self, other):
         """
@@ -105,7 +100,7 @@ class CacheItem(object):
     def __eq__(self, other):
         if not isinstance(other, CacheItem):
             raise TypeError("Given item must be of type CacheItem.")
-        return (other.stat.st_mtime == self.stat.st_mtime and not self.size_differs(other))
+        return (not self.age_differs(other) and not self.size_differs(other))
 
     def __getitem__(self, key):
         # Backwards compatibility just in case something outside
@@ -121,6 +116,21 @@ class CacheItem(object):
 
     def __str__(self):
         return str(self.path)
+
+    def load(self):
+        """
+        Loads the CacheItem's YAML data from disk.
+        """
+        try:
+            with open(self.path, "r") as fh:
+                raw_data = yaml.load(fh)
+        except IOError:
+            raise TankFileDoesNotExistError("File does not exist: %s" % self.path)
+        except Exception as e:
+            raise TankError("Could not open file '%s'. Error reported: '%s'" % (self.path, e))
+
+        # Populate the item's data before adding it to the cache.
+        self._data = raw_data
 
 class YamlCache(object):
     """
@@ -227,7 +237,7 @@ class YamlCache(object):
                     return cached_item
                 else:
                     if not item.data:
-                        self._populate_cache_item_data(item)
+                        item.load()
                     self._cache[path] = item
                     return item
             else:
@@ -245,26 +255,11 @@ class YamlCache(object):
                 else:
                     # Load the yaml data from disk. If it's not already populated.
                     if not item.data:
-                        self._populate_cache_item_data(item)
+                        item.load()
                     self._cache[path] = item
                     return item
         finally:
             self._lock.release()
-
-    def _populate_cache_item_data(self, item):
-        """
-        Loads the CacheItem's YAML data from disk.
-        """
-        path = item.path
-        try:
-            with open(path, "r") as fh:
-                raw_data = yaml.load(fh)
-        except IOError:
-            raise TankFileDoesNotExistError("File does not exist: %s" % path)
-        except Exception as e:
-            raise TankError("Could not open file '%s'. Error reported: '%s'" % (path, e))
-        # Populate the item's data before adding it to the cache.
-        item.data = raw_data
 
 # The global instance of the YamlCache.
 g_yaml_cache = YamlCache()

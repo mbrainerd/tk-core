@@ -257,15 +257,15 @@ class IODescriptorBase(object):
                 current = current[number]
 
         # now search for the latest version matching our pattern
-        if not re.match("^v([0-9]+|x)(.([0-9]+|x)){2,}$", pattern):
+        if not re.match("^v(\d+|x)(.(\d+|x)){2,}$", pattern):
             raise TankDescriptorError("Cannot parse version expression '%s'!" % pattern)
 
         # split our pattern, beware each part is a string (even integers)
-        version_split = re.findall("([0-9]+|x)", pattern)
+        version_split = re.findall("(\d+|x)", pattern)
         if 'x' in version_split:
             # check that we don't have an incorrect pattern using x
             # then a digit, eg. v4.x.2
-            if re.match("^v[0-9\.]+[x\.]+[0-9\.]+$", pattern):
+            if re.match("^v[\d\.]+[x\.]+[\d\.]+$", pattern):
                 raise TankDescriptorError(
                     "Incorrect version pattern '%s'. "
                     "There should be no digit after a 'x'." % pattern
@@ -282,6 +282,7 @@ class IODescriptorBase(object):
             if version_digit not in current:
                 # no matches
                 return None
+
             current = current[version_digit]
             if version_to_use is None:
                 version_to_use = "v%d" % version_digit

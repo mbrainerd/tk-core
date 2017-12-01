@@ -27,7 +27,7 @@ json = shotgun_api3.shotgun.json
 
 from .platform.engine import show_global_busy, clear_global_busy 
 from . import constants
-from .errors import TankError
+from .errors import TankError, TankMultipleMatchingTemplatesError
 from . import LogManager
 from .util.login import get_current_user
 
@@ -138,6 +138,9 @@ class PathCache(object):
                     CREATE INDEX shotgun_status_shotgun_id ON shotgun_status(shotgun_id);
                     """)
                 self._connection.commit()
+
+                # Synchronize the table with the shotgun server
+                self.synchronize(True)
                 
             else:
                 
@@ -1093,7 +1096,7 @@ class PathCache(object):
         # name in the database and file system, but with a different id.
         # We only do this for primary items - for secondary items, multiple items can exist
         if is_primary:
-            entity_in_db = self.get_entity(path)
+            entity_in_db = self._get_entity(path)
             
             if entity_in_db is not None:
                 if entity_in_db["id"] != entity["id"] or entity_in_db["type"] != entity["type"]:
@@ -1254,7 +1257,7 @@ class PathCache(object):
             # the primary entity must be unique: path/id/type
             # see if there are any records for this path
             # note that get_entity does not return secondary entities
-            curr_entity = self.get_entity(path, cursor)
+            curr_entity = self._get_entity(path, cursor)
 
             if curr_entity is not None:
                 # this path is already registered. Ensure it is connected to
@@ -1496,7 +1499,61 @@ class PathCache(object):
         
         return paths
 
-    def get_entity(self, path, cursor=None):
+
+    def get_entity(self, path):
+        """
+        Returns an entity given a path.
+
+        :param path: a path on disk
+        :returns: Shotgun entity dict, e.g. {"type": "Shot", "name": "xxx", "id": 123} 
+                  or None if not found
+        """
+        entity = self._get_entity(path)
+        if not entity:
+            log.debug("Entry missing from path_cache: '%s'" % path)
+
+            # If entity for the path isn't in the cache, see if we can derive it
+            # from a schema folder matching the path
+            try:
+                folder_obj = self._tk.schema_folder_from_path(path)
+            except TankMultipleMatchingTemplatesError as e:
+                log.warning(str(e))
+
+            if not folder_obj:
+                log.debug("Cannot find a schema folder matching path '%s'" % path)
+                return None
+
+            # Get the primary and secondary entities defined in the path
+            try:
+                primary_entry, secondary_entries = folder_obj.get_entries_from_path(path)
+            except TankError as e:
+                log.debug("Cannot get entities from path '%s' using schema folder '%s': %s"
+                        % (path, folder_obj, str(e)))
+                return None
+            except AttributeError:
+                log.debug("Schema folder '%s' is not associated with an entity" % folder_obj)
+                return None
+
+            # Get the entity from the primary entry
+            entity = primary_entry["entity"]
+
+            # Add the missing primary and secondary entities to the path_cache
+            db_entries = [primary_entry] + secondary_entries
+
+            # validate the data before we push it into the database. 
+            # to properly cover some edge cases
+            try:
+                self.validate_mappings(db_entries)
+            except TankError as e:
+                raise TankError("path_cache population aborted: %s" % e)
+
+            log.info("Adding path_cache mapping %s(%s): %s" % (entity["type"], entity["id"], path))
+            self.add_mappings(db_entries, entity["type"], [entity["id"]])
+
+        return entity
+
+
+    def _get_entity(self, path, cursor=None):
         """
         Returns an entity given a path.
         
@@ -1548,6 +1605,7 @@ class PathCache(object):
             return {"type": type_str, "id": data[0][1], "name": name_str }
         else:
             return None
+
 
     def get_secondary_entities(self, path):
         """
