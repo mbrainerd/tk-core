@@ -99,7 +99,7 @@ def get_project_name_studio_hook_location():
     # an API or set of functions which can be executed outside the remit of a 
     # pipeline configuration/Toolkit project.
     
-    core_cfg = __get_api_core_hook_location()
+    core_cfg = __get_api_core_config_location()
     path = os.path.join(core_cfg, constants.STUDIO_HOOK_PROJECT_NAME)
     return path
 
@@ -220,7 +220,7 @@ def _parse_config_data(file_data, user, shotgun_cfg_path):
         config_data = file_data
 
     # now check if there is a studio level override hook which want to refine these settings
-    sg_hook_path = os.path.join(__get_api_core_hook_location(), constants.STUDIO_HOOK_SG_CONNECTION_SETTINGS)
+    sg_hook_path = os.path.join(__get_api_core_config_location(), constants.STUDIO_HOOK_SG_CONNECTION_SETTINGS)
 
     if os.path.exists(sg_hook_path):
         # custom hook is available!

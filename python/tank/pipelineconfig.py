@@ -264,6 +264,7 @@ class PipelineConfiguration(object):
         # write the record to disk
         pipe_config_sg_id_path = os.path.join(
             self.get_config_location(),
+            "core",
             constants.PIPELINECONFIG_FILE
         )
         
@@ -882,7 +883,7 @@ class PipelineConfiguration(object):
         
         :returns: path string
         """
-        return os.path.join(self.get_hooks_location(), "core")
+        return os.path.join(self.get_config_location(), "core", "hooks")
 
     def get_schema_config_location(self):
         """
@@ -890,7 +891,7 @@ class PipelineConfiguration(object):
         
         :returns: path string
         """
-        return os.path.join(self.get_config_location(), "schema")
+        return os.path.join(self.get_config_location(), "core", "schema")
 
     def get_cache_location(self):
         """
@@ -962,6 +963,7 @@ class PipelineConfiguration(object):
         """
         templates_file = os.path.join(
             self.get_config_location(),
+            "core",
             constants.CONTENT_TEMPLATES_FILE
         )
 

@@ -186,6 +186,7 @@ class ConfigDescriptor(Descriptor):
         # get the roots definition
         root_file_path = os.path.join(
             self._get_config_folder(),
+            "core",
             constants.STORAGE_ROOTS_FILE)
 
         roots_data = {}

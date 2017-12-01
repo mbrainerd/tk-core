@@ -45,21 +45,6 @@ def is_localized(pipeline_config_path):
     return is_core_install_root(pipeline_config_path)
 
 
-def is_site_configuration(pipeline_config_path):
-    """
-    Returns true if the pipeline configuration is a site configuration.
-
-    :returns: True if this is a site configuration, False otherwise.
-    """
-    # first, make sure that this path is actually a pipeline configuration
-    # path. otherwise, it cannot be localized :)
-    if not is_pipeline_config(pipeline_config_path):
-        return False
-
-    site_env_file = os.path.join(pipeline_config_path, "config", "env", "site.yml")
-    return os.path.exists(site_env_file)
-
-
 def is_core_install_root(path):
     """
     Returns true if the current path is a valid core API install root
@@ -77,7 +62,7 @@ def is_pipeline_config(pipeline_config_path):
     :returns: true if pipeline config, false if not
     """
     # probe by looking for the existence of a key config file.
-    pc_file = os.path.join(pipeline_config_path, "config", constants.PIPELINECONFIG_FILE)
+    pc_file = os.path.join(pipeline_config_path, "config", "core", constants.PIPELINECONFIG_FILE)
     return os.path.exists(pc_file)
 
 
@@ -93,6 +78,7 @@ def get_metadata(pipeline_config_path):
     cfg_yml = os.path.join(
         pipeline_config_path,
         "config",
+        "core",
         constants.PIPELINECONFIG_FILE
     )
 
@@ -175,6 +161,7 @@ def get_roots_metadata(pipeline_config_path):
     roots_yml = os.path.join(
         pipeline_config_path,
         "config",
+        "core",
         constants.STORAGE_ROOTS_FILE
     )
 
@@ -422,7 +409,7 @@ def _get_install_locations(path):
         raise TankError("The core path '%s' does not exist on disk!" % path)
     
     # for other platforms, read in install_location
-    location_file = os.path.join(path, "config", "install_location.yml")
+    location_file = os.path.join(path, "config", "core", "install_location.yml")
 
     # load the config file
     try:
