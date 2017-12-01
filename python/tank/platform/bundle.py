@@ -46,14 +46,14 @@ class TankBundle(object):
         """
         self.__tk = tk
         self.__sg = None
+        self.__instance_name = instance_name
         self.__cache_location = {}
         self.__module_uid = None
         self.__frameworks = {}
-        self.__environment = env
+        self.__env = env
         self.__log = log
 
         # Set the internal properties
-        self.instance_name = instance_name
         self.descriptor = descriptor
         self.context = context
         self.settings = settings
@@ -351,6 +351,15 @@ class TankBundle(object):
         :returns: bool
         """
         return False
+
+    @property
+    def env(self):
+        """
+        Returns the environment object associated with this bundle.
+
+        :returns: :class:`~sgtk.platform.Environment`
+        """
+        return self.__env
 
     @property
     def tank(self):
@@ -855,14 +864,14 @@ class TankBundle(object):
             # have some implicit rules for handling ambiguity since
             # there can be multiple items (engines, apps etc) potentially
             # having the same instance name.
-            fw_instances = self.__environment.get_frameworks()
+            fw_instances = self.__env.get_frameworks()
             if instance not in fw_instances:
                 raise TankError("%s config setting %s: This hook is referring to the configuration value '%s', "
                                 "but no framework with instance name '%s' can be found in the currently "
                                 "running environment. The currently loaded frameworks "
                                 "are %s." % (self, settings_name, hook_expression, instance, ", ".join(fw_instances)))
 
-            fw_desc = self.__environment.get_framework_descriptor(instance)
+            fw_desc = self.__env.get_framework_descriptor(instance)
             if not(fw_desc.exists_local()):
                 raise TankError("%s config setting %s: This hook is referring to the configuration value '%s', "
                                 "but the framework with instance name '%s' does not exist on disk. Please run "
@@ -904,7 +913,7 @@ class TankBundle(object):
 
         # make sure to replace the `{env_name}` token if it exists.
         if "{env_name}" in value:
-            env_name = self.__environment.name
+            env_name = self.__env.name
             if not env_name:
                 raise TankError(
                     "No environment could be determined for value '%s'. "
@@ -987,14 +996,14 @@ class TankBundle(object):
             # have some implicit rules for handling ambiguity since
             # there can be multiple items (engines, apps etc) potentially
             # having the same instance name.
-            fw_instances = self.__environment.get_frameworks()
+            fw_instances = self.__env.get_frameworks()
             if instance not in fw_instances:
                 raise TankError("%s: This path is referring to the configuration value '%s', "
                                 "but no framework with instance name '%s' can be found in the currently "
                                 "running environment. The currently loaded frameworks "
                                 "are %s." % (self, path, instance, ", ".join(fw_instances)))
 
-            fw_desc = self.__environment.get_framework_descriptor(instance)
+            fw_desc = self.__env.get_framework_descriptor(instance)
             if not(fw_desc.exists_local()):
                 raise TankError("%s: This path is referring to the configuration value '%s', "
                                 "but the framework with instance name '%s' does not exist on disk. Please run "
