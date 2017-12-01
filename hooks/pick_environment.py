@@ -1,4 +1,4 @@
-# Copyright (c) 2015 Shotgun Software Inc.
+# Copyright (c) 2013 Shotgun Software Inc.
 #
 # CONFIDENTIAL AND PROPRIETARY
 #
@@ -10,6 +10,8 @@
 
 """
 Hook which chooses an environment file to use based on the current context.
+This file is almost always overridden by a standard config.
+
 """
 
 from tank import Hook
@@ -18,25 +20,17 @@ class PickEnvironment(Hook):
 
     def execute(self, context, **kwargs):
         """
-        The default implementation assumes there are three environments, called shot, asset
-        and project, and switches to these based on entity type.
-
-        DD implementation includes additional Project/Sequence Step environments as well as
-        Sequence/Shot Asset environments
+        The default implementation assumes there are two environments, called shot 
+        and asset, and switches to these based on entity type.
         """
-        env_name = "site"
-        if context.project:
-            env_name = "project"
-            if context.entity:
-                env_name = context.entity["type"].lower()
 
-                if context.entity["type"] == "Asset":
-                    if "Shot" in context.parent_entities:
-                        env_name = "shot_" + env_name
-                    elif "Sequence" in context.parent_entities:
-                        env_name = "sequence_" + env_name
+        # must have an entity
+        if context.entity is None:
+            return None
 
-            if context.step:
-                env_name += "_step"
+        if context.entity["type"] == "Shot":
+            return "shot"
+        elif context.entity["type"] == "Asset":
+            return "asset"
 
-        return env_name
+        return None
