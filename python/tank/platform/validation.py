@@ -450,23 +450,6 @@ class _SettingsValidator:
                                                    settings_key,
                                                    None,
                                                    self._bundle)
-            if not settings_value:
-                # could not identify a default value. that may be because
-                # the default is engine-specific and there is no regular
-                # "default_value". See if there are any engine-specific
-                # keys. If so, continue with the assumption that one of them
-                # is the right one. The default values have already been
-                # validated against the type. Hopefully this is sufficient!
-                default_value_keys = [k for k in value_schema
-                    if k.startswith(constants.TANK_SCHEMA_DEFAULT_VALUE_KEY)]
-                if default_value_keys:
-                    continue
-                else:
-                    raise TankError(
-                        "Could not determine value for key '%s' in "
-                        "settings! No specified value and no default value."
-                        % (settings_key,)
-                    )
 
             self.__validate_settings_value(settings_key, value_schema, settings_value)
     
