@@ -22,7 +22,7 @@ from . import LogManager
 
 from .util import yaml_cache
 from .util import ShotgunPath
-from .util.shotgun import get_deferred_sg_connection, get_entity
+from .util.shotgun import get_deferred_sg_connection
 
 from .errors import TankError
 
@@ -49,7 +49,7 @@ def is_core_install_root(path):
     Returns true if the current path is a valid core API install root
     """
     # look for a localized API by searching for a _core_upgrader.py file
-    api_file = os.path.join(path, "_core_upgrader.py")
+    api_file = os.path.join(path, "install", "core", "_core_upgrader.py")
     return os.path.exists(api_file)
 
 
@@ -88,48 +88,6 @@ def get_metadata(pipeline_config_path):
     except Exception as e:
         raise TankError("Looks like a config file is corrupt. Please contact "
                         "support! File: '%s' Error: %s" % (cfg_yml, e))
-
-    # DD Hackery: Get the project from DD_SHOW instead of from yaml file
-    if not data.get("pc_id", None):
-        dd_show = os.environ.get("DD_SHOW", None)
-        if dd_show:
-
-            try:
-                # Get the matching project entity
-                proj_entity = get_entity(dd_show, "Project")
-
-                # Default PipelineConfiguration name is "Primary"
-                pc_name = data.get("pc_name", "Primary")
-
-                # Get the PipelineConfiguration, filtered by this project
-                pc_entity = get_entity(pc_name, "PipelineConfiguration", [["project", "is", proj_entity]])
-
-                data["project_name"]    = proj_entity.get("name")
-                data["project_id"]      = proj_entity.get("id")
-                data["pc_id"]           = pc_entity.get("id")
-                data["pc_name"]         = pc_entity.get("code")
-
-            except TankError:
-                log.warning("Cannot get PipelineConfiguration for Show '%s'. " \
-                        "Falling back on Site PipelineConfiguration." % dd_show)
-                pass
-
-        # Else return the Site PipelineConfiguration
-        if not data.get("pc_id", None):
-
-            try:
-                # Default PipelineConfiguration name is "Primary"
-                pc_name = data.get("pc_name", "Primary")
-
-                # Get the PipelineConfiguration, filtered by ID 1
-                pc_entity = get_entity(pc_name, "PipelineConfiguration", [["id", "is", 1]])
-
-                data["pc_id"]           = pc_entity.get("id")
-                data["pc_name"]         = pc_entity.get("code")
-
-            except TankError:
-                raise TankError("Cannot find Site PipelineConfiguration '%s'" % pc_name)
-
     return data
 
 
@@ -199,8 +157,14 @@ def get_path_to_current_core():
     
     :returns: string with path
     """
-    import prez
-    return prez.derive(__file__).path
+    curr_os_core_root = os.path.abspath(os.path.join( os.path.dirname(__file__), "..", "..", "..", ".."))
+    if not os.path.exists(curr_os_core_root):
+        full_path_to_file = os.path.abspath(os.path.dirname(__file__))
+        raise TankError("Cannot resolve the core configuration from the location of the Toolkit Code! "
+                        "This can happen if you try to move or symlink the Toolkit API. The "
+                        "Toolkit API is currently picked up from %s which is an "
+                        "invalid location." % full_path_to_file)
+    return curr_os_core_root
 
 
 def _create_installed_config_descriptor(pipeline_config_path):
@@ -232,7 +196,10 @@ def get_core_python_path_for_config(pipeline_config_path):
     :returns: Path to location where the Toolkit Python library associated with the config resides.
     :rtype: str
     """
-    return os.path.join(get_core_path_for_config(pipeline_config_path), "python")
+    return os.path.join(
+        _create_installed_config_descriptor(pipeline_config_path).associated_core_descriptor["path"],
+        "python"
+    )
 
 
 def get_core_path_for_config(pipeline_config_path):
@@ -246,13 +213,22 @@ def get_core_path_for_config(pipeline_config_path):
 
     :returns: Path to the studio location root or pipeline configuration root or None if not resolved
     """
-    if is_localized(pipeline_config_path):
-        # first, try to locate an install local to this pipeline configuration.
-        # this would find any localized APIs.
-        return pipeline_config_path
+    try:
+        # Associated core descriptor gives us the path to the <config-or-studio-root>/install/core
+        # folder, so we'll strip out a few folders to get to the <config-or-studio-root>
+        studio_folder = os.path.join(
+            # <config-or-studio-root>/install/core
+            _create_installed_config_descriptor(pipeline_config_path).associated_core_descriptor["path"],
+            # <config-or-studio-root>/install
+            "..",
+            # <config-or-studio-root>/
+            ".."
+        )
+        studio_folder = os.path.normpath(studio_folder)
+        return studio_folder
+    except Exception:
+        return None
 
-    data = get_metadata(pipeline_config_path)
-    return get_core_install_location(data.get("project_name"))
 
 def get_sgtk_module_path():
     """
@@ -268,7 +244,7 @@ def get_sgtk_module_path():
 
     :returns: Path to the ``sgtk`` module on disk.
     """
-    return os.path.join(get_path_to_current_core(), "python")
+    return os.path.join(get_path_to_current_core(), "install", "core", "python")
 
 
 def get_python_interpreter_for_config(pipeline_config_path):
@@ -329,71 +305,26 @@ def resolve_all_os_paths_to_config(pc_path):
     return _get_install_locations(pc_path)
 
 
-def get_core_install_location(level_or_path=None):
+def get_config_install_location(path):
     """
-    Given a project name or path on disk, return the location of the core api location
+    Given a pipeline configuration, return the location
+    on the current platform.
+    
+    Loads the location metadata file from install_location.yml
+    This contains a reflection of the paths given in the pipeline config entity.
+
+    Returns the path that has been registered for this pipeline configuration 
+    for the current OS. This is the path that has been defined in shotgun.
+    
+    This is useful when drive letter mappings or symlinks are being used to ensure
+    a correct path resolution.
+    
+    This may return None if no path has been registered for the current os.
+    
+    :param path: Path to a pipeline configuration on disk.
+    :returns: registered path, may be None.
     """
-    return get_package_install_location('sgtk_core', level_or_path)
-
-
-def get_config_install_location(level_or_path=None):
-    """
-    Given a project name or path on disk, return the location of the core api location
-    """
-    return get_package_install_location('sgtk_config', level_or_path)
-
-
-def get_package_install_location(package_name, level_or_path=None):
-    """
-    Given a project name or path on disk, return the location of a given package
-    """
-    import prez
-
-    # HACK: Use dd.runtime to resolve test branches until #99460 is resolved
-    if "DD_TEST_BRANCHES" in os.environ:
-        from dd import ddos
-        from dd.runtime.info import getVersionToBeLoaded, locateNearestDistribution
-
-        version = getVersionToBeLoaded(package_name)
-        path = locateNearestDistribution(package_name, version, ddos.getOsInfo())
-
-        # If the resolved distribution comes from the local work area, return that
-        if prez.Level.parse(prez.derive(path).source.name).isWorkarea:
-            return path
-
-    # Get the current environment
-    env = prez.Environment.current()
-
-    # HACK: First check if there is an override for this package until #99460 is resolved
-    spec = os.environ.get("DD_WITH_OVERRIDE") or ""
-    withOverrides = dict(x.partition("=")[::2] for x in spec.split(",") if x != "")
-    if withOverrides.get(package_name):
-        package_version = prez.Version.parse(withOverrides[package_name])
-        return env.getDistribution(package_name, package_version).path
-
-    # If site is specified, override env to operate at the facility level
-    if level_or_path:
-        if level_or_path == 'site':
-            # Start with the current configuration so we maintain role, site, etc
-            config = env.configuration.replace(level=prez.Level.facility())
-
-        # Else if it is a path, derive the level from the path
-        elif os.path.exists(os.path.expandvars(level_or_path)):
-            config = env.configuration.replace(level=prez.Level.derive(level_or_path))
-
-        # Else assume it is a level spec
-        else:
-            config = env.configuration.replace(level=prez.Level.parse(level_or_path.upper()))
-
-    # Else just use the current configuration
-    else:
-        config = env.configuration
-
-    # Get the environment for the updated configuration
-    env = prez.Environment.forConfiguration(config)
-
-    # Return the path to the resolved distribution
-    return env.resolveDistribution(package_name).path
+    return _get_install_locations(path).current_os
 
 
 def _get_install_locations(path):
@@ -454,7 +385,7 @@ def get_currently_running_api_version():
     :returns: version string, e.g. 'v1.2.3'. 'unknown' if a version number cannot be determined.
     """
     # read this from info.yml
-    info_yml_path = os.path.join(get_path_to_current_core(), "info.yml")
+    info_yml_path = os.path.join(get_path_to_current_core(), "install", "core", "info.yml")
     return _get_version_from_manifest(info_yml_path)
 
 
@@ -470,7 +401,7 @@ def get_core_api_version(core_install_root):
     :returns: version str e.g. 'v1.2.3', 'unknown' if no version could be determined. 
     """
     # now try to get to the info.yml file to get the version number
-    info_yml_path = os.path.join(core_install_root, "info.yml")
+    info_yml_path = os.path.join(core_install_root, "install", "core", "info.yml")
     return _get_version_from_manifest(info_yml_path)
 
 
