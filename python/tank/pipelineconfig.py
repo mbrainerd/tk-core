@@ -628,7 +628,7 @@ class PipelineConfiguration(object):
         
         return core_api_root
 
-    def get_core_install_location(self):
+    def get_core_location(self):
         """
         Returns the core api location associated with this pipeline configuration.
 
@@ -646,7 +646,7 @@ class PipelineConfiguration(object):
         
         :returns: path string
         """
-        return os.path.join(self.get_core_install_location(), "python")
+        return os.path.join(self.get_core_location(), "python")
 
     def get_documentation_url(self):
         """
@@ -654,7 +654,7 @@ class PipelineConfiguration(object):
         associated with this pipeline configuration.
         """
         # read this from info.yml
-        info_yml_path = os.path.join(self.get_core_install_location(), constants.BUNDLE_METADATA_FILE)
+        info_yml_path = os.path.join(self.get_core_location(), constants.BUNDLE_METADATA_FILE)
         try:
             data = yaml_cache.g_yaml_cache.get(info_yml_path, deepcopy_data=False)
             data = str(data.get("documentation_url"))
@@ -1000,7 +1000,7 @@ class PipelineConfiguration(object):
             # no custom hook detected in the pipeline configuration
             # fall back on the hooks that come with the currently running version
             # of the core API.
-            hooks_path = os.path.abspath(os.path.join(self.get_core_install_location(), "hooks"))
+            hooks_path = os.path.abspath(os.path.join(self.get_core_location(), "hooks"))
             hook_path = os.path.join(hooks_path, file_name)
 
         try:
@@ -1032,7 +1032,7 @@ class PipelineConfiguration(object):
         
         # first add the built-in core hook to the chain
         file_name = "%s.py" % hook_name
-        hooks_path = os.path.abspath(os.path.join(self.get_core_install_location(), "hooks"))
+        hooks_path = os.path.abspath(os.path.join(self.get_core_location(), "hooks"))
         hook_paths = [os.path.join(hooks_path, file_name)]
 
         # the hook.method display name used when logging the metric

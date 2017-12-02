@@ -11,7 +11,6 @@
 import os
 import re
 import cgi
-import sys
 import urllib
 import urlparse
 

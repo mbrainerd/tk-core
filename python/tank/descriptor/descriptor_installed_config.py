@@ -133,7 +133,7 @@ class InstalledConfigDescriptor(ConfigDescriptor):
             return pipeline_config_path
 
         data = pipelineconfig_utils.get_metadata(pipeline_config_path)
-        return pipelineconfig_utils.get_core_install_location(data.get("project_name", "site"))
+        return pipelineconfig_utils.get_core_location(data.get("project_name", "site"))
 
     def _get_current_platform_core_location_file_name(self, install_root):
         """

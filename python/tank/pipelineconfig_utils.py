@@ -22,7 +22,7 @@ from . import LogManager
 
 from .util import yaml_cache
 from .util import ShotgunPath
-from .util import shotgun
+from .util.shotgun import get_deferred_sg_connection, get_entity
 
 from .errors import TankError
 
@@ -96,13 +96,13 @@ def get_metadata(pipeline_config_path):
 
             try:
                 # Get the matching project entity
-                proj_entity = shotgun.get_entity(dd_show, "Project")
+                proj_entity = get_entity(dd_show, "Project")
 
                 # Default PipelineConfiguration name is "Primary"
                 pc_name = data.get("pc_name", "Primary")
 
                 # Get the PipelineConfiguration, filtered by this project
-                pc_entity = shotgun.get_entity(pc_name, "PipelineConfiguration", [["project", "is", proj_entity]])
+                pc_entity = get_entity(pc_name, "PipelineConfiguration", [["project", "is", proj_entity]])
 
                 data["project_name"]    = proj_entity.get("name")
                 data["project_id"]      = proj_entity.get("id")
@@ -122,7 +122,7 @@ def get_metadata(pipeline_config_path):
                 pc_name = data.get("pc_name", "Primary")
 
                 # Get the PipelineConfiguration, filtered by ID 1
-                pc_entity = shotgun.get_entity(pc_name, "PipelineConfiguration", [["id", "is", 1]])
+                pc_entity = get_entity(pc_name, "PipelineConfiguration", [["id", "is", 1]])
 
                 data["pc_id"]           = pc_entity.get("id")
                 data["pc_name"]         = pc_entity.get("code")
@@ -217,7 +217,7 @@ def _create_installed_config_descriptor(pipeline_config_path):
     # this file on the ConfigDescriptor objects and these circular includes won't be necessary anymore.
     from .descriptor import Descriptor, create_descriptor
     return create_descriptor(
-        shotgun.get_deferred_sg_connection(),
+        get_deferred_sg_connection(),
         Descriptor.INSTALLED_CONFIG,
         dict(path=pipeline_config_path, type="path")
     )
