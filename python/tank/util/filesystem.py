@@ -150,8 +150,7 @@ def ensure_folder_exists(path, permissions=0o775, create_placeholder_file=False)
             if e.errno != errno.EEXIST:
                 # re-raise
                 raise
-        except IOError:
-            raise
+
 
 @with_cleared_umask
 def copy_file(src, dst, permissions=0o666):

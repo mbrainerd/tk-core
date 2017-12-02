@@ -92,7 +92,7 @@ class PipelineConfiguration(object):
                             "which is associated with this configuration." % (current_api_version, 
                                                                               current_api_path, 
                                                                               our_associated_api_version, 
-                                                                              self.get_core_root_location()))            
+                                                                              self.get_install_location()))            
 
         self._roots = pipelineconfig_utils.get_roots_metadata(self._pc_root)
 
@@ -607,12 +607,12 @@ class PipelineConfiguration(object):
 
         :returns: version str e.g. 'v1.2.3', None if no version could be determined. 
         """
-        associated_api_root = self.get_core_root_location()
+        associated_api_root = self.get_install_location()
         return pipelineconfig_utils.get_core_api_version(associated_api_root)
 
-    def get_core_root_location(self):
+    def get_install_location(self):
         """
-        Returns the core api root location associated with this pipeline configuration.
+        Returns the core api install location associated with this pipeline configuration.
 
         Tries to resolve it via the explicit link which exists between
         the pipeline config and the its core. If this fails, it uses
@@ -630,7 +630,7 @@ class PipelineConfiguration(object):
 
     def get_core_install_location(self):
         """
-        Returns the core api install location associated with this pipeline configuration.
+        Returns the core api location associated with this pipeline configuration.
 
         Tries to resolve it via the explicit link which exists between
         the pipeline config and the its core. If this fails, it uses
@@ -638,7 +638,7 @@ class PipelineConfiguration(object):
         
         :returns: path string to the current core API install root location
         """
-        return os.path.join(self.get_core_root_location(), "")
+        return os.path.join(self.get_install_location(), "")
 
     def get_core_python_location(self):
         """
@@ -646,7 +646,7 @@ class PipelineConfiguration(object):
         
         :returns: path string
         """
-        return pipelineconfig_utils.get_core_python_path_for_config(self._pc_root)
+        return os.path.join(self.get_core_install_location(), "python")
 
     def get_documentation_url(self):
         """
@@ -861,22 +861,6 @@ class PipelineConfiguration(object):
     ########################################################################################
     # configuration disk locations
 
-    def get_config_location(self):
-        """
-        Returns the config folder for the project
-        
-        :returns: path string
-        """
-        return os.path.join(self._pc_root, "config")
-
-    def get_hooks_location(self):
-        """
-        Returns the hooks folder for the project
-        
-        :returns: path string
-        """
-        return os.path.join(self.get_config_location(), "hooks")
-
     def get_core_hooks_location(self):
         """
         Returns the path to the core hooks location
@@ -892,6 +876,22 @@ class PipelineConfiguration(object):
         :returns: path string
         """
         return os.path.join(self.get_config_location(), "core", "schema")
+
+    def get_config_location(self):
+        """
+        Returns the config folder for the project
+        
+        :returns: path string
+        """
+        return os.path.join(self._pc_root, "config")
+
+    def get_hooks_location(self):
+        """
+        Returns the hooks folder for the project
+        
+        :returns: path string
+        """
+        return os.path.join(self.get_config_location(), "hooks")
 
     def get_cache_location(self):
         """

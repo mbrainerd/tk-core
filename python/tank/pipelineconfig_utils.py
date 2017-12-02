@@ -16,7 +16,6 @@ across storages, configurations etc.
 from __future__ import with_statement
 
 import os
-import sys
 
 from . import constants
 from . import LogManager
@@ -49,7 +48,7 @@ def is_core_install_root(path):
     """
     Returns true if the current path is a valid core API install root
     """
-    # look for a localized API by searching for _core_upgrader.py
+    # look for a localized API by searching for a _core_upgrader.py file
     api_file = os.path.join(path, "_core_upgrader.py")
     return os.path.exists(api_file)
 
