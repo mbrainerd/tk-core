@@ -244,16 +244,7 @@ def get_sgtk_module_path():
 
     :returns: Path to the ``sgtk`` module on disk.
     """
-    pipelineconfig_utils_py_location = __file__ # tk-core/python/tank/pipelineconfig_utils.py
-
-    # If the path is not absolute, make it so.
-    if not os.path.isabs(pipelineconfig_utils_py_location):
-        pipelineconfig_utils_py_location = os.path.join(os.getcwd(), pipelineconfig_utils_py_location)
-
-    tank_folder = os.path.dirname(pipelineconfig_utils_py_location) # tk-core/python/tank
-    python_folder = os.path.dirname(tank_folder) # tk-core/python
-
-    return python_folder
+    return os.path.join(get_path_to_current_core(), "install", "core", "python")
 
 
 def get_python_interpreter_for_config(pipeline_config_path):
@@ -394,7 +385,7 @@ def get_currently_running_api_version():
     :returns: version string, e.g. 'v1.2.3'. 'unknown' if a version number cannot be determined.
     """
     # read this from info.yml
-    info_yml_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "info.yml"))
+    info_yml_path = os.path.join(get_path_to_current_core(), "install", "core", "info.yml")
     return _get_version_from_manifest(info_yml_path)
 
 

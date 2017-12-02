@@ -76,7 +76,7 @@ class InstalledConfigDescriptor(ConfigDescriptor):
         pipeline_config_path = self._get_pipeline_config_path()
         return {
             "type": "path",
-            "path": os.path.join(self._get_core_path_for_config(pipeline_config_path), "config")
+            "path": os.path.join(self._get_core_path_for_config(pipeline_config_path), "install", "core")
         }
 
     def _get_manifest(self):
@@ -86,8 +86,9 @@ class InstalledConfigDescriptor(ConfigDescriptor):
         :returns: dictionary with the contents of info.yml
         """
         try:
-            manifest = self._io_descriptor.get_manifest(constants.BUNDLE_METADATA_FILE)
-
+            manifest = self._io_descriptor.get_manifest(
+                os.path.join("config", constants.BUNDLE_METADATA_FILE)
+            )
             # We need to tolerate empty manifests since these exists currently.
             return manifest or {}
         except TankMissingManifestError:
@@ -130,10 +131,41 @@ class InstalledConfigDescriptor(ConfigDescriptor):
         if pipelineconfig_utils.is_localized(pipeline_config_path):
             # first, try to locate an install local to this pipeline configuration.
             # this would find any localized APIs.
-            return pipeline_config_path
+            install_path = pipeline_config_path
 
-        data = pipelineconfig_utils.get_metadata(pipeline_config_path)
-        return pipelineconfig_utils.get_core_install_location(data.get("project_name", "site"))
+        else:
+            # this pipeline config is associated with a shared API (studio install)
+            # follow the links defined in the configuration to establish which
+            # setup it has been associated with.
+            studio_linkback_file = self._get_current_platform_core_location_file_name(
+                pipeline_config_path
+            )
+
+            if not os.path.exists(studio_linkback_file):
+                raise TankFileDoesNotExistError(
+                    "Configuration at '%s' without a localized core is missing a core location file at '%s'" %
+                    (pipeline_config_path, studio_linkback_file)
+                )
+
+            # this file will contain the path to the API which is meant to be used with this PC.
+            install_path = None
+            with open(studio_linkback_file, "rt") as fh:
+                data = fh.read().strip() # remove any whitespace, keep text
+
+            # expand any env vars that are used in the files. For example, you could have
+            # an env variable $STUDIO_TANK_PATH=/sgtk/software/shotgun/studio and your
+            # linkback file may just contain "$STUDIO_TANK_PATH" instead of an explicit path.
+            data = os.path.expanduser(os.path.expandvars(data))
+            if data not in ["None", "undefined"] and os.path.exists(data):
+                install_path = data
+            else:
+                raise TankInvalidCoreLocationError(
+                    "Cannot find core location '%s' defined in "
+                    "config file '%s'." %
+                    (data, studio_linkback_file)
+                )
+
+        return install_path
 
     def _get_current_platform_core_location_file_name(self, install_root):
         """
@@ -146,5 +178,5 @@ class InstalledConfigDescriptor(ConfigDescriptor):
         :rtype: str
         """
         return ShotgunPath.get_file_name_from_template(
-            os.path.join(install_root, "config", "core_%s.cfg")
+            os.path.join(install_root, "install", "core", "core_%s.cfg")
         )
