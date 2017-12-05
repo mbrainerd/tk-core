@@ -85,7 +85,7 @@ def main():
     try:
         engine = sgtk.platform.start_engine("tk-shell", tk, ctx)
     except Exception as e:
-        log.error("Could not start engine: %s" % str(e))
+        logger.error("Could not start engine: %s" % str(e))
         if os.environ.get("DD_DEBUG"):
             import pdb; pdb.post_mortem()
         raise
@@ -97,7 +97,7 @@ def main():
     try:
         return engine.execute_command("Publish...", [])
     except Exception as e:
-        log.error("Could not start app: %s" % str(e))
+        logger.error("Could not start app: %s" % str(e))
         if os.environ.get("DD_DEBUG"):
             import pdb; pdb.post_mortem()
         raise
