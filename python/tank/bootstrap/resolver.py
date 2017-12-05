@@ -420,20 +420,10 @@ class ConfigurationResolver(object):
                 resolve_latest=is_descriptor_version_missing(shotgun_pc_data.get("sg_descriptor"))
             )
         else:
-            if shotgun_pc_data.get("project"):
-                # Get the path for the project configuration from the environment and create a descriptor.
-                project_name = shotgun_pc_data["project"]["name"]
-            else:
-                project_name = "site"
-            pc_path = pipelineconfig_utils.get_config_install_location(project_name)
-
-            # Create an installed descriptor
-            cfg_descriptor = create_descriptor(
-                sg_connection,
-                Descriptor.INSTALLED_CONFIG,
-                dict(path=pc_path, type="path"),
-                fallback_roots=self._bundle_cache_fallback_paths,
-            )
+            # If we have neither a uri, nor a path, then we can't get
+            # a descriptor for this config.
+            log.debug("No uri or path found for config: %s", shotgun_pc_data)
+            cfg_descriptor = None
 
         if cfg_descriptor is None:
             log.debug("Unable to create descriptor for config: %s", shotgun_pc_data)

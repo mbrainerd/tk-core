@@ -62,12 +62,7 @@ def _resolve_includes(file_name, data, context):
 
     for include in includes:
         
-        if include.startswith("{preferences}"):
-            # If this is a preferences file, just store the path
-            # the Preferences system down the line with handle validation
-            path = include
-
-        elif "{" in include:
+        if "{" in include:
             # it's a template path
             if context is None:
                 # skip - these paths are optional always
@@ -263,7 +258,7 @@ def _process_includes_r(file_name, data, context):
     for include_file in include_files:
                 
         # path exists, so try to read it
-        included_data = g_yaml_cache.get(include_file, context=context) or {}
+        included_data = g_yaml_cache.get(include_file) or {}
                 
         # now resolve this data before proceeding
         included_data, included_fw_lookup = _process_includes_r(include_file, included_data, context)
@@ -308,7 +303,7 @@ def find_framework_location(file_name, framework_name, context):
                             defined in or None if not found.
     """
     # load the data in for the root file:
-    data = g_yaml_cache.get(file_name, context=context) or {}
+    data = g_yaml_cache.get(file_name) or {}
 
     # track root frameworks:
     root_fw_lookup = {}
@@ -368,7 +363,7 @@ def find_reference(file_name, context, token, absolute_location=False):
     :rtype: tuple
     """
     # load the data in 
-    data = g_yaml_cache.get(file_name, context=context) or {}
+    data = g_yaml_cache.get(file_name) or {}
     
     # first build our big fat lookup dict
     include_files = _resolve_includes(file_name, data, context)
@@ -377,7 +372,7 @@ def find_reference(file_name, context, token, absolute_location=False):
 
     for include_file in include_files:
         # path exists, so try to read it
-        included_data = g_yaml_cache.get(include_file, context=context) or {}
+        included_data = g_yaml_cache.get(include_file) or {}
         
         if token in included_data:
             # If we've been asked to ensure an absolute location, we need

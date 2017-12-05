@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-#
 # Copyright (c) 2013 Shotgun Software Inc.
 #
 # CONFIDENTIAL AND PROPRIETARY
@@ -1444,11 +1442,16 @@ if __name__ == "__main__":
     formatter = AltCustomFormatter()
     log_handler.setFormatter(formatter)
 
+    # the first argument is always the path to the code root
+    # we are running from.
+    if len(sys.argv) == 1:
+        logger.error("This script needs to be executed from the tank command!")
+        sys.exit(1)
     # the location of the actual tank core installation
-    install_root = pipelineconfig_utils.get_core_install_location()
+    install_root = sys.argv[1]
 
     # pass the rest of the args into our checker
-    cmd_line = sys.argv[1:]
+    cmd_line = sys.argv[2:]
 
     # check if there is a --debug flag anywhere in the args list.
     # in that case turn on debug logging and remove the flag
@@ -1472,10 +1475,15 @@ if __name__ == "__main__":
     # at the back of the args as --pc=foo
     if len(cmd_line) > 0 and cmd_line[-1].startswith("--pc="):
         pipeline_config_root = cmd_line[-1][5:]
-
-    # Else get the current level pipeline config location
     else:
-        pipeline_config_root = pipelineconfig_utils.get_config_install_location()
+        # no pipeline config parameter passed. But it could be that we are using a localized core
+        # meaning that the core is contained inside the project itself. In that case,
+        # the install root is the same as the pipeline config root.
+        if is_localized:
+            logger.debug("Core API resides inside a (localized) pipeline configuration.")
+            pipeline_config_root = install_root
+        else:
+            pipeline_config_root = None
 
     # and strip out the --pc args
     cmd_line = [arg for arg in cmd_line if not arg.startswith("--pc=")]

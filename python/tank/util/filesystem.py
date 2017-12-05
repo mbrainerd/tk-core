@@ -23,9 +23,6 @@ from .. import LogManager
 
 log = LogManager.get_logger(__name__)
 
-# DD
-from ..dd_utils import dd_jstools_utils
-
 
 def with_cleared_umask(func):
     """
@@ -126,12 +123,8 @@ def ensure_folder_exists(path, permissions=0o775, create_placeholder_file=False)
     """
     if not os.path.exists(path):
         try:
-            # os.makedirs(path, permissions)
-            # Use JSTOOLS instead.
-            dd_jstools_utils.makedir_with_jstools(path, permissions)
-            # this returns a success-bool, but no need to use it here (in this 'try')
-            # If success=False, the "placeholder" code here will fail with an IOError -
-            # so the second "except" was also added
+            os.makedirs(path, permissions)
+
             if create_placeholder_file:
                 ph_path = os.path.join(path, "placeholder")
                 if not os.path.exists(ph_path):
@@ -232,9 +225,7 @@ def copy_folder(src, dst, folder_permissions=0o775, skip_list=None):
     files = []
 
     if not os.path.exists(dst):
-        # os.mkdir(dst, folder_permissions)
-        # Use JSTOOLS instead.
-        dd_jstools_utils.makedir_with_jstools(dst, folder_permissions)
+        os.mkdir(dst, folder_permissions)
 
     names = os.listdir(src)
     for name in names:
@@ -410,9 +401,7 @@ def safe_delete_folder(path):
             # On Windows, Python's shutil can't delete read-only files, so if we were trying to delete one,
             # remove the flag.
             # Inspired by http://stackoverflow.com/a/4829285/1074536
-            # shutil.rmtree(path, onerror=_on_rm_error)
-            # Use JSTOOLS instead.
-            dd_jstools_utils.delete_with_jstools(path)
+            shutil.rmtree(path, onerror=_on_rm_error)
         except Exception as e:
             log.warning("Could not delete %s: %s" % (path, e))
     else:

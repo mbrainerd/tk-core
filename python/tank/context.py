@@ -1261,10 +1261,10 @@ def _get_entity_type_sg_name_field(entity_type):
     :returns:               The name field for the specified entity type
     """
     return {
-        "HumanUser": "login",
+        "HumanUser": "name",
         "Task":      "content",
         "Project":   "name",
-        "Step":      "short_name"
+        "Step":      "name"
     }.get(entity_type, "code")
 
 

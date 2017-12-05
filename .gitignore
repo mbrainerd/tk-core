@@ -42,6 +42,3 @@ tests/coverage_html_report
 
 # pyenv
 .python-version
-
-# PyCharm stuff
-.idea

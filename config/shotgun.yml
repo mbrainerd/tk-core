@@ -1,8 +1,0 @@
-# Shotgun Pipeline Toolkit configuration file
-# this file was automatically created
-
-host: http://shotgun-dev.d2.com
-api_script: Toolkit
-api_key: e4a0b4d232ba94f34052653f002d060b1c194d2b181d1189646e8e720b2040c1
-
-# End of file.

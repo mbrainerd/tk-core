@@ -50,7 +50,7 @@ def __get_api_core_config_location():
     # local import to avoid cyclic references
     from ...pipelineconfig_utils import get_path_to_current_core
     core_api_root = get_path_to_current_core()
-    core_cfg = os.path.join(core_api_root, "config")
+    core_cfg = os.path.join(core_api_root, "config", "core")
 
     if not os.path.exists(core_cfg):
         path_to_file = os.path.abspath(os.path.dirname(__file__))
@@ -65,13 +65,6 @@ def __get_sg_config():
     
     :returns: full path to to shotgun.yml config file
     """
-    if 'SGTK_SHOTGUN_CONFIG' in os.environ:
-        path = os.path.expandvars(os.path.expanduser(os.environ['SGTK_SHOTGUN_CONFIG']))
-        if os.path.exists(path):
-            return path
-        else:
-            log.warning("Shotgun config path '%s' specified by SGTK_SHOTGUN_CONFIG does not exist." % path)
-
     core_cfg = __get_api_core_config_location()
     path = os.path.join(core_cfg, "shotgun.yml")
     return path
@@ -94,39 +87,6 @@ def get_project_name_studio_hook_location():
     core_cfg = __get_api_core_config_location()
     path = os.path.join(core_cfg, constants.STUDIO_HOOK_PROJECT_NAME)
     return path
-
-def _get_entity_type_sg_name_field(entity_type):
-    """
-    Return the Shotgun name field to use for the specified entity type.  This
-    is needed as not all entity types are consistent!
-
-    :param entity_type:     The entity type to get the name field for
-    :returns:               The name field for the specified entity type
-    """
-    return {    "HumanUser": "login", 
-                "Task":      "content", 
-                "Project":   "name",
-                "Step":      "short_name"
-            }.get(entity_type, "code")
-
-def get_entity(sg_name, sg_type, sg_filters=[], sg_fields=[]):
-    """
-    Returns a shotgun entity based on name, type, filters (optional), fields (optional)
-    """
-    # Get the shotgun connection object
-    sg = get_sg_connection()
-
-    # Get the key for finding the name of the entity for type sg_type
-    name_key = _get_entity_type_sg_name_field(sg_type)
-
-    filters = sg_filters + [[name_key, "is", sg_name]]
-    fields = sg_fields + ["type", "id", "code", name_key]
-
-    entity = sg.find_one(sg_type, filters, fields)
-    if entity is None:
-        raise TankError("Could not find sg entry for %s (%s): '%s'" % (sg_name, sg_type, filters))
-
-    return entity
 
 def __get_sg_config_data(shotgun_cfg_path, user="default"):
     """

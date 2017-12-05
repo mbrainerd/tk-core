@@ -282,7 +282,7 @@ def ensure_frameworks_installed(log, tank_api_instance, file_location, descripto
 
         # get the latest version from the app store by
         # first getting a stub and then looking for latest.
-        location_stub = {"type": "manual", "name": name}
+        location_stub = {"type": "app_store", "name": name}
 
         pc = tank_api_instance.pipeline_configuration
 

@@ -53,6 +53,7 @@ class IODescriptorManual(IODescriptorBase):
         """
         return os.path.join(
             bundle_cache_root,
+            "manual",
             self._name,
             self._version
         )

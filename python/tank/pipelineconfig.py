@@ -64,9 +64,6 @@ class PipelineConfiguration(object):
         """
         self._pc_root = pipeline_configuration_path
 
-        # To cover a very stupid use case
-        os.environ["TANK_CURRENT_PC"] = self._pc_root
-
         # validate that the current code version matches or is compatible with
         # the code that is locally stored in this config!!!!
         our_associated_api_version = self.get_associated_core_version()
@@ -127,7 +124,7 @@ class PipelineConfiguration(object):
             self._bundle_cache_root_override = None
         else:
             # use cache relative to core install
-            self._bundle_cache_root_override = pipelineconfig_utils.get_package_install_location("sgtk_apps")
+            self._bundle_cache_root_override = os.path.join(self.get_install_location(), "install")
 
         if pipeline_config_metadata.get("bundle_cache_fallback_roots"):
             self._bundle_cache_fallback_paths = pipeline_config_metadata.get("bundle_cache_fallback_roots")
@@ -638,7 +635,7 @@ class PipelineConfiguration(object):
         
         :returns: path string to the current core API install root location
         """
-        return os.path.join(self.get_install_location(), "")
+        return os.path.join(self.get_install_location(), "install", "core")
 
     def get_core_python_location(self):
         """

@@ -50,10 +50,6 @@ def is_version_newer(a, b):
     if b.startswith("v"):
         b = b[1:]
 
-    # HACK: Replace x wildcard with a big number
-    if "x" in a: a = a.replace("x", "1"*10)
-    if "x" in b: b = b.replace("x", "1"*10)
-
     return Version(a) > Version(b)
 
 
@@ -80,23 +76,19 @@ def is_version_older(a, b):
     if b.startswith("v"):
         b = b[1:]
 
-    # HACK: Replace x wildcard with a big number
-    if "x" in a: a = a.replace("x", "1"*10)
-    if "x" in b: b = b.replace("x", "1"*10)
-
     return Version(a) < Version(b)
 
 def is_version_number(version):
     """
     Tests whether the given string is a properly formed
     version number (ex: v1.2.3). The test is made using
-    the pattern r"v\d+(.(\d+|x))+$"
+    the pattern r"v\d+.\d+.\d+$"
 
     :param str version: The version string to test.
 
     :rtype: bool
     """
-    match = re.match(r"v\d+(.(\d+|x))+$", version)
+    match = re.match(r"v\d+.\d+.\d+$", version)
 
     if match:
         return True

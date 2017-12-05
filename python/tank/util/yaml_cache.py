@@ -19,10 +19,6 @@ import os
 import copy
 import threading
 
-from dd.runtime import api
-api.load("preferences")
-from preferences import Preferences
-
 from tank_vendor import yaml
 from ..errors import (
     TankError,
@@ -82,10 +78,11 @@ class CacheItem(object):
         Tests whether the age of the given item differs from this item.
 
         :param other:   The CacheItem to test against.
+        :raises:        TypeError: Given item is not a CacheItem.
         :returns:       bool, True if other is newer, False if not.
         """
         if not isinstance(other, CacheItem):
-            return True
+            raise TypeError("Given item must be of type CacheItem.")
         return other.stat.st_mtime != self.stat.st_mtime
 
     def size_differs(self, other):
@@ -93,15 +90,16 @@ class CacheItem(object):
         Tests whether the file size of the given item differs from this item.
 
         :param other:   The CacheItem to test against.
+        :raises:        TypeError: Given item is not a CacheItem.
         :returns:       bool, True if other is a different size on disk, False if not.
         """
         if not isinstance(other, CacheItem):
-            return True
+            raise TypeError("Given item must be of type CacheItem.")
         return other.stat.st_size != self.stat.st_size
 
     def __eq__(self, other):
         if not isinstance(other, CacheItem):
-            return False
+            raise TypeError("Given item must be of type CacheItem.")
         return (not self.age_differs(other) and not self.size_differs(other))
 
     def __getitem__(self, key):
@@ -133,61 +131,6 @@ class CacheItem(object):
 
         # Populate the item's data before adding it to the cache.
         self._data = raw_data
-
-class PreferencesCacheItem(object):
-    """
-    Preference based yaml cache
-    """
-    def __init__(self, path, data=None, context=None):
-        """
-        Initializes the item.
-
-        :param path:    The path to the .yml file on disk.
-        :param data:    The data sourced from the .yml file.
-        :raises:        tank.errors.TankUnreadableFileError: File stat failure.
-        """
-        self._path = path
-        self._data = data
-        self._context = context
-
-    @property
-    def data(self):
-        """The item's data."""
-        return self._data
-
-    @property
-    def path(self):
-        """The path for this cache item"""
-        return self._path
-
-    @property
-    def context(self):
-        """The context for this cache item"""
-        return self._context
-
-    def __str__(self):
-        return str(self.path)
-
-    def __eq__(self, other):
-        if not isinstance(other, PreferencesCacheItem):
-            return False
-
-        return (other.path == self.path and other.context == self.context)
-
-    def load(self):
-        """
-        Loads the CacheItem's YAML data from disk.
-        """
-        # Strip the {preferences} prefix
-        path = self.path.replace("{preferences}/", "")
-
-        # Get the "role" from the context
-        role = os.environ.get("DD_ROLE", "")
-        if self.context and self.context.step:
-            role = self.context.step["name"]
-
-        # Populate the item's data before adding it to the cache.
-        self._data = dict(Preferences(path, role, package="sgtk_config").items())
 
 class YamlCache(object):
     """
@@ -224,7 +167,7 @@ class YamlCache(object):
             if path in self._cache:
                 del self._cache[path]
 
-    def get(self, path, deepcopy_data=True, context=None):
+    def get(self, path, deepcopy_data=True):
         """
         Retrieve the yaml data for the specified path.  If it's not already
         in the cache of the cached version is out of date then this will load
@@ -240,10 +183,7 @@ class YamlCache(object):
         # the appropriate item back to us, which will be either the new
         # item we have created here with the yaml data stored within, or
         # the existing cached data.
-        if path.startswith("{preferences}"):
-            item = self._add(PreferencesCacheItem(path, context=context))
-        else:
-            item = self._add(CacheItem(path))
+        item = self._add(CacheItem(path))
 
         # If asked to, return a deep copy of the cached data to ensure that 
         # the cached data is not updated accidentally!

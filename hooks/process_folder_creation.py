@@ -18,10 +18,6 @@ import os
 import sys
 import shutil
 
-# DD
-from tank.dd_utils import dd_jstools_utils
-
-
 class ProcessFolderCreation(Hook):
 
     def execute(self, items, preview_mode, **kwargs):
@@ -113,9 +109,7 @@ class ProcessFolderCreation(Hook):
                     if not os.path.exists(path):
                         if not preview_mode:
                             # create the folder using open permissions
-                            # os.makedirs(path, 0777)
-                            # Use JSTOOLS instead.
-                            dd_jstools_utils.makedir_with_jstools(path)
+                            os.makedirs(path, 0777)
                         folders.append(path)
 
                 elif action == "remote_entity_folder":
@@ -155,9 +149,7 @@ class ProcessFolderCreation(Hook):
                     # rather than what symlink is pointing at
                     if not os.path.lexists(path):
                         if not preview_mode:
-                            # os.symlink(target, path)
-                            # Use JSTOOLS instead.
-                            dd_jstools_utils.symlink_with_jstools(target, path)
+                            os.symlink(target, path)
                         folders.append(path)
 
                 elif action == "copy":
@@ -178,10 +170,7 @@ class ProcessFolderCreation(Hook):
                     parent_folder = os.path.dirname(path)
                     content = i.get("content")
                     if not os.path.exists(parent_folder) and not preview_mode:
-                        # os.makedirs(parent_folder, 0777)
-                        # Use JSTOOLS instead.
-                        dd_jstools_utils.makedir_with_jstools(parent_folder)
-
+                        os.makedirs(parent_folder, 0777)
                     if not os.path.exists(path):
                         if not preview_mode:
                             # create the file

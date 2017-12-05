@@ -118,10 +118,10 @@ class Entity(Folder):
         """
         return the special name field for a given entity
         """
-        return {    "HumanUser": "login", 
+        return {    "HumanUser": "name", 
                     "Task":      "content", 
                     "Project":   "name",
-                    "Step":      "short_name"
+                    "Step":      "name"
                 }.get(entity_type, "code")
     
     def get_entity_type(self):

@@ -15,8 +15,7 @@ from .connection import \
     get_associated_sg_config_data, \
     get_deferred_sg_connection, \
     get_sg_connection, \
-    create_sg_connection, \
-    get_entity
+    create_sg_connection
 
 from .publish_util import \
     get_entity_type_display_name, \

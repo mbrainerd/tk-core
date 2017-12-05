@@ -5,18 +5,21 @@
 [![Coverage Status](https://coveralls.io/repos/github/shotgunsoftware/tk-core/badge.svg?branch=master)](https://coveralls.io/github/shotgunsoftware/tk-core?branch=master)
 [![Linting](https://img.shields.io/badge/PEP8%20by-Hound%20CI-a873d1.svg)](https://houndci.com)
 
-# Overview
+# Shotgun Pipeline Toolkit Core API
 
-This repository is a forked clone of the official Shotgun Pipeline Toolkit Core API repository with DD-specific modifications.
+This repository represents the Shotgun Pipeline Toolkit Core API.
 
-## Shotgun Reference Documentation and Release Notes
+## Getting started with the Shotgun Pipeline Toolkit
 
-For the *latest official released API Documentation*, head over to the Toolkit App Store:
+Installing the Shotgun Pipeline Toolkit is normally done via our
+Shotgun App Store. For detailed instructions on how to get started
+with Toolkit, head over to our support site: 
+https://support.shotgunsoftware.com/entries/95442748
+
+## Reference Documentation and Release Notes
+
+For our *latest released API Documentation*, head over to the Toolkit App Store:
 https://support.shotgunsoftware.com/entries/95441257
 
 Release Notes for the Core API are also maintained as a wiki document
 and can be found here: https://github.com/shotgunsoftware/tk-core/wiki/Release-Notes
-
-# Getting Started TBD
-
-# Step-by-Step TBD

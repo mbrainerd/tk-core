@@ -129,7 +129,7 @@ class ConfigDescriptor(Descriptor):
         :rtype: str
         """
         return ShotgunPath.get_file_name_from_template(
-            os.path.join(install_root, "config", "interpreter_%s.cfg")
+            os.path.join(install_root, "core", "interpreter_%s.cfg")
         )
 
     def _find_interpreter_location(self, path):
