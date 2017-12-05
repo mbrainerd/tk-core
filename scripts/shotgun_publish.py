@@ -8,7 +8,7 @@ from sgtk import LogManager
 
 # the logger used by this file is sgtk.tank_cmd
 app_name = "shotgun_publish"
-logger = sgtk.LogManager.get_logger(app_name)
+logger = LogManager.get_logger(app_name)
 
 def init_logging():
     """
@@ -17,22 +17,22 @@ def init_logging():
     global logger, formatter
 
     # set up std toolkit logging to file
-    sgtk.LogManager().initialize_base_file_handler(app_name)
+    LogManager().initialize_base_file_handler(app_name)
 
     # set up output of all sgtk log messages to stdout
-    log_handler = sgtk.LogManager().initialize_custom_handler(
-        logging.StreamHandler(sys.stdout)
-    )
+    handler = logging.StreamHandler(sys.stdout)
+    LogManager().initialize_custom_handler(handler)
 
     # check if there is a --debug flag anywhere in the args list.
     # in that case turn on debug logging and remove the flag
-    if "--debug" in sys.argv[1:]:
-        sgtk.LogManager().global_debug = True
+    if os.environ.get("DD_DEBUG"):
+        LogManager().global_debug = True
         logger.debug("")
-        logger.debug("A log file can be found in %s" % sgtk.LogManager().log_folder)
+        logger.debug("A log file can be found in %s" % LogManager().log_folder)
         logger.debug("")
 
     logger.debug("Running main from %s" % __file__)
+    return handler
 
 
 def init_user_credentials():
@@ -56,7 +56,7 @@ def main():
     Do stuff
     """
     # Initialize logging
-    init_logging()
+    log_handler = init_logging()
 
     # Initialize user credentials
     init_user_credentials()
@@ -82,8 +82,25 @@ def main():
         if ctx_entity:
             tk.create_filesystem_structure(ctx_entity.get("type"), ctx_entity.get("id"), app_name)
 
-    engine = sgtk.platform.start_engine("tk-shell", tk, ctx)
-    return engine.execute_command("Publish...", [])
+    try:
+        engine = sgtk.platform.start_engine("tk-shell", tk, ctx)
+    except Exception as e:
+        log.error("Could not start engine: %s" % str(e))
+        if os.environ.get("DD_DEBUG"):
+            import pdb; pdb.post_mortem()
+        raise
+        
+    # If we have an engine, then hand off logging responsibilities
+    # to it and remove the startup log handler
+    LogManager().root_logger.removeHandler(log_handler)
+
+    try:
+        return engine.execute_command("Publish...", [])
+    except Exception as e:
+        log.error("Could not start app: %s" % str(e))
+        if os.environ.get("DD_DEBUG"):
+            import pdb; pdb.post_mortem()
+        raise
 
 if __name__ == "__main__":
     main()
