@@ -21,7 +21,12 @@ import threading
 
 from dd.runtime import api
 api.load("preferences")
-from preferences import Preferences
+import preferences
+
+# Explicitly set the effective level for the preferences module logger to INFO
+# as the debug output is overly verbose and not relevant
+import logging
+preferences.logger.setLevel(logging.INFO)
 
 from tank_vendor import yaml
 from ..errors import (
@@ -187,7 +192,7 @@ class PreferencesCacheItem(object):
             role = self.context.step["name"]
 
         # Populate the item's data before adding it to the cache.
-        self._data = dict(Preferences(path, role, package="sgtk_config").items())
+        self._data = dict(preferences.Preferences(path, role, package="sgtk_config").items())
 
 class YamlCache(object):
     """
