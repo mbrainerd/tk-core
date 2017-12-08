@@ -77,8 +77,8 @@ class PathCache(object):
 
         if tk.pipeline_configuration.has_associated_data_roots():
             self._path_cache_disabled = False
-            self._init_db()
             self._roots = tk.pipeline_configuration.get_data_roots()
+            self._init_db()
         else:
             # no primary location found. Path cache therefore does not exist!
             # go into a no-path-cache-mode
