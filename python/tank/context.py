@@ -519,7 +519,7 @@ class Context(object):
     ################################################################################################
     # public methods
 
-    def as_template_fields(self, template, validate=False):
+    def as_template_fields(self, template=None, validate=False):
         """
         Returns the context object as a dictionary of template fields.
 
@@ -598,6 +598,17 @@ class Context(object):
 
         fields = {}
 
+        if template:
+            keys = template.keys.values()
+        else:
+            keys = self.tk.template_keys.values()
+
+        # First attempt to get fields from the entities stored in the context
+        fields.update(self._fields_from_entities(keys, entities))
+        keys = self._get_missing_keys(keys, fields, entities)
+        if not keys:
+            return fields
+
         # Try to populate fields using paths caches for entity
         if isinstance(template, TemplatePath):
 
@@ -621,34 +632,49 @@ class Context(object):
 
             # first look at which ENTITY paths are associated with this context object
             # and use these to extract the right fields for this template
-            fields = self._fields_from_entity_paths(template)
+            tmp_fields = self._fields_from_entity_paths(template)
 
             # filter the list of fields to just those that don't have a 'None' value.
             # Note: A 'None' value for a field indicates an ambiguity and was set in the
             # _fields_from_entity_paths method (!)
-            non_none_fields = dict([(key, value) for key, value in fields.iteritems() if value is not None])
+            fields.update(dict([(key, value) for key, value in tmp_fields.iteritems() if value is not None]))
+            keys = self._get_missing_keys(keys, fields, entities)
+            if not keys:
+                return fields
 
             # Determine additional field values by walking down the template tree
-            fields.update(self._fields_from_template_tree(template, non_none_fields, entities))
+            fields.update(self._fields_from_template_tree(template, fields, entities))
+            keys = self._get_missing_keys(keys, fields, entities)
+            if not keys:
+                return fields
 
         # get values for shotgun query keys in template
-        fields.update(self._fields_from_shotgun(template, entities, validate))
+        fields.update(self._fields_from_shotgun(keys, entities))
+        keys = self._get_missing_keys(keys, fields, entities)
 
-        if validate:
-            # check that all context template fields were found and if not then raise a TankError
-            missing_fields = []
-            for key_name in template.keys.keys():
-                if key_name in entities and key_name not in fields:
-                    # we have a template key that should have been found but wasn't!
-                    missing_fields.append(key_name)
-
-            if missing_fields:
-                raise TankError("Cannot resolve template fields for context '%s' - the following "
-                                "keys could not be resolved: '%s'.  Please run the folder creation "
-                                "for '%s' and try again!"
-                                % (self, ", ".join(missing_fields), self.shotgun_url))
+        # If we still have keys, then we haven't fully solved
+        if keys and validate:
+            raise TankError("Cannot resolve template fields for context '%s' - the following "
+                            "keys could not be resolved: '%s'.  Please run the folder creation "
+                            "for '%s' and try again!"
+                            % (self, ", ".join([x.name for x in keys]), self.shotgun_url))
 
         return fields
+
+
+    def _get_missing_keys(self, keys, fields, entities, validate=False):
+        """
+        Returns a list of shotgun keys that don't have field values yet
+        """
+        missing_keys = []
+        for key in keys:
+            if key.shotgun_entity_type:
+                if key.name not in fields:
+                    # we have a template key that should have been found but wasn't!
+                    missing_keys.append(key)
+
+        return missing_keys
+
 
     def create_copy_for_user(self, user):
         """
@@ -776,14 +802,44 @@ class Context(object):
     ################################################################################################
     # private methods
 
-    def _fields_from_shotgun(self, template, entities, validate):
+    def _fields_from_entities(self, keys, entities):
+        """
+        """
+        fields = {}
+
+        for key in keys:
+
+            # check each key to see if it has shotgun query information that we should resolve
+            if key.shotgun_field_name:
+                # this key is a shotgun value that needs fetching!
+
+                # ensure that the context actually provides the desired entities
+                if not key.shotgun_entity_type in entities:
+                    continue
+
+                entity = entities[key.shotgun_entity_type]
+                entity_type = entity["type"]
+
+                # Special handling of the name field since we normalize it
+                sg_name = _get_entity_type_sg_name_field(entity_type)
+                if key.shotgun_field_name == sg_name:
+                    # already have the value cached - no need to fetch from shotgun
+                    fields[key.name] = entity["name"]
+
+                # Else create a field if we already have the key
+                elif key.shotgun_field_name in entity:
+                    fields[key.name] = entity[key.shotgun_field_name]
+
+        return fields
+
+
+    def _fields_from_shotgun(self, keys, entities):
         """
         Query Shotgun server for keys used by this template whose values come directly
         from Shotgun fields.
 
-        :param template: Template to retrieve Shotgun fields for.
+        :param keys: TemplateKeys to retrieve Shotgun fields for.
         :param entities: Dictionary of entities for the current context.
-        :param validate: If True, missing fields will raise a TankError.
 
         :returns: Dictionary of field values extracted from Shotgun.
         :rtype: dict
@@ -792,7 +848,7 @@ class Context(object):
         """
         fields = {}
         # for any sg query field
-        for key in template.keys.values():
+        for key in keys:
 
             # check each key to see if it has shotgun query information that we should resolve
             if key.shotgun_field_name:
@@ -800,12 +856,7 @@ class Context(object):
 
                 # ensure that the context actually provides the desired entities
                 if not key.shotgun_entity_type in entities:
-                    if validate:
-                        raise TankError("Key '%s' in template '%s' could not be populated by "
-                                        "context '%s' because the context does not contain a "
-                                        "shotgun entity of type '%s'!" % (key, template, self, key.shotgun_entity_type))
-                    else:
-                        continue
+                    continue
 
                 entity = entities[key.shotgun_entity_type]
 
@@ -822,10 +873,10 @@ class Context(object):
                     result = self.__tk.shotgun.find_one(key.shotgun_entity_type, filters, query_fields)
                     if not result:
                         # no record with that id in shotgun!
-                        raise TankError("Could not retrieve Shotgun data for key '%s' in "
-                                        "template '%s'. No records in Shotgun are matching "
+                        raise TankError("Could not retrieve Shotgun data for key '%s'. "
+                                        "No records in Shotgun are matching "
                                         "entity '%s' (Which is part of the current "
-                                        "context '%s')" % (key, template, entity, self))
+                                        "context '%s')" % (key, entity, self))
 
                     value = result.get(key.shotgun_field_name)
 
@@ -853,8 +904,7 @@ class Context(object):
                         if not key.validate(processed_val):
                             raise TankError("Template validation failed for value '%s'. This "
                                             "value was retrieved from entity %s in Shotgun to "
-                                            "represent key '%s' in "
-                                            "template '%s'." % (processed_val, entity, key, template))
+                                            "represent key '%s'." % (processed_val, entity, key))
 
                     # all good!
                     # populate dictionary and cache
@@ -1073,7 +1123,8 @@ def from_path(tk, path, previous_context=None):
         raise TankError("Cannot get entity in path_cache for path: %s" % path)
 
     # Pass along the entity to be processed by from_entity_dictionary()
-    return from_entity_dictionary(tk, entity_dict, previous_context)
+    log.debug("Running context_from_path: %s" % path)
+    return _from_entity_dictionary(tk, entity_dict, previous_context)
 
 
 def from_entity(tk, entity_type, entity_id, previous_context=None):
@@ -1096,7 +1147,8 @@ def from_entity(tk, entity_type, entity_id, previous_context=None):
     entity_dict = {"type": entity_type, "id": entity_id }
 
     # Pass along the entity to be processed by from_entity_dictionary()
-    return from_entity_dictionary(tk, entity_dict, previous_context)
+    log.debug("Running context_from_entity: %s" % pprint.pformat(entity_dict))
+    return _from_entity_dictionary(tk, entity_dict, previous_context)
 
 
 def from_entity_dictionary(tk, entity_dict, previous_context=None):
@@ -1116,18 +1168,25 @@ def from_entity_dictionary(tk, entity_dict, previous_context=None):
     :type previous_context: :class:`Context`
     :returns: :class:`Context`
     """
+    # Pass along the entity_dict to be processed by from_entity_dictionary()
+    log.debug("Running context_from_entity_dictionary: %s" % pprint.pformat(entity_dict))
+    return _from_entity_dictionary(tk, entity_dict, previous_context)
 
+
+def _from_entity_dictionary(tk, entity_dict, previous_context=None):
+    """
+    """
     # Get a context-valid entity dictionary
     entity_dict = _get_valid_entity_dict(tk, entity_dict)
 
     # Embed the entity in the appropriate field
     entity_type = entity_dict.get("type")
     if entity_type == "Project":
-        entity_dict["project"] = _build_clean_entity(entity_dict)
+        entity_dict["project"] = _build_clean_entity(tk, entity_dict)
     elif entity_type == "Task":
-        entity_dict["task"] = _build_clean_entity(entity_dict)
+        entity_dict["task"] = _build_clean_entity(tk, entity_dict)
     else:
-        entity_dict["entity"] = _build_clean_entity(entity_dict)
+        entity_dict["entity"] = _build_clean_entity(tk, entity_dict)
 
     # Initialize the new context dictionary
     context_dict = {
@@ -1156,7 +1215,7 @@ def from_entity_dictionary(tk, entity_dict, previous_context=None):
         if context_dict.get("task") is None and context_dict.get("step") == previous_context.step:
             context_dict["task"] = previous_context.task
 
-    log.debug("Building context from dictionary:\n%s" % pprint.pformat(context_dict))
+    log.debug("Building context:\n%s" % pprint.pformat(context_dict))
     return Context(**context_dict)
 
 
@@ -1261,11 +1320,26 @@ def _get_entity_type_sg_name_field(entity_type):
     :returns:               The name field for the specified entity type
     """
     return {
-        "HumanUser": "login",
+        "HumanUser": "name",
         "Task":      "content",
-        "Project":   "name",
-        "Step":      "short_name"
+        "Project":   "name"
     }.get(entity_type, "code")
+
+
+def _get_templatekey_sg_fields(tk, entity_type):
+    """
+    """
+    fields = []
+
+    # Get any Shotgun template keys that match this entity type
+    for key in tk.template_keys.values():
+        if not key.shotgun_field_name or not key.shotgun_entity_type:
+            continue
+
+        if entity_type == key.shotgun_entity_type:
+            fields.append(key.shotgun_field_name)
+
+    return fields
 
 
 def _get_entity_name(entity_dict):
@@ -1286,7 +1360,7 @@ def _get_entity_name(entity_dict):
     return entity_name
 
 
-def _build_clean_entity(ent):
+def _build_clean_entity(tk, ent):
     """
     Ensure entity has id, type and name fields and build a clean
     entity dictionary containing just those fields to return, stripping
@@ -1313,12 +1387,20 @@ def _build_clean_entity(ent):
     if not ent_name:
        return None
 
-    # return a clean dictionary:
-    return {
+    new_ent = {
         "id":   ent_id,
         "type": ent_type,
         "name": ent_name
     }
+
+    # Get any Shotgun template keys and store any existing fields of interest
+    fields = _get_templatekey_sg_fields(tk, ent_type)
+    for field in fields:
+        if field in ent:
+            new_ent[field] = ent[field]
+
+    # return a clean dictionary:
+    return new_ent
 
 
 def _process_entity(curr_entity, entity_dict, required_fields, additional_types=None):
@@ -1460,11 +1542,11 @@ def _get_valid_entity_dict(tk, entity_dict):
 
         # Iterate (in order) over entity fields to get the new entity to process
         for field in required_fields:
-            new_entity = _build_clean_entity(entity_dict.get(field))
+            new_entity = _build_clean_entity(tk, entity_dict.get(field))
             if new_entity:
 
                 # Add the original entity as the source entity
-                new_entity["source_entity"] = _build_clean_entity(entity_dict)
+                new_entity["source_entity"] = _build_clean_entity(tk, entity_dict)
 
                 # Rerun context creation with new primary entity
                 return _get_valid_entity_dict(tk, new_entity)
@@ -1506,7 +1588,13 @@ def _get_valid_entity_dict(tk, entity_dict):
 
     # Add any entities defined in additional_fields
     for field in optional_fields:
-        additional_entity = _build_clean_entity(entity_dict.get(field))
+        # Make sure to format the entity_type field
+        parent_entity = entity_dict.get("entity")
+        if parent_entity:
+            parent_type = parent_entity["type"]
+            field = field.format(entity_type=parent_type)
+
+        additional_entity = _build_clean_entity(tk, entity_dict.get(field))
         if additional_entity:
             if "additional_entities" not in entity_dict:
                 entity_dict["additional_entities"] = []
@@ -1675,7 +1763,8 @@ def _get_entity_dict_from_shotgun(tk, entity_dict, required_fields):
     entity_type = entity_dict["type"]
 
     name_field = _get_entity_type_sg_name_field(entity_type)
-    data = tk.shotgun.find_one(entity_type, [["id", "is", entity_id]], required_fields + [name_field])
+    key_fields = _get_templatekey_sg_fields(tk, entity_type)
+    data = tk.shotgun.find_one(entity_type, [["id", "is", entity_id]], required_fields + key_fields + [name_field])
     if not data:
         raise TankError("Cannot find %s Entity: '%s' in Shotgun." % (entity_type, entity_id))
 
