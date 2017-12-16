@@ -12,7 +12,7 @@ import os
 import copy
 
 from ...errors import TankError
-from ...util import shotgun_entity
+from ...util import shotgun_entity, login
 from ...template import TemplatePath
 from ...templatekey import StringKey
 
@@ -118,10 +118,9 @@ class Entity(Folder):
         """
         return the special name field for a given entity
         """
-        return {    "HumanUser": "login", 
+        return {    "HumanUser": "name", 
                     "Task":      "content", 
-                    "Project":   "name",
-                    "Step":      "short_name"
+                    "Project":   "name"
                 }.get(entity_type, "code")
     
     def get_entity_type(self):
@@ -213,9 +212,30 @@ class Entity(Folder):
         """
         # first check the constraints: if tokens contains a type/id pair our our type,
         # we should only process this single entity. If not, then use the query filter
-        
+
+        filters = copy.deepcopy(self._filters)
+        if hasattr(self, "_user_initialized"):
+            # adds the current user to the filer query in case this has not already been done.
+            # having this set up before the first call to create_folders rather than in the
+            # constructor is partly for performance, but primarily so that a valid current user 
+            # isn't required unless you actually create a user sandbox folder. For example,
+            # if you have a dedicated machine that creates higher level folders, this machine
+            # shouldn't need to have a user id set up - only the artists that actually create 
+            # the user folders should need to.
+
+            # this query confirms that there is a matching HumanUser in shotgun for the local login
+            user = login.get_current_user(self._tk)
+            if not user:
+                msg = ("Folder Creation Error: Could not find a HumanUser in shotgun with login " 
+                       "matching the local login. Check that the local login corresponds to a "
+                       "user in shotgun.")
+                raise TankError(msg)
+
+            user_filter = { "path": "id", "relation": "is", "values": [ user["id"] ] }
+            filters["conditions"].append( user_filter )            
+
         # first, resolve the filter queries for the current ids passed in via tokens
-        resolved_filters = resolve_shotgun_filters(self._filters, sg_data)
+        resolved_filters = resolve_shotgun_filters(filters, sg_data)
         
         # see if the sg_data dictionary has a "seed" entity type matching our entity type
         my_sg_data_key = FilterExpressionToken.sg_data_key_for_folder_obj(self)
@@ -493,19 +513,26 @@ class Entity(Folder):
         # Get the corresponding entity type for this folder obj
         entity_type = self.get_entity_type()
 
-        # Confirm there is a value in the path for the entity type
-        if entity_type not in path_fields:
-            raise TankError("Entity type '%s' missing from path fields." % entity_type)
+        # Find the corresponding field name and path_field value matching this entity_type
+        field_name = None
+        field_value = None
+        for field_key in path_fields.keys():
+            if field_key in self.template_path.keys:
+                template_key = self.template_path.keys[field_key]
+                if template_key.shotgun_entity_type == entity_type:
+                    field_name = template_key.shotgun_field_name
+                    field_value = path_fields[field_key]
+                    break
 
-        # Get the path_field value
-        entity_key = path_fields[entity_type]
+        # Confirm there is a value in the path for the entity type
+        if not field_name:
+            raise TankError("Entity type '%s' missing from path fields." % entity_type)
 
         # Resolve any filters
         resolved_filters = resolve_shotgun_filters(self._filters, sg_data)
 
-        # Do lookup by corresponding name field
-        name_field = self.__get_name_field_for_et(entity_type)
-        resolved_filters["conditions"].append({ "path": name_field, "relation": "is", "values": [entity_key] })
+        # Do lookup by corresponding field name
+        resolved_filters["conditions"].append({ "path": field_name, "relation": "is", "values": [field_value] })
 
         # figure out which fields to retrieve
         fields = self._entity_expression.get_shotgun_fields()
@@ -514,6 +541,7 @@ class Entity(Folder):
         fields.update(self._entity_expression.get_shotgun_link_fields())
         
         # always retrieve the name field for the entity
+        name_field = self.__get_name_field_for_et(entity_type)
         fields.add(name_field)        
 
         # add any special stuff in
@@ -527,7 +555,7 @@ class Entity(Folder):
         entity = self._tk.shotgun.find_one(entity_type, resolved_filters, fields_list)
         if not entity:
             raise TankError("Cannot find %s Entity: '%s' in Shotgun using filter: %s"
-                    % (entity_type, entity_key, resolved_filters))
+                    % (entity_type, field_value, resolved_filters))
 
         # Add this entity to the sg_data dict for further processing
         sg_data[entity_type] = entity
