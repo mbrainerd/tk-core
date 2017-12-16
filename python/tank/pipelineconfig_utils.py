@@ -22,7 +22,7 @@ from . import LogManager
 
 from .util import yaml_cache
 from .util import ShotgunPath
-from .util.shotgun import get_deferred_sg_connection, get_entity
+from .util.shotgun import get_deferred_sg_connection, get_sg_connection
 
 from .errors import TankError
 
@@ -91,44 +91,45 @@ def get_metadata(pipeline_config_path):
 
     # DD Hackery: Get the project from DD_SHOW instead of from yaml file
     if not data.get("pc_id", None):
+
+        # Get the shotgun connection object
+        sg = get_sg_connection()
+
+        # First check if we are in a show environment
         dd_show = os.environ.get("DD_SHOW", None)
         if dd_show:
 
+            # Default PipelineConfiguration name is "Primary"
+            pc_name = data.get("pc_name", "Primary")
+
+            # Get the PipelineConfiguration for this show
+            filters = [["code", "is", pc_name], ["project.Project.tank_name", "is", dd_show]]
+
             try:
-                # Get the matching project entity
-                proj_entity = get_entity(dd_show, "Project")
+                pc_entity = sg.find_one("PipelineConfiguration", filters, ["project"])
+                if pc_entity is None:
+                    raise TankError
 
-                # Default PipelineConfiguration name is "Primary"
-                pc_name = data.get("pc_name", "Primary")
-
-                # Get the PipelineConfiguration, filtered by this project
-                pc_entity = get_entity(pc_name, "PipelineConfiguration", [["project", "is", proj_entity]])
-
-                data["project_name"]    = proj_entity.get("name")
-                data["project_id"]      = proj_entity.get("id")
+                data["project_name"]    = pc_entity["project"].get("name")
+                data["project_id"]      = pc_entity["project"].get("id")
                 data["pc_id"]           = pc_entity.get("id")
-                data["pc_name"]         = pc_entity.get("code")
+                data["pc_name"]         = pc_name
 
-            except TankError:
-                log.warning("Cannot get PipelineConfiguration for Show '%s'. " \
-                        "Falling back on Site PipelineConfiguration." % dd_show)
+            except TankError as e:
+                log.warning("Cannot find PipelineConfiguration for show: '%s'. " \
+                    "Falling back on Site PipelineConfiguration." % dd_show)
                 pass
 
         # Else return the Site PipelineConfiguration
         if not data.get("pc_id", None):
 
-            try:
-                # Default PipelineConfiguration name is "Primary"
-                pc_name = data.get("pc_name", "Primary")
+            # Get the PipelineConfiguration, filtered by ID 1
+            pc_entity = sg.find_one("PipelineConfiguration", [["id", "is", 1]], ["code"])
+            if pc_entity is None:
+                raise TankError("Cannot find Site PipelineConfiguration.")
 
-                # Get the PipelineConfiguration, filtered by ID 1
-                pc_entity = get_entity(pc_name, "PipelineConfiguration", [["id", "is", 1]])
-
-                data["pc_id"]           = pc_entity.get("id")
-                data["pc_name"]         = pc_entity.get("code")
-
-            except TankError:
-                raise TankError("Cannot find Site PipelineConfiguration '%s'" % pc_name)
+            data["pc_id"]           = pc_entity.get("id")
+            data["pc_name"]         = pc_entity.get("code")                
 
     return data
 
