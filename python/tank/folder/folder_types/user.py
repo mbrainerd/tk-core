@@ -10,7 +10,6 @@
 
 import os
 
-from ...util import login
 from ...errors import TankError
 from ...template import TemplatePath
 from ...templatekey import StringKey
@@ -92,42 +91,3 @@ class UserWorkspace(Entity):
             template_path = os.path.join(str(self._parent.template_path), template_path)
 
         return TemplatePath(template_path, self.template_keys, self.get_storage_root(), self.name)
-        
-    def create_folders(self, io_receiver, path, sg_data, is_primary, explicit_child_list, engine):
-        """
-        Inherited and wrapps base class implementation
-        """
-        
-        # first we need to check to see if folders should be created. if the
-        # folder creation is deferred, for example, until a specific engine
-        # is run. 
-        if not self._should_item_be_processed(engine, is_primary):
-            return
-        
-        # wraps around the Entity.create_folders() method and adds
-        # the current user to the filer query in case this has not already been done.
-        # having this set up before the first call to create_folders rather than in the
-        # constructor is partly for performance, but primarily so that a valid current user 
-        # isn't required unless you actually create a user sandbox folder. For example,
-        # if you have a dedicated machine that creates higher level folders, this machine
-        # shouldn't need to have a user id set up - only the artists that actually create 
-        # the user folders should need to.
-        
-        if not self._user_initialized:
-
-            # this query confirms that there is a matching HumanUser in shotgun for the local login
-            user = login.get_current_user(self._tk) 
-    
-            if not user:
-                msg = ("Folder Creation Error: Could not find a HumanUser in shotgun with login " 
-                       "matching the local login. Check that the local login corresponds to a "
-                       "user in shotgun.")
-                raise TankError(msg)
-    
-            user_filter = { "path": "id", "relation": "is", "values": [ user["id"] ] }
-            self._filters["conditions"].append( user_filter )            
-            self._user_initialized = True
-        
-        return Entity.create_folders(self, io_receiver, path, sg_data, is_primary, explicit_child_list, engine)
-        
-

@@ -309,16 +309,16 @@ def get_config_install_location(path):
     """
     Given a pipeline configuration, return the location
     on the current platform.
-    
+
     Loads the location metadata file from install_location.yml
     This contains a reflection of the paths given in the pipeline config entity.
 
     Returns the path that has been registered for this pipeline configuration 
     for the current OS. This is the path that has been defined in shotgun.
-    
+
     This is useful when drive letter mappings or symlinks are being used to ensure
     a correct path resolution.
-    
+
     This may return None if no path has been registered for the current os.
     
     :param path: Path to a pipeline configuration on disk.

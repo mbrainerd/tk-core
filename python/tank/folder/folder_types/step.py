@@ -153,15 +153,26 @@ class ShotgunStep(Entity):
                         field_name_expression, 
                         entity_filter, 
                         create_with_parent=True)
-                
-        
+
+    def _get_additional_sg_fields(self):
+        """
+        Returns additional shotgun fields to be retrieved.
+
+        Subclassed for steps so that the short_name data is always
+        retrieved at the same time as the step data.
+
+        :returns: List of shotgun fields to retrieve in addition to those
+                  specified in the configuration files.
+        """
+        return ["short_name"]
+
     def get_task_link_field(self):       
         """
         Each step node is associated with a task via special link field on task.
         This method returns the name of that link field as a string
         """
         return self._task_link_field
-    
+
     def get_step_entity_type(self):
         """
         Returns the Shotgun entity type which is used to represent the pipeline step.
@@ -170,4 +181,3 @@ class ShotgunStep(Entity):
         entity to perform this grouping.
         """
         return self._entity_type
-

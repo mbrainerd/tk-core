@@ -92,13 +92,13 @@ def _process_template_includes_r(file_name, data):
         # add the included data's different sections
         for ts in constants.TEMPLATE_SECTIONS:
             if ts in included_data:
-                output_data[ts].update( included_data[ts] )
+                output_data[ts].update( included_data[ts] or dict() )
         
     # now all include data has been added into the data structure.
     # now add the template data itself
     for ts in constants.TEMPLATE_SECTIONS:
         if ts in data:
-            output_data[ts].update( data[ts] )
+            output_data[ts].update( data[ts] or dict() )
     
     return output_data
         
