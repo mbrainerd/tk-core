@@ -82,7 +82,7 @@ def get_metadata(pipeline_config_path):
     )
 
     try:
-        data = yaml_cache.g_yaml_cache.get(cfg_yml, deepcopy_data=False)
+        data = yaml_cache.g_yaml_cache.get(cfg_yml)
         if data is None:
             raise Exception("File contains no data!")
     except Exception as e:
@@ -489,7 +489,7 @@ def _get_version_from_manifest(info_yml_path):
     :returns: Always a string, 'unknown' if data cannot be found
     """
     try:
-        data = yaml_cache.g_yaml_cache.get(info_yml_path, deepcopy_data=False) or {}
+        data = yaml_cache.g_yaml_cache.get(info_yml_path) or {}
         data = str(data.get("version", "unknown"))
     except Exception:
         data = "unknown"

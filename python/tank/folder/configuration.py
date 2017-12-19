@@ -169,7 +169,7 @@ class FolderConfiguration(object):
             full_path = os.path.join(parent_path, file_name)
 
             try:
-                metadata = yaml_cache.g_yaml_cache.get(full_path, deepcopy_data=False) or {}
+                metadata = yaml_cache.g_yaml_cache.get(full_path) or {}
             except Exception as error:
                 raise TankError("Cannot load config file '%s'. Error: %s" % (full_path, error))
 
@@ -198,7 +198,7 @@ class FolderConfiguration(object):
         # check if there is a yml file with the same name
         yml_file = "%s.yml" % full_path
         try:
-            metadata = yaml_cache.g_yaml_cache.get(yml_file, deepcopy_data=False)
+            metadata = yaml_cache.g_yaml_cache.get(yml_file)
         except TankUnreadableFileError:
             pass
         except Exception as error:
