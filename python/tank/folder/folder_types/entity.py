@@ -113,16 +113,7 @@ class Entity(Folder):
             template_path = os.path.join(str(self._parent.template_path), template_path)
 
         return TemplatePath(template_path, self.template_keys, self.get_storage_root(), self.name)
-    
-    def __get_name_field_for_et(self, entity_type):
-        """
-        return the special name field for a given entity
-        """
-        return {    "HumanUser": "name", 
-                    "Task":      "content", 
-                    "Project":   "name"
-                }.get(entity_type, "code")
-    
+
     def get_entity_type(self):
         """
         returns the shotgun entity type for this node
@@ -171,7 +162,7 @@ class Entity(Folder):
                         
             # get the name field - which depends on the entity type
             # Note: this is the 'name' that will get stored in the path cache for this entity
-            name_field = self.__get_name_field_for_et(self._entity_type)
+            name_field = shotgun_entity.get_sg_entity_name_field(self._entity_type)
             name_value = entity[name_field]            
             # construct a full entity link dict w name, id, type
             full_entity_dict = {"type": self._entity_type, "id": entity["id"], "name": name_value} 
@@ -253,7 +244,7 @@ class Entity(Folder):
         fields.update( self._entity_expression.get_shotgun_link_fields() )
         
         # always retrieve the name field for the entity
-        fields.add( self.__get_name_field_for_et(self._entity_type) )        
+        fields.add(shotgun_entity.get_sg_entity_name_field(self._entity_type))
 
         # add any special stuff in
         for custom_field in self._get_additional_sg_fields():
@@ -470,7 +461,7 @@ class Entity(Folder):
 
             # get the name field - which depends on the entity type
             # Note: this is the 'name' that will get stored in the path cache for this entity
-            name_field = self.__get_name_field_for_et(entity["type"])
+            name_field = shotgun_entity.get_sg_entity_name_field(entity["type"])
             name_value = entity[name_field]            
 
             # construct a full entity link dict w name, id, type
@@ -541,7 +532,7 @@ class Entity(Folder):
         fields.update(self._entity_expression.get_shotgun_link_fields())
         
         # always retrieve the name field for the entity
-        name_field = self.__get_name_field_for_et(entity_type)
+        name_field = shotgun_entity.get_sg_entity_name_field(entity_type)
         fields.add(name_field)        
 
         # add any special stuff in

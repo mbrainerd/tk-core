@@ -821,7 +821,7 @@ class Context(object):
                 entity_type = entity["type"]
 
                 # Special handling of the name field since we normalize it
-                sg_name = _get_entity_type_sg_name_field(entity_type)
+                sg_name = shotgun_entity.get_sg_entity_name_field(entity_type)
                 if key.shotgun_field_name == sg_name:
                     # already have the value cached - no need to fetch from shotgun
                     fields[key.name] = entity["name"]
@@ -1311,21 +1311,6 @@ yaml.add_constructor(u'!TankContext', context_yaml_constructor)
 ################################################################################################
 # utility methods
 
-def _get_entity_type_sg_name_field(entity_type):
-    """
-    Return the Shotgun name field to use for the specified entity type.  This
-    is needed as not all entity types are consistent!
-
-    :param entity_type:     The entity type to get the name field for
-    :returns:               The name field for the specified entity type
-    """
-    return {
-        "HumanUser": "name",
-        "Task":      "content",
-        "Project":   "name"
-    }.get(entity_type, "code")
-
-
 def _get_templatekey_sg_fields(tk, entity_type):
     """
     """
@@ -1351,7 +1336,7 @@ def _get_entity_name(entity_dict):
     :returns:             The name of the entity if found in the entity
                           dictionary, otherwise None
     """
-    name_field = _get_entity_type_sg_name_field(entity_dict["type"])
+    name_field = shotgun_entity.get_sg_entity_name_field(entity_dict["type"])
     entity_name = entity_dict.get(name_field)
     if entity_name == None:
         # Also check to see if entity contains 'name':
@@ -1528,7 +1513,7 @@ def _get_valid_entity_dict(tk, entity_dict):
         raise TankError("Cannot create a context without an entity id!")
 
     # Sanitize name
-    name_field = _get_entity_type_sg_name_field(entity_type)
+    name_field = shotgun_entity.get_sg_entity_name_field(entity_type)
     if name_field in entity_dict:
         entity_dict["name"] = entity_dict.pop(name_field)
 
@@ -1762,7 +1747,7 @@ def _get_entity_dict_from_shotgun(tk, entity_dict, required_fields):
     entity_id   = entity_dict["id"]
     entity_type = entity_dict["type"]
 
-    name_field = _get_entity_type_sg_name_field(entity_type)
+    name_field = shotgun_entity.get_sg_entity_name_field(entity_type)
     key_fields = _get_templatekey_sg_fields(tk, entity_type)
     data = tk.shotgun.find_one(entity_type, [["id", "is", entity_id]], required_fields + key_fields + [name_field])
     if not data:
