@@ -110,8 +110,8 @@ class PipelineConfiguration(object):
         )
 
         # Enable the use of env variables for project and pipeline configuration settings
-        self._project_name = os.path.expandvars(self._project_name)
-        self._pc_name = os.path.expandvars(self._pc_name)
+        self._project_name = os.path.expandvars(self._project_name) if isinstance(self._project_name, str) else self._project_name
+        self._pc_name = os.path.expandvars(self._pc_name) if isinstance(self._pc_name, str) else self._pc_name
         self._project_id = int(os.path.expandvars(self._project_id)) if isinstance(self._project_id, str) else self._project_id
         self._pc_id = int(os.path.expandvars(self._pc_id)) if isinstance(self._pc_id, str) else self._pc_id
 
@@ -663,7 +663,7 @@ class PipelineConfiguration(object):
         # read this from info.yml
         info_yml_path = os.path.join(self.get_core_location(), constants.BUNDLE_METADATA_FILE)
         try:
-            data = yaml_cache.g_yaml_cache.get(info_yml_path, deepcopy_data=False)
+            data = yaml_cache.g_yaml_cache.get(info_yml_path)
             data = str(data.get("documentation_url"))
             if data == "":
                 data = None
@@ -975,7 +975,7 @@ class PipelineConfiguration(object):
         )
 
         try:
-            data = yaml_cache.g_yaml_cache.get(templates_file, deepcopy_data=False) or {}
+            data = yaml_cache.g_yaml_cache.get(templates_file) or {}
             data = template_includes.process_includes(templates_file, data)
         except TankUnreadableFileError:
             data = dict()
