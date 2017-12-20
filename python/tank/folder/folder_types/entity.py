@@ -14,7 +14,6 @@ import copy
 from ...errors import TankError
 from ...util import shotgun_entity, login
 from ...template import TemplatePath
-from ...templatekey import StringKey
 
 from .errors import EntityLinkTypeMismatch
 from .base import Folder
@@ -83,36 +82,44 @@ class Entity(Folder):
         (e.g. the FilterExpressionToken object). Tank will resolve any Token fields prior to 
         passing the filter to Shotgun for evaluation.
         """
-        self._tk = tk
         self._entity_type = entity_type
         self._field_name = field_name_expression
-        self._entity_expression = shotgun_entity.EntityExpression(self._tk, self._entity_type, self._field_name)
+        self._entity_expression = shotgun_entity.EntityExpression(tk, self._entity_type, self._field_name)
         self._filters = filters
         self._create_with_parent = create_with_parent
 
         # the schema name is the same as the SG entity type
-        Folder.__init__(self, parent, full_path, metadata)
-
-    def _create_template_key(self):
-        """
-        TemplateKey creation implementation. Implemented by all subclasses.
-        """
-        return StringKey(self._entity_type,
-                         shotgun_entity_type=self._entity_type,
-                         shotgun_field_name=self._field_name
-                        )
+        Folder.__init__(self, tk, parent, full_path, metadata)
 
     def _create_template_path(self):
         """
         Template path creation implementation. Implemented by all subclasses.
-        
+
         Should return a TemplatePath object for the path of form: "{Project}/{Sequence}/{Shot}/user/{user_workspace}/{Step}"
         """
-        template_path = "{%s}" % self._entity_type
+        # Find the matching TemplateKey names for the field expression
+        key_names = {}
+        fields = self._entity_expression.get_shotgun_fields()
+        for field in fields:
+            # Get any Shotgun template keys that match this field
+            for key in self._tk.template_keys.values():
+                if not key.shotgun_field_name or not key.shotgun_entity_type:
+                    continue
+
+                if (self._entity_type == key.shotgun_entity_type and
+                    field == key.shotgun_field_name):
+                    key_names[field] = "{%s}" % key.name
+                    break
+
+            if field not in key_names:
+                raise TankError("Cannot create Schema TemplatePath. No matching TemplateKey for %s.%s" \
+                        % (self._entity_type, field))
+
+        template_path = self._entity_expression.generate_name(key_names, validate=False)
         if self._parent:
             template_path = os.path.join(str(self._parent.template_path), template_path)
 
-        return TemplatePath(template_path, self.template_keys, self.get_storage_root(), self.name)
+        return TemplatePath(template_path, self._tk.template_keys, self.get_storage_root(), self.name)
 
     def get_entity_type(self):
         """
@@ -291,6 +298,27 @@ class Entity(Folder):
         """
         
         tokens = copy.deepcopy(shotgun_data)
+
+        filters = copy.deepcopy(self._filters)
+        if hasattr(self, "_user_initialized"):
+            # adds the current user to the filer query in case this has not already been done.
+            # having this set up before the first call to create_folders rather than in the
+            # constructor is partly for performance, but primarily so that a valid current user 
+            # isn't required unless you actually create a user sandbox folder. For example,
+            # if you have a dedicated machine that creates higher level folders, this machine
+            # shouldn't need to have a user id set up - only the artists that actually create 
+            # the user folders should need to.
+
+            # this query confirms that there is a matching HumanUser in shotgun for the local login
+            user = login.get_current_user(self._tk)
+            if not user:
+                msg = ("Folder Creation Error: Could not find a HumanUser in shotgun with login " 
+                       "matching the local login. Check that the local login corresponds to a "
+                       "user in shotgun.")
+                raise TankError(msg)
+
+            user_filter = { "path": "id", "relation": "is", "values": [ user["id"] ] }
+            filters["conditions"].append( user_filter )
         
         # If we don't have an entry in tokens for the current entity type, then we can't
         # extract any tokens. Used by #17726. Typically, we start with a "seed", and then go
@@ -310,7 +338,7 @@ class Entity(Folder):
             additional_filters = []
             
             # TODO: Support nested conditions
-            for condition in self._filters["conditions"]:
+            for condition in filters["conditions"]:
                 vals = condition["values"]
                 
                 # note the $FROM$ condition below - this is a bit of a hack to make sure we exclude
@@ -411,9 +439,9 @@ class Entity(Folder):
                 
                 if value is None:
                     # field was none! - cannot handle that!
-                    raise TankError("The %s %s has a required field %s that \ndoes not have a value "
-                                    "set in Shotgun. \nDouble check the values and try "
-                                    "again!\n" % (self._entity_type, name, field))
+                    raise EntityLinkTypeMismatch("The %s %s has a required field %s that "
+                        "does not have a value set in Shotgun. Double check the values "
+                        "and try again!" % (self._entity_type, name, field))
     
                 if isinstance(value, dict):
                     # If the value is a dict, assume it comes from a entity link.

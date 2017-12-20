@@ -15,6 +15,7 @@ all Tank items in the file system are kept.
 """
 
 import collections
+import threading
 import sqlite3
 import sys
 import os
@@ -44,6 +45,8 @@ SG_PIPELINE_CONFIG_FIELD = "pipeline_configuration"
 
 log = LogManager.get_logger(__name__)
 
+g_processed_paths = set()
+
 class PathCache(object):
     """
     A global cache which holds the mapping between a shotgun entity and a location on disk.
@@ -71,6 +74,7 @@ class PathCache(object):
         
         :param tk: Toolkit API instance
         """
+        self._lock = threading.Lock()
         self._connection = None
         self._tk = tk
         self._sync_with_sg = tk.pipeline_configuration.get_shotgun_path_cache_enabled()
@@ -1510,7 +1514,18 @@ class PathCache(object):
         """
         entity = self._get_entity(path)
         if not entity:
-            log.debug("Entry missing from path_cache: '%s'" % path)
+
+            # Don't do the heavy lifting if we've attempted to process this path before
+            self._lock.acquire()
+            try:
+                if path in g_processed_paths:
+                    return None
+
+                log.debug("Entry missing from path_cache: '%s'" % path)
+                g_processed_paths.add(path)
+
+            finally:
+                self._lock.release()
 
             # If entity for the path isn't in the cache, see if we can derive it
             # from a schema folder matching the path

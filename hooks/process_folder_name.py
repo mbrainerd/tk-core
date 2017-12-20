@@ -83,8 +83,9 @@ class ProcessFolderName(Hook):
             
         # replace all non-alphanumeric characters with dashes, 
         # except for the project entity, where here are special rules
-        is_project_name = (entity_type == "Project")
-        str_value = self._replace_non_alphanumeric(str_value, is_project_name)
+        if entity_id:
+            is_project_name = (entity_type == "Project")
+            str_value = self._replace_non_alphanumeric(str_value, is_project_name)
         
         return str_value
     

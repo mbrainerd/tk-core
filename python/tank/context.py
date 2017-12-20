@@ -1123,7 +1123,7 @@ def from_path(tk, path, previous_context=None):
         raise TankError("Cannot get entity in path_cache for path: %s" % path)
 
     # Pass along the entity to be processed by from_entity_dictionary()
-    log.debug("Running context_from_path: %s" % path)
+    log.debug("Running context_from_path: %s ==> %s" % (path, pprint.pformat(entity_dict)))
     return _from_entity_dictionary(tk, entity_dict, previous_context)
 
 

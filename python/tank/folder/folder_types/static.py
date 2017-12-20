@@ -16,7 +16,6 @@ from .base import Folder
 from .entity import Entity
 from .util import translate_filter_tokens, resolve_shotgun_filters
 from ...template import TemplatePath
-from ...templatekey import StringKey
 
 class Static(Folder):
     """
@@ -100,17 +99,10 @@ class Static(Folder):
         self._constrain_node = constrain_node
         self._constraints_filter = constraints_filter 
         self._create_with_parent = create_with_parent 
-        self._tk = tk
         
         self._cached_sg_data = {}
 
-        Folder.__init__(self, parent, full_path, metadata)
-
-    def _create_template_key(self):
-        """
-        TemplateKey creation implementation. Implemented by all subclasses.
-        """
-        return None
+        Folder.__init__(self, tk, parent, full_path, metadata)
 
     def _create_template_path(self):
         """
@@ -122,7 +114,7 @@ class Static(Folder):
         if self._parent:
             template_path = os.path.join(str(self._parent.template_path), template_path)
 
-        return TemplatePath(template_path, self.template_keys, self.get_storage_root(), self.name)
+        return TemplatePath(template_path, self._tk.template_keys, self.get_storage_root(), self.name)
     
     def is_dynamic(self):
         """

@@ -14,7 +14,6 @@ import copy
 from ...errors import TankError
 from ...util import shotgun_entity
 from ...template import TemplatePath
-from ...templatekey import StringKey
 
 from .base import Folder
 from .expression_tokens import FilterExpressionToken
@@ -55,10 +54,9 @@ class ListField(Folder):
         """
         Constructor
         """
-        self._tk = tk
         self._entity_type = entity_type
         self._create_with_parent = create_with_parent 
-        self._field_expr_obj = shotgun_entity.EntityExpression(self._tk, self._entity_type, field_expr)
+        self._field_expr_obj = shotgun_entity.EntityExpression(tk, self._entity_type, field_expr)
         self._skip_unused = skip_unused    
         
         # now ensure that the expression only contains a single field
@@ -71,16 +69,7 @@ class ListField(Folder):
         # get the first element of the returned set
         self._field_name = list(sg_fields)[0]
 
-        Folder.__init__(self, parent, full_path, metadata)
-
-    def _create_template_key(self):
-        """
-        TemplateKey creation implementation. Implemented by all subclasses.
-        """
-        return StringKey(self._field_name,
-                         shotgun_entity_type=self._entity_type,
-                         shotgun_field_name=self._field_name
-                        )
+        Folder.__init__(self, tk, parent, full_path, metadata)
 
     def _create_template_path(self):
         """
@@ -92,7 +81,7 @@ class ListField(Folder):
         if self._parent:
             template_path = os.path.join(str(self._parent.template_path), template_path)
 
-        return TemplatePath(template_path, self.template_keys, self.get_storage_root(), self.name)
+        return TemplatePath(template_path, self._tk.template_keys, self.get_storage_root(), self.name)
 
     def _should_item_be_processed(self, engine_str, is_primary):
         """

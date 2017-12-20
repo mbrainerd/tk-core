@@ -23,21 +23,21 @@ class Folder(object):
     typically driven by some shotgun input data.
     """
     
-    def __init__(self, parent, full_path, config_metadata):
+    def __init__(self, tk, parent, full_path, config_metadata):
         """
         :param parent: Parent :class:`Folder`
         :param full_path: Full path on disk to the associated configuration file.
         :param config_metadata: Resolved metadata for this configuration object.
         """
+        self._tk = tk
         self._config_metadata = config_metadata
         self._children = []
         self._full_path = full_path
         self._parent = parent
         self._files = []
         self._symlinks = []
-        self._template_key = self._create_template_key()
         self._template_path = self._create_template_path()
-        
+
         if self._parent:
             # add me to parent's child list
             self._parent._children.append(self)
@@ -72,20 +72,6 @@ class Folder(object):
         """
         base_dir = os.path.join(self._tk.pipeline_configuration.get_path(), "config")
         return os.path.relpath(self._full_path, base_dir).replace(os.path.sep, "_").lower() + "_dir"
-
-    @property
-    def template_keys(self):
-        """
-        Returns a dict of template keys for this folder and all parent folders
-        """
-        template_keys = {}
-        if self._template_key:
-            template_keys[self._template_key.name] = self._template_key
-
-        if self._parent:
-            template_keys.update(self._parent.template_keys)
-
-        return template_keys
 
     @property
     def template_path(self):
@@ -268,12 +254,6 @@ class Folder(object):
         Folder creation implementation. Implemented by all subclasses.
         
         Should return a list of tuples. Each tuple is a path + a matching shotgun data dictionary
-        """
-        raise NotImplementedError
-
-    def _create_template_key(self):
-        """
-        TemplateKey creation implementation. Implemented by all subclasses.
         """
         raise NotImplementedError
 

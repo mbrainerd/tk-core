@@ -9,6 +9,8 @@
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
 from ...errors import TankError
+from ...template import TemplatePath
+
 from .entity import Entity
 
 
@@ -58,7 +60,6 @@ class Project(Entity):
             "conditions": []
         }
         
-        self._tk = tk
         self._storage_root_path = storage_root_path
         
         Entity.__init__(self, 
@@ -70,7 +71,16 @@ class Project(Entity):
                         "tank_name", 
                         no_filters, 
                         create_with_parent=False)
-                
+
+    def _create_template_path(self):
+        """
+        Template path creation implementation. Implemented by all subclasses.
+        
+        Should return a TemplatePath object for the path of form: "{Project}"
+        """
+        template_path = "{%s}" % self._entity_type
+        return TemplatePath(template_path, self._tk.template_keys, self.get_storage_root(), self.name)
+
     def get_storage_root(self):
         """
         Local storages are defined in the Shotgun preferences.
@@ -80,5 +90,3 @@ class Project(Entity):
         root config, there may be more than one project node.)        
         """
         return self._storage_root_path
-        
-
