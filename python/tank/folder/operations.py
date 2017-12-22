@@ -39,6 +39,7 @@ def create_single_folder_item(tk, config_obj, io_receiver, entity_type, entity_i
     # For each folder, find the list of entities needed to build the full path and
     # ensure its parent folders exist. Then, create the folder for this entity with
     # all its children.
+    processed_folders = {}
     for folder_obj in folder_objects:
         
         # fill in the information we know about this entity now
@@ -86,7 +87,8 @@ def create_single_folder_item(tk, config_obj, io_receiver, entity_type, entity_i
                                       shotgun_entity_data, 
                                       True,
                                       folder_objects_to_recurse,
-                                      engine)
+                                      engine,
+                                      processed_folders)
         
 
 
@@ -173,12 +175,12 @@ def process_filesystem_structure(tk, entity_type, entity_ids, preview, engine):
         # We need to capture the connection data between a task and other entities,
         # both the parent entity and these steps, so first figure out all the different
         # connection fields from Task -> Step that this configuration needs.
-        task_link_fields = [ sn.get_task_link_field() for sn in config.get_task_step_nodes() ]
+        task_link_fields = set([sn.get_task_link_field() for sn in config.get_task_step_nodes()])
         
         # and of course we always need the entity link
-        task_link_fields.append("entity")
+        task_link_fields.add("entity")
         
-        data = tk.shotgun.find(entity_type, [filters], task_link_fields)
+        data = tk.shotgun.find(entity_type, [filters], list(task_link_fields))
         for sg_entry in data:
             if sg_entry["entity"]: # task may not be associated with an entity                
                 items.append( { "type":    sg_entry["entity"]["type"], 
