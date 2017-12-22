@@ -1201,19 +1201,21 @@ def _from_entity_dictionary(tk, entity_dict, previous_context=None):
     }
 
     # See if we can populate any missing fields from the previous context
-    if previous_context and \
-       context_dict.get("entity") == previous_context.entity and \
-       context_dict.get("additional_entities") == previous_context.additional_entities:
+    if previous_context:
+        if "entity" in context_dict and previous_context.entity:
+            if context_dict["entity"]["id"] == previous_context.entity["id"] and \
+               context_dict["additional_entities"] == previous_context.additional_entities:
 
-        # cool, everything is matching down to the step/task level.
-        # if context is missing a step and a task, we try to auto populate it.
-        # (note: weird edge that a context can have a task but no step)
-        if context_dict.get("task") is None and context_dict.get("step") is None:
-            context_dict["step"] = previous_context.step
+                # cool, everything is matching down to the step/task level.
+                # if context is missing a step and a task, we try to auto populate it.
+                # (note: weird edge that a context can have a task but no step)
+                if not context_dict.get("task"):
+                    if not context_dict.get("step"):
+                        context_dict["step"] = previous_context.step
 
-        # now try to assign previous task but only if the step matches!
-        if context_dict.get("task") is None and context_dict.get("step") == previous_context.step:
-            context_dict["task"] = previous_context.task
+                    # now try to assign previous task but only if the step matches!
+                    if context_dict.get("step") == previous_context.step:
+                        context_dict["task"] = previous_context.task
 
     log.debug("Building context:\n%s" % pprint.pformat(context_dict))
     return Context(**context_dict)
