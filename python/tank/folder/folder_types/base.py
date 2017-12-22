@@ -208,12 +208,9 @@ class Folder(object):
             processed_folders[self.name] = created_data
 
         # get the list of direct child decendents in the explicit list
+        direct_children = []
         if explicit_child_list:
             direct_children = [ch for ch in explicit_child_list if ch in self._children]
-
-        # no explicit child list defined! we are at the leaf-level
-        else:
-            direct_children = []
 
         # get a list of static children at this level excluding ones that are
         # already in the explicit child list
