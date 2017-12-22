@@ -14,7 +14,6 @@ import copy
 from ...errors import TankError
 from ...util import shotgun_entity, login
 from ...template import TemplatePath
-from ...templatekey import StringKey
 
 from .errors import EntityLinkTypeMismatch
 from .base import Folder
@@ -83,24 +82,14 @@ class Entity(Folder):
         (e.g. the FilterExpressionToken object). Tank will resolve any Token fields prior to 
         passing the filter to Shotgun for evaluation.
         """
-        self._tk = tk
         self._entity_type = entity_type
         self._field_name = field_name_expression
-        self._entity_expression = shotgun_entity.EntityExpression(self._tk, self._entity_type, self._field_name)
+        self._entity_expression = shotgun_entity.EntityExpression(tk, self._entity_type, self._field_name)
         self._filters = filters
         self._create_with_parent = create_with_parent
 
         # the schema name is the same as the SG entity type
-        Folder.__init__(self, parent, full_path, metadata)
-
-    def _create_template_key(self):
-        """
-        TemplateKey creation implementation. Implemented by all subclasses.
-        """
-        return StringKey(self._entity_type,
-                         shotgun_entity_type=self._entity_type,
-                         shotgun_field_name=self._field_name
-                        )
+        Folder.__init__(self, tk, parent, full_path, metadata)
 
     def _create_template_path(self):
         """
@@ -108,11 +97,29 @@ class Entity(Folder):
         
         Should return a TemplatePath object for the path of form: "{Project}/{Sequence}/{Shot}/user/{user_workspace}/{Step}"
         """
-        template_path = "{%s}" % self._entity_type
+        # Find the matching TemplateKey names for the field expression
+        key_names = {}
+        fields = self._entity_expression.get_shotgun_fields()
+        for field in fields:
+            # Get any Shotgun template keys that match this field
+            for key in self._tk.template_keys.values():
+                if not key.shotgun_field_name or not key.shotgun_entity_type:
+                    continue
+
+                if (self._entity_type == key.shotgun_entity_type and
+                    field == key.shotgun_field_name):
+                    key_names[field] = "{%s}" % key.name
+                    break
+
+            if field not in key_names:
+                raise TankError("Cannot create Schema TemplatePath. No matching TemplateKey for %s.%s" \
+                        % (self._entity_type, field))
+
+        template_path = self._entity_expression.generate_name(key_names, validate=False)
         if self._parent:
             template_path = os.path.join(str(self._parent.template_path), template_path)
 
-        return TemplatePath(template_path, self.template_keys, self.get_storage_root(), self.name)
+        return TemplatePath(template_path, self._tk.template_keys, self.get_storage_root(), self.name)
 
     def get_entity_type(self):
         """
@@ -164,6 +171,7 @@ class Entity(Folder):
             # Note: this is the 'name' that will get stored in the path cache for this entity
             name_field = shotgun_entity.get_sg_entity_name_field(self._entity_type)
             name_value = entity[name_field]            
+
             # construct a full entity link dict w name, id, type
             full_entity_dict = {"type": self._entity_type, "id": entity["id"], "name": name_value} 
                         
@@ -179,7 +187,8 @@ class Entity(Folder):
             # create a new entity dict including our own data and pass it down to children
             my_sg_data = copy.deepcopy(sg_data)
             my_sg_data_key = FilterExpressionToken.sg_data_key_for_folder_obj(self)
-            my_sg_data[my_sg_data_key] = { "type": self._entity_type, "id": entity["id"], "computed_name": folder_name }
+            my_sg_data[my_sg_data_key].update(entity)
+            my_sg_data[my_sg_data_key]["computed_name"] = folder_name
 
             # process symlinks
             self._process_symlinks(io_receiver, my_path, my_sg_data)
@@ -201,11 +210,30 @@ class Entity(Folder):
         """
         Returns shotgun data for folder creation
         """
+        tokens = copy.deepcopy(sg_data)
+
         # first check the constraints: if tokens contains a type/id pair our our type,
         # we should only process this single entity. If not, then use the query filter
+        filters = resolve_shotgun_filters(self._filters, tokens)
 
-        filters = copy.deepcopy(self._filters)
-        if hasattr(self, "_user_initialized"):
+        # figure out which fields to retrieve
+        fields = self._entity_expression.get_shotgun_fields()
+
+        # add any shotgun link fields used in the expression
+        fields.update(self._entity_expression.get_shotgun_link_fields())
+
+        # always retrieve the name field for the entity
+        fields.add(shotgun_entity.get_sg_entity_name_field(self._entity_type))
+
+        # add any special stuff in
+        fields.update(self._get_additional_sg_fields())
+
+        # see if the sg_data dictionary has a "seed" entity type matching our entity type
+        my_sg_data_key = FilterExpressionToken.sg_data_key_for_folder_obj(self)
+
+        # First check to see if this is entity type is HumanUser
+        if self._entity_type == "HumanUser":
+            if my_sg_data_key not in tokens:
             # adds the current user to the filer query in case this has not already been done.
             # having this set up before the first call to create_folders rather than in the
             # constructor is partly for performance, but primarily so that a valid current user 
@@ -213,8 +241,6 @@ class Entity(Folder):
             # if you have a dedicated machine that creates higher level folders, this machine
             # shouldn't need to have a user id set up - only the artists that actually create 
             # the user folders should need to.
-
-            # this query confirms that there is a matching HumanUser in shotgun for the local login
             user = login.get_current_user(self._tk)
             if not user:
                 msg = ("Folder Creation Error: Could not find a HumanUser in shotgun with login " 
@@ -222,41 +248,21 @@ class Entity(Folder):
                        "user in shotgun.")
                 raise TankError(msg)
 
-            user_filter = { "path": "id", "relation": "is", "values": [ user["id"] ] }
-            filters["conditions"].append( user_filter )            
-        
-        # first, resolve the filter queries for the current ids passed in via tokens
-        resolved_filters = resolve_shotgun_filters(filters, sg_data)
-        
-        # see if the sg_data dictionary has a "seed" entity type matching our entity type
-        my_sg_data_key = FilterExpressionToken.sg_data_key_for_folder_obj(self)
-        if my_sg_data_key in sg_data:
-            # we have a constraint!
-            entity_id = sg_data[my_sg_data_key]["id"]
-            # add the id constraint to the filters
-            resolved_filters["conditions"].append({ "path": "id", "relation": "is", "values": [entity_id] })
-            # get data - can be None depending on external filters
+                tokens[my_sg_data_key] = user
 
-        # figure out which fields to retrieve
-        fields = self._entity_expression.get_shotgun_fields()
+        if my_sg_data_key in tokens:
         
-        # add any shotgun link fields used in the expression
-        fields.update( self._entity_expression.get_shotgun_link_fields() )
-        
-        # always retrieve the name field for the entity
-        fields.add(shotgun_entity.get_sg_entity_name_field(self._entity_type))
+            # If we have everything we need for this folder, just return
+            if fields.issubset(tokens[my_sg_data_key]):
+                return [tokens[my_sg_data_key]]
 
-        # add any special stuff in
-        for custom_field in self._get_additional_sg_fields():
-            fields.add(custom_field)
-
-        # convert to a list - sets wont work with the SG API
-        fields_list = list(fields)
+            # Else constrain the search to this entity
+            else:
+                entity_id = tokens[my_sg_data_key]["id"]
+                filters["conditions"].append({"path": "id", "relation": "is", "values": [entity_id]})
         
         # now find all the items (e.g. shots) matching this query
-        entities = self._tk.shotgun.find(self._entity_type, resolved_filters, fields_list)
-        
-        return entities
+        return self._tk.shotgun.find(self._entity_type, filters, list(fields))
 
     def extract_shotgun_data_upwards(self, sg, shotgun_data):
         """
@@ -292,6 +298,28 @@ class Entity(Folder):
         
         tokens = copy.deepcopy(shotgun_data)
         
+        my_sg_data_key = FilterExpressionToken.sg_data_key_for_folder_obj(self)
+
+        # First check to see if this is entity type is HumanUser
+        if self._entity_type == "HumanUser":
+            if my_sg_data_key not in tokens:
+                # adds the current user to the filer query in case this has not already been done.
+                # having this set up before the first call to create_folders rather than in the
+                # constructor is partly for performance, but primarily so that a valid current user
+                # isn't required unless you actually create a user sandbox folder. For example,
+                # if you have a dedicated machine that creates higher level folders, this machine
+                # shouldn't need to have a user id set up - only the artists that actually create
+                # the user folders should need to.
+                user = login.get_current_user(self._tk)
+                if not user:
+                    msg = ("Folder Creation Error: Could not find a HumanUser in shotgun with login "
+                           "matching the local login. Check that the local login corresponds to a "
+                           "user in shotgun.")
+                    raise TankError(msg)
+
+                tokens[my_sg_data_key] = user
+
+
         # If we don't have an entry in tokens for the current entity type, then we can't
         # extract any tokens. Used by #17726. Typically, we start with a "seed", and then go
         # upwards. For example, if the seed is a Shot id, we then scan upwards, look at the config
@@ -301,22 +329,36 @@ class Entity(Folder):
         # 
         # however, if we have a free-floating item in the hierarchy, this will not be 'seeded' 
         # by its children as we move upwards - for example a step.
-        my_sg_data_key = FilterExpressionToken.sg_data_key_for_folder_obj(self)
         if my_sg_data_key in tokens:
 
+            # figure out which fields to retrieve
+            fields = self._entity_expression.get_shotgun_fields()
+
+            # add any shotgun link fields used in the expression
+            fields.update(self._entity_expression.get_shotgun_link_fields())
+
+            # add any special stuff in
+            fields.update(self._get_additional_sg_fields())
+
+            # always retrieve the name field for the entity
+            name_field = shotgun_entity.get_sg_entity_name_field(self._entity_type)
+            fields.add(name_field)
             
             link_map = {}
-            fields_to_retrieve = []
-            additional_filters = []
+            filters = []
             
             # TODO: Support nested conditions
             for condition in self._filters["conditions"]:
                 vals = condition["values"]
+                if not len(vals):
+                    continue
                 
                 # note the $FROM$ condition below - this is a bit of a hack to make sure we exclude
                 # the special $FROM$ step based culling filter that is commonly used. Because steps are 
                 # sort of free floating and not associated with an entity, removing them from the 
                 # resolve should be fine in most cases.
+                if condition["path"].startswith('$FROM$'):
+                    continue
                 
                 # so - if at the shot level, we have defined the following filter:
                 # filters: [ { "path": "sg_sequence", "relation": "is", "values": [ "$sequence" ] } ]
@@ -324,32 +366,23 @@ class Entity(Folder):
                 # this token. We fetch the id for this token and then, as we recurse upwards, and process
                 # the parent folder level (the sequence), this id will be the "seed" when we populate that
                 # level. 
-                
-                if vals[0] and isinstance(vals[0], FilterExpressionToken) and not condition["path"].startswith('$FROM$'):
-                    expr_token = vals[0]
+                if isinstance(vals[0], FilterExpressionToken):
                     # we should get this field (eg. 'sg_sequence')
-                    fields_to_retrieve.append(condition["path"])
+                    fields.add(condition["path"])
+                
                     # add to our map for later processing map['sg_sequence'] = 'Sequence'
                     # note that for List fields, the key is EntityType.field
-                    link_map[ condition["path"] ] = expr_token 
+                    link_map[condition["path"]] = vals[0]
                 
-                elif not condition["path"].startswith('$FROM$'):
-                    # this is a normal filter (we exclude the $FROM$ stuff since it is weird
-                    # and specific to steps.) So for example 'name must begin with X' - we want 
+                else:
+                    # this is a normal filter - ex.) 'name must begin with X' - so we want
                     # to include these in the query where we are looking for the object, to
                     # ensure that assets with names starting with X are not created for an 
                     # asset folder node which explicitly excludes these via its filters. 
-                    additional_filters.append(condition)
+                    filters.append(condition)
             
-            # add some extra fields apart from the stuff in the config
-            if self._entity_type == "Project":
-                fields_to_retrieve.append("name")
-            elif self._entity_type == "Task":
-                fields_to_retrieve.append("content")
-            elif self._entity_type == "HumanUser":
-                fields_to_retrieve.append("login")
-            else:
-                fields_to_retrieve.append("code")
+            # If we don't have everything we need for this folder, go get it
+            if not fields.issubset(tokens[my_sg_data_key]):
             
             # TODO: AND the id query with this folder's query to make sure this path is
             # valid for the current entity. Throw error if not so driver code knows to 
@@ -357,13 +390,13 @@ class Entity(Folder):
             # appears in several locations in the filesystem and that the filters are responsible
             # for determining which location to use for a particular asset.
             my_id = tokens[ my_sg_data_key ]["id"]
-            additional_filters.append( {"path": "id", "relation": "is", "values": [my_id]})
+                filters.append({"path": "id", "relation": "is", "values": [my_id]})
             
             # append additional filter cruft
-            filter_dict = { "logical_operator": "and", "conditions": additional_filters }
+                filter_dict = { "logical_operator": "and", "conditions": filters }
             
             # carry out find
-            rec = sg.find_one(self._entity_type, filter_dict, fields_to_retrieve)
+                rec = sg.find_one(self._entity_type, filter_dict, list(fields))
             
             # there are now two reasons why find_one did not return:
             # - the specified entity id does not exist or has been deleted
@@ -374,7 +407,6 @@ class Entity(Folder):
             #   explicitly filtered out - which is not an error!
             
             if not rec:
-                
                 # check if it is a missing id or just a filtered out thing
                 if sg.find_one(self._entity_type, [["id", "is", my_id]]) is None:                
                     raise TankError("Could not find Shotgun %s with id %s as required by "
@@ -382,58 +414,58 @@ class Entity(Folder):
                 else:
                     raise EntityLinkTypeMismatch()
             
-            # and append the 'name field' which is always needed.
-            name = None # used for error reporting
-            if self._entity_type == "Project":
-                name = rec["name"]
-                tokens[ my_sg_data_key ]["name"] = rec["name"]
-            elif self._entity_type == "Task":
-                name = rec["content"]
-                tokens[ my_sg_data_key ]["content"] = rec["content"]
-            elif self._entity_type == "HumanUser":
-                name = rec["login"]
-                tokens[ my_sg_data_key ]["login"] = rec["login"]
-            else:
-                name = rec["code"]
-                tokens[ my_sg_data_key ]["code"] = rec["code"]
+                # Update the tokens for this entity
+                tokens[my_sg_data_key].update(rec)
 
-            # Step through our token key map and process
+            # Step through our token key map and see if we can promote
+            # any linked fields to top-level "seed" entities for the next
+            # level of recursion
             #
-            # This is on the form
+            # This is of the form
             # link_map['sg_sequence'] = link_obj
             #
             for field in link_map:
-                
                 # do some juggling to make sure we don't double process the 
                 # name fields.
-                value = rec[field]
                 link_obj = link_map[field]
                 
+                # Get the linked entity data key
+                data_key = link_obj.get_sg_data_key()
+
+                value = tokens[my_sg_data_key].get(field)
                 if value is None:
                     # field was none! - cannot handle that!
-                    raise TankError("The %s %s has a required field %s that \ndoes not have a value "
-                                    "set in Shotgun. \nDouble check the values and try "
-                                    "again!\n" % (self._entity_type, name, field))
+                    raise EntityLinkTypeMismatch("The %s %s has a required field %s that "
+                        "does not have a value set in Shotgun. Double check the values "
+                        "and try again!" % (self._entity_type, name_field, field))
     
+                # store it in our sg_data prefetch chunk
                 if isinstance(value, dict):
-                    # If the value is a dict, assume it comes from a entity link.
-                    
-                    # now make sure that this link is actually relevant for us,
+                    # If the value is a dict, assume it comes from an entity,
+                    # so make sure that this link is actually relevant for us,
                     # e.g. that it points to an entity of the right type.
                     # this may be a problem whenever a link can link to more
                     # than one type. See the EntityLinkTypeMismatch docs for example.
                     if value["type"] != link_obj.get_entity_type():
                         raise EntityLinkTypeMismatch()
 
-                # store it in our sg_data prefetch chunk
-                tokens[ link_obj.get_sg_data_key() ] = value
+                    if data_key not in tokens:
+                        tokens[data_key] = {}
+                    tokens[data_key].update(value)
                 
-        # now keep recursing upwards
-        if self._parent is None:
-            return tokens
+                elif isinstance(value, list):
+                    if data_key not in tokens:
+                        tokens[data_key] = []
+                    tokens[data_key].extend(value)
         
         else:
+                    tokens[data_key] = value
+
+        # now keep recursing upwards
+        if self._parent:
             return self._parent.extract_shotgun_data_upwards(sg, tokens)
+
+        return tokens
 
     def get_entries_from_path(self, input_path):
         """
@@ -536,14 +568,10 @@ class Entity(Folder):
         fields.add(name_field)        
 
         # add any special stuff in
-        for custom_field in self._get_additional_sg_fields():
-            fields.add(custom_field)
-
-        # convert to a list - sets wont work with the SG API
-        fields_list = list(fields)
+        fields.update(self._get_additional_sg_fields())
 
         # now find the item matching this query
-        entity = self._tk.shotgun.find_one(entity_type, resolved_filters, fields_list)
+        entity = self._tk.shotgun.find_one(entity_type, resolved_filters, list(fields))
         if not entity:
             raise TankError("Cannot find %s Entity: '%s' in Shotgun using filter: %s"
                     % (entity_type, field_value, resolved_filters))

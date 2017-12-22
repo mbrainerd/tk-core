@@ -23,21 +23,21 @@ class Folder(object):
     typically driven by some shotgun input data.
     """
     
-    def __init__(self, parent, full_path, config_metadata):
+    def __init__(self, tk, parent, full_path, config_metadata):
         """
         :param parent: Parent :class:`Folder`
         :param full_path: Full path on disk to the associated configuration file.
         :param config_metadata: Resolved metadata for this configuration object.
         """
+        self._tk = tk
         self._config_metadata = config_metadata
         self._children = []
         self._full_path = full_path
         self._parent = parent
         self._files = []
         self._symlinks = []
-        self._template_key = self._create_template_key()
         self._template_path = self._create_template_path()
-        
+
         if self._parent:
             # add me to parent's child list
             self._parent._children.append(self)
@@ -72,20 +72,6 @@ class Folder(object):
         """
         base_dir = os.path.join(self._tk.pipeline_configuration.get_path(), "config")
         return os.path.relpath(self._full_path, base_dir).replace(os.path.sep, "_").lower() + "_dir"
-
-    @property
-    def template_keys(self):
-        """
-        Returns a dict of template keys for this folder and all parent folders
-        """
-        template_keys = {}
-        if self._template_key:
-            template_keys[self._template_key.name] = self._template_key
-
-        if self._parent:
-            template_keys.update(self._parent.template_keys)
-
-        return template_keys
 
     @property
     def template_path(self):
@@ -165,7 +151,7 @@ class Folder(object):
         resolved_expression = [SymlinkToken(x) for x in target.split("/")]
         self._symlinks.append({"name": name, "target": resolved_expression, "metadata": metadata})
         
-    def create_folders(self, io_receiver, path, sg_data, is_primary, explicit_child_list, engine):
+    def create_folders(self, io_receiver, path, sg_data, is_primary, explicit_child_list, engine, processed_folders):
         """
         Recursive folder creation. Creates folders for this node and all its children.
         
@@ -185,80 +171,81 @@ class Folder(object):
                            The secondary folders would be the children of Shot ABC.
                           
         :param explicit_child_list: A list of specific folders to process as the algorithm
-                                    traverses down. Each time a new level is traversed, the child
-                                    list is popped, and that object is processed. If the 
-                                    child list is empty, all children will be processed rather
-                                    than the explicit object given at each level.
+                                    traverses down. Each time a new level is traversed, all direct
+                                    children of that level that match an element in the explicit
+                                    child list are processed. If the explicit child list is empty,
+                                    no children will be processed. Regardless of what is defined
+                                    in the explicit list, all static folders at each level will
+                                    be processed.
                                     
                                     This effectively means that folder creation often starts off
                                     using an explicit child list (for example project->sequence->shot)
                                     and then when the child list has been emptied (at the shot level),
-                                    the recursion will switch to a creation mode where all Folder 
-                                    object children are processed. 
-                                  
+                                    the recursion will switch to a creation mode where only the static
+                                    Folder object children are processed. 
+                                    
         :param engine: String used to limit folder creation. If engine is not None, folder creation
                        traversal will include nodes that have their deferred flag set.
+
+        :param processed_folders: A dict of already processed Folder data keyed by Folder name.
         
         :returns: Nothing
         """
-        
         # should we create any folders?
         if not self._should_item_be_processed(engine, is_primary):
             return
-        
-        # run the actual folder creation
-        created_data = self._create_folders_impl(io_receiver, path, sg_data)
-        
-        # and recurse down to children
-        if explicit_child_list:
-            
-            # we have been given a specific list to recurse down.
-            # pop off the next item and process it.
-            explicit_ch = copy.copy(explicit_child_list)
-            child_to_process = explicit_ch.pop()
-            
-            # before recursing down our specific recursion path, make sure all static content
-            # has been created at this level in the folder structure
-            static_children = [ch for ch in self._children if ch.is_dynamic() == False]
-            
-            for (created_folder, sg_data_dict) in created_data:
 
-                # first process the static folders                
-                for cp in static_children:
-                    # note! if the static child is on the specific recursion path,
-                    # skip it, (we will create it below)
-                    if cp == child_to_process:
-                        continue
-                    
-                    cp.create_folders(io_receiver, 
-                                      created_folder, 
-                                      sg_data_dict, 
-                                      is_primary=False, 
-                                      explicit_child_list=[], 
-                                      engine=engine)
-                
-                # and then recurse down our specific recursion path
-                child_to_process.create_folders(io_receiver, 
-                                                created_folder, 
-                                                sg_data_dict, 
-                                                is_primary=True, 
-                                                explicit_child_list=explicit_ch, 
-                                                engine=engine)
-                 
-            
-            
+        # if we've processed this folder already
+        if self.name in processed_folders:
+            created_data = processed_folders[self.name]
+
+        # else...
         else:
-            # no explicit list! instead process all children.            
-            # run the folder creation for all new folders created and for all
-            # configuration children
-            for (created_folder, sg_data_dict) in created_data:
-                for cp in self._children:
-                    cp.create_folders(io_receiver, 
-                                      created_folder, 
-                                      sg_data_dict, 
-                                      is_primary=False, 
-                                      explicit_child_list=[], 
-                                      engine=engine)
+            # run the actual folder creation
+            created_data = self._create_folders_impl(io_receiver, path, sg_data)
+
+            # add to the list of processed folders
+            processed_folders[self.name] = created_data
+
+        # get the list of direct child decendents in the explicit list
+        if explicit_child_list:
+            direct_children = [ch for ch in explicit_child_list if ch in self._children]
+
+        # no explicit child list defined! we are at the leaf-level
+        else:
+            direct_children = []
+
+        # get a list of static children at this level excluding ones that are
+        # already in the explicit child list
+        static_children = [ch for ch in self._children if ch.is_dynamic() == False and ch not in direct_children]
+
+        # run for all new folders created at this level and for all children
+        for (created_folder, sg_data_dict) in created_data:
+
+            # Make a copy of the data blob and update it with the processed data
+            my_sg_data = copy.deepcopy(sg_data)
+            my_sg_data.update(sg_data_dict)
+
+            # make sure all static children at this level have been created
+            for cp in static_children:
+                cp.create_folders(io_receiver,
+                                  created_folder,
+                                  my_sg_data,
+                                  False,
+                                  explicit_child_list,
+                                  engine,
+                                  processed_folders)
+
+            # then recursively process immediate children
+            for cp in direct_children:
+                cp.create_folders(io_receiver,
+                                  created_folder,
+                                  my_sg_data,
+                                  is_primary,
+                                  explicit_child_list,
+                                  engine,
+                                  processed_folders)
+
 
     ###############################################################################################
     # private/protected methods
@@ -268,12 +255,6 @@ class Folder(object):
         Folder creation implementation. Implemented by all subclasses.
         
         Should return a list of tuples. Each tuple is a path + a matching shotgun data dictionary
-        """
-        raise NotImplementedError
-
-    def _create_template_key(self):
-        """
-        TemplateKey creation implementation. Implemented by all subclasses.
         """
         raise NotImplementedError
 

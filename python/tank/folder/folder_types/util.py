@@ -31,7 +31,9 @@ def resolve_shotgun_filters(filters, sg_data):
     resolved_filters = copy.deepcopy(filters)
     for condition in resolved_filters["conditions"]:
         vals = condition["values"]
-        
+        if not len(vals):
+            continue
+
         if vals[0] and isinstance(vals[0], FilterExpressionToken):
             # we got a $filter! - replace with resolved value
             expr_token = vals[0]

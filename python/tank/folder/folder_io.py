@@ -20,6 +20,9 @@ from . import constants
 from ..errors import TankError
 
 from ..path_cache import PathCache
+from ..log import LogManager
+
+logger = LogManager.get_logger(__name__)
     
 class FolderIOReceiver(object):
     """
@@ -225,6 +228,7 @@ class FolderIOReceiver(object):
         :param path: The path on disk to register
         :param config_metadata: The configuration file contents used to drive the creation
         """
+        logger.debug("Processing static folder: %s" % path)
         self._items.append({"path": path, "metadata": config_metadata, "action": "folder"})
     
     def make_entity_folder(self, path, entity, config_metadata):
@@ -236,6 +240,7 @@ class FolderIOReceiver(object):
         :param entity: The associated shotgun entitiy as a dictionary with type and id
         :param config_metadata: The configuration file contents used to drive the creation
         """
+        logger.debug("Processing entity folder: %s" % path)
         self._items.append({"path": path, 
                             "metadata": config_metadata, 
                             "entity": entity, 
@@ -249,6 +254,7 @@ class FolderIOReceiver(object):
         :param target_path: The target path to copy
         :param config_metadata: The configuration file contents used to drive the creation
         """
+        logger.debug("Processing file: %s" % target_path)
         self._items.append({"source_path": src_path, 
                             "target_path": target_path, 
                             "metadata": config_metadata, 
@@ -262,6 +268,7 @@ class FolderIOReceiver(object):
         :param target: symlink target
         :param metadata: configuration metadata from folder creation system 
         """
+        logger.debug("Processing symlink: %s" % path)
         self._items.append({"path": path, 
                             "target": target, 
                             "metadata": config_metadata, 

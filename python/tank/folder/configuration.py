@@ -295,7 +295,7 @@ class FolderConfiguration(object):
                     raise TankError("Error in %s. Unknown metadata type '%s'" % (full_path, node_type))
 
                 # put it into our list where we group entity nodes by entity type
-                if hasattr(cur_node, 'get_entity_type'):
+                if isinstance(cur_node, Entity):
                     et = cur_node.get_entity_type()
                     if et not in self._entity_nodes_by_type:
                         self._entity_nodes_by_type[et] = []

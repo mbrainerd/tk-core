@@ -189,7 +189,7 @@ class EntityExpression(object):
         longest_expr = self._sorted_exprs[0]
         return copy.copy(self._variations[longest_expr]["entity_links"])
 
-    def generate_name(self, values):
+    def generate_name(self, values, validate=True):
         """
         Generates a name given some fields.
         
@@ -213,7 +213,7 @@ class EntityExpression(object):
         # ok all fields are there. But some values may be none. Try to resolve our expression against
         # the values, starting with the longest expression first.
         for expr in self._sorted_exprs:
-            val = self._generate_name(expr, values)
+            val = self._generate_name(expr, values, validate)
             if val is not None:
                 # name generation worked! - do not try alternative (shorter) expressions
                 break
@@ -235,7 +235,7 @@ class EntityExpression(object):
         return val 
 
     
-    def _generate_name(self, expression, values):
+    def _generate_name(self, expression, values, validate=True):
         """
         Generates a name given some fields.
         
@@ -279,13 +279,14 @@ class EntityExpression(object):
                             "Data: %s" % (expression, error, str_data))
             
         # now validate the entire value!
-        if not self._validate_name(val):
-            # not valid!!!
-            msg = ("The format string '%s' used in the configuration "
-                   "does not generate a valid folder name ('%s')! Valid "
-                   "values are %s." % (expression, val, constants.VALID_SG_ENTITY_NAME_EXPLANATION))
-            raise TankError(msg)      
-            
+        if validate:
+            if not self._validate_name(val):
+                # not valid!!!
+                msg = ("The format string '%s' used in the configuration "
+                       "does not generate a valid folder name ('%s')! Valid "
+                       "values are %s." % (expression, val, constants.VALID_SG_ENTITY_NAME_EXPLANATION))
+                raise TankError(msg)
+
         return val
 
     def _validate_name(self, name):
