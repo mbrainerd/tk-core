@@ -654,9 +654,9 @@ class Context(object):
 
         # If we still have keys, then we haven't fully solved
         if keys and validate:
-                raise TankError("Cannot resolve template fields for context '%s' - the following "
-                                "keys could not be resolved: '%s'.  Please run the folder creation "
-                                "for '%s' and try again!"
+            raise TankError("Cannot resolve template fields for context '%s' - the following "
+                            "keys could not be resolved: '%s'.  Please run the folder creation "
+                            "for '%s' and try again!"
                             % (self, ", ".join([x.name for x in keys]), self.shotgun_url))
 
         return fields
@@ -856,7 +856,7 @@ class Context(object):
 
                 # ensure that the context actually provides the desired entities
                 if not key.shotgun_entity_type in entities:
-                        continue
+                    continue
 
                 entity = entities[key.shotgun_entity_type]
 

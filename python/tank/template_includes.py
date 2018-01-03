@@ -56,13 +56,7 @@ def _get_includes(file_name, data):
         includes.extend( data[constants.MULTI_INCLUDE_SECTION] )
 
     for include in includes:
-        if include.startswith("{preferences}"):
-            # If this is a preferences file, just store the path
-            # the Preferences system down the line with handle validation
-            resolved = include
-        else:
-            resolved = resolve_include(file_name, include)
-
+        resolved = resolve_include(file_name, include)
         if resolved:
             resolved_includes.add(resolved)
 
