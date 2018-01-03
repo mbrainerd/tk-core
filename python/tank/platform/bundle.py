@@ -1185,7 +1185,7 @@ class TankBundle(object):
         return engine_name
 
 
-def _post_process_settings_r(tk, key, value, schema, engine_name, bundle):
+def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate):
     """
     Recursive post-processing of settings values
 
@@ -1242,13 +1242,13 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle):
                 schema,
                 default=None,
                 engine_name=engine_name, 
-                raise_if_missing=True,
+                raise_if_missing=validate,
                 bundle=bundle
             )
 
     if settings_type == "list":
         processed_val = []
-        value_schema = schema["values"]
+        value_schema = schema.get("values", {})
         for i, x in enumerate(value):
             try:
                 processed_val.append(
@@ -1258,7 +1258,8 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle):
                         value=x,
                         schema=value_schema,
                         engine_name=engine_name,
-                        bundle=bundle
+                        bundle=bundle,
+                        validate=validate
                     )
                 )
             except Exception as e:
@@ -1285,7 +1286,7 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle):
                             value_schema,
                             default=None,
                             engine_name=engine_name, 
-                            raise_if_missing=True,
+                            raise_if_missing=validate,
                             bundle=bundle
                         )
                     # No user defined or default value!
@@ -1301,7 +1302,8 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle):
                         value=sub_value,
                         schema=value_schema,
                         engine_name=engine_name,
-                        bundle=bundle
+                        bundle=bundle,
+                        validate=validate
                     )
                 except Exception as e:
                     e.args += (sub_key,)
@@ -1318,7 +1320,8 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle):
                         value=sub_value,
                         schema=value_schema,
                         engine_name=engine_name,
-                        bundle=bundle
+                        bundle=bundle,
+                        validate=validate
                     )
                 except Exception as e:
                     e.args += (sub_key,)
@@ -1335,7 +1338,7 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle):
     return processed_val
 
 
-def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundle=None):
+def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundle=None, validate=False):
     """
     Resolve a setting value.  Exposed to allow values to be resolved for
     settings derived outside of the app.
@@ -1376,7 +1379,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     # We have a value of some kind and a schema. Allow the post
     # processing code to further resolve the value.
     try:
-        value = _post_process_settings_r(tk, key, value, schema, engine_name, bundle)
+        value = _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate)
     except Exception as e:
         key_name = ".".join((bundle.instance_name, key,) + e.args[1:])
         raise type(e)("Could not determine settings value for key: '%s' - %s" % (key_name, e.args[0]))

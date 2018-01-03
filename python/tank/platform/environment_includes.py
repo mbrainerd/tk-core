@@ -225,7 +225,16 @@ def process_includes(file_name, data, context):
                         been recursively processed.
     """
     # call the recursive method:
-    data, _ = _process_includes_r(file_name, data, context)
+    lookup_dict, _ = _process_includes_r(file_name, data, context)
+
+    # now go through our own data, recursively, and replace any refs.
+    # recurse down in dicts and lists
+    try:
+        data = _resolve_refs_r(lookup_dict, data)
+        data = _resolve_frameworks(lookup_dict, data)
+    except TankError as e:
+        raise TankError("Include error. Could not resolve references for %s: %s" % (file_name, e))
+
     return data
         
 def _process_includes_r(file_name, data, context):
@@ -278,16 +287,8 @@ def _process_includes_r(file_name, data, context):
 
         fw_lookup.update(included_fw_lookup)
         lookup_dict.update(included_data)
-    
-    # now go through our own data, recursively, and replace any refs.
-    # recurse down in dicts and lists
-    try:
-        data = _resolve_refs_r(lookup_dict, data)
-        data = _resolve_frameworks(lookup_dict, data)
-    except TankError as e:
-        raise TankError("Include error. Could not resolve references for %s: %s" % (file_name, e))
-    
-    return data, fw_lookup
+
+    return lookup_dict, fw_lookup
     
 
 def find_framework_location(file_name, framework_name, context):

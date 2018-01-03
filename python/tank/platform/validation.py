@@ -443,13 +443,20 @@ class _SettingsValidator:
         for settings_key in self._schema:
             value_schema = self._schema.get(settings_key, {})
 
+            # Skip if this setting has been marked to skip_validation
+            # This is sometimes valuable when a setting is evaluated in
+            # a deferred manner, but should be used with caution
+            if value_schema.get("skip_validation", False):
+                continue
+
             settings_value = resolve_setting_value(self._tank_api,
                                                    None,
                                                    value_schema,
                                                    settings,
                                                    settings_key,
                                                    None,
-                                                   self._bundle)
+                                                   self._bundle,
+                                                   True)
 
             self.__validate_settings_value(settings_key, value_schema, settings_value)
     
