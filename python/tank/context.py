@@ -601,7 +601,7 @@ class Context(object):
         if template:
             keys = template.keys.values()
         else:
-            keys = self.tk.template_keys.values()
+            keys = self.sgtk.template_keys.values()
 
         # First attempt to get fields from the entities stored in the context
         fields.update(self._fields_from_entities(keys, entities))
