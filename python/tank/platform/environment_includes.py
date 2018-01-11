@@ -262,7 +262,7 @@ def _process_includes_r(file_name, data, context):
                         together with a lookup for frameworks to the file 
                         they were loaded from.
     """
-    output_data = collections.OrderedDict()
+    output_data = {}
     fw_lookup = {}
 
     # normalize the incoming path
@@ -291,7 +291,7 @@ def _process_includes_r(file_name, data, context):
                 include_data = g_yaml_cache.get(resolved_file, deepcopy_data=False)
 
                 # ...process the contents
-                included_data, included_fw_lookup = _process_template_includes_r(resolved_file, include_data)
+                included_data, included_fw_lookup = _process_includes_r(resolved_file, include_data, context)
 
                 # ...and merge the results
                 for k2, v2 in included_data.iteritems():

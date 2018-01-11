@@ -76,7 +76,7 @@ def _process_template_includes_r(file_name, data):
     include files.
     """
     # return data    
-    output_data = collections.OrderedDict()
+    output_data = {}
 
     # normalize the incoming path
     file_name = os.path.normpath(file_name)
