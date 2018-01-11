@@ -18,6 +18,7 @@ from __future__ import with_statement
 import os
 import copy
 import threading
+from collections import OrderedDict
 
 from dd.runtime import api
 api.load("preferences")
@@ -34,6 +35,12 @@ from ..errors import (
     TankUnreadableFileError,
     TankFileDoesNotExistError,
 )
+
+def dict_constructor(loader, node):
+    return OrderedDict(loader.construct_pairs(node))
+
+_mapping_tag = yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG
+yaml.Loader.add_constructor(_mapping_tag, dict_constructor)
 
 class CacheItem(object):
     """
@@ -55,7 +62,7 @@ class CacheItem(object):
         :raises:        tank.errors.TankUnreadableFileError: File stat failure.
         """
         self._path = os.path.normpath(path)
-        self._data = data
+        self._data = OrderedDict(data or {})
 
         if stat is None:
             try:
@@ -130,7 +137,7 @@ class CacheItem(object):
         """
         try:
             with open(self.path, "r") as fh:
-                raw_data = yaml.load(fh)
+                raw_data = yaml.load(fh, Loader=yaml.Loader)
         except IOError:
             raise TankFileDoesNotExistError("File does not exist: %s" % self.path)
         except Exception as e:
@@ -152,7 +159,7 @@ class PreferencesCacheItem(object):
         :raises:        tank.errors.TankUnreadableFileError: File stat failure.
         """
         self._path = path
-        self._data = data
+        self._data = OrderedDict(data or {})
         self._context = context
 
     @property
@@ -192,7 +199,7 @@ class PreferencesCacheItem(object):
             role = self.context.step["name"]
 
         # Populate the item's data before adding it to the cache.
-        self._data = dict(preferences.Preferences(path, role, package="sgtk_config").items())
+        self._data = OrderedDict(preferences.Preferences(path, role, package="sgtk_config").items())
 
 class YamlCache(object):
     """

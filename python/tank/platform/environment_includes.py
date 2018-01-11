@@ -32,6 +32,7 @@ import os
 import re
 import sys
 import copy
+import collections
 
 from ..errors import TankError
 from ..template import TemplatePath
@@ -45,81 +46,81 @@ from ..util.includes import resolve_include
 
 log = LogManager.get_logger(__name__)
 
-def _resolve_includes(file_name, data, context):
+def dict_merge(dct, merge_dct):
+    """ Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
+    updating only top-level keys, dict_merge recurses down into dicts nested
+    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
+    ``dct``.
+    :param dct: dict onto which the merge is executed
+    :param merge_dct: dct merged into dct
+    :return: None
+    """
+    for k, v in merge_dct.iteritems():
+        if (k in dct and isinstance(dct[k], dict)
+                and isinstance(merge_dct[k], collections.Mapping)):
+            dict_merge(dct[k], merge_dct[k])
+        else:
+            dct[k] = merge_dct[k]
+
+def _resolve_include(file_name, include, context):
     """
     Parses the includes section and returns a list of valid paths
     """
-    includes = []
-    resolved_includes = set()
-    
-    if constants.SINGLE_INCLUDE_SECTION in data:
-        # single include section
-        includes.append( data[constants.SINGLE_INCLUDE_SECTION])
-            
-    if constants.MULTI_INCLUDE_SECTION in data:
-        # multi include section
-        includes.extend( data[constants.MULTI_INCLUDE_SECTION])
+    if include.startswith("{preferences}"):
+        # If this is a preferences file, just store the include
+        # the Preferences system down the line with handle resolution
+        resolved_include = include
 
-    for include in includes:
-        
-        if include.startswith("{preferences}"):
-            # If this is a preferences file, just store the path
-            # the Preferences system down the line with handle validation
-            path = include
+    elif "{" in include:
+        # it's a template path
+        if context is None:
+            # skip - these paths are optional always
+            log.debug(
+                "%s: Skipping template based include '%s' "
+                "because there is no active context." % (file_name, include)
+            )
+            return
 
-        elif "{" in include:
-            # it's a template path
-            if context is None:
-                # skip - these paths are optional always
-                log.debug(
-                    "%s: Skipping template based include '%s' "
-                    "because there is no active context." % (file_name, include)
-                )
-                continue
-            
-            # extract all {tokens}
-            _key_name_regex = "[a-zA-Z_ 0-9]+"
-            regex = r"(?<={)%s(?=})" % _key_name_regex
-            key_names = re.findall(regex, include)
-    
-            # get all the data roots for this project
-            # note - it is possible that this call may raise an exception for configs
-            # which don't have a primary storage defined - this is logical since such
-            # configurations cannot make use of references into the file system hierarchy
-            # (because no such hierarchy exists)
-            primary_data_root = context.tank.pipeline_configuration.get_primary_data_root()
-    
-            # try to construct a path object for each template
-            try:
-                # create template key objects        
-                template_keys = {}
-                for key_name in key_names:
-                    template_keys[key_name] = StringKey(key_name)
-        
-                # Make a template
-                template = TemplatePath(include, template_keys, primary_data_root)
-            except TankError as e:
-                raise TankError("Syntax error in %s: Could not transform include path '%s' "
-                                "into a template: %s" % (file_name, include, e))
-            
-            # and turn the template into a path based on the context
-            try:
-                f = context.as_template_fields(template)
-                full_path = template.apply_fields(f)
-            except TankError as e:
-                # if this path could not be resolved, that's ok! These paths are always optional.
-                continue
-            
-            if not os.path.exists(full_path):
-                # skip - these paths are optional always
-                continue       
-        else:
-            path = resolve_include(file_name, include)
+        # extract all {tokens}
+        _key_name_regex = "[a-zA-Z_ 0-9]+"
+        regex = r"(?<={)%s(?=})" % _key_name_regex
+        key_names = re.findall(regex, include)
 
-        if path:
-            resolved_includes.add(path)
+        # get all the data roots for this project
+        # note - it is possible that this call may raise an exception for configs
+        # which don't have a primary storage defined - this is logical since such
+        # configurations cannot make use of references into the file system hierarchy
+        # (because no such hierarchy exists)
+        primary_data_root = context.tank.pipeline_configuration.get_primary_data_root()
 
-    return list(resolved_includes)
+        # try to construct a path object for each template
+        try:
+            # create template key objects        
+            template_keys = {}
+            for key_name in key_names:
+                template_keys[key_name] = StringKey(key_name)
+
+            # Make a template
+            template = TemplatePath(include, template_keys, primary_data_root)
+        except TankError as e:
+            raise TankError("Syntax error in %s: Could not transform include path '%s' "
+                            "into a template: %s" % (file_name, include, e))
+
+        # and turn the template into a path based on the context
+        try:
+            f = context.as_template_fields(template)
+            resolved_include = template.apply_fields(f)
+        except TankError as e:
+            # if this path could not be resolved, that's ok! These paths are always optional.
+            return
+
+        if not os.path.exists(resolved_include):
+            # skip - these paths are optional always
+            return
+    else:
+        resolved_include = resolve_include(file_name, include)
+
+    return resolved_include
 
 
 def _find_matching_ref(lookup_dict, ref_string):
@@ -261,39 +262,76 @@ def _process_includes_r(file_name, data, context):
                         together with a lookup for frameworks to the file 
                         they were loaded from.
     """
+    output_data = collections.OrderedDict()
+    fw_lookup = {}
+
+    # normalize the incoming path
     file_name = os.path.normpath(file_name)
 
-    # first build our big fat lookup dict
-    include_files = _resolve_includes(file_name, data, context)
+    # basic sanity check
+    if data is None:
+        return output_data
 
-    # include local keys first in lookup dictionary
-    lookup_dict = dict((k, v) for k, v in data.items() if not k.startswith("include"))
-    fw_lookup = {}
-    for include_file in include_files:
-                
-        # path exists, so try to read it
-        included_data = g_yaml_cache.get(include_file, context=context) or {}
-                
-        # now resolve this data before proceeding
-        included_data, included_fw_lookup = _process_includes_r(include_file, included_data, context)
+    # Since the data is an OrderedDict, process the elements "in order"
+    for k, v in data.iteritems():
 
-        # update our big lookup dict with this included data:
-        if "frameworks" in included_data and isinstance(included_data["frameworks"], dict):
-            # special case handling of frameworks to merge them from the various
-            # different included files rather than have frameworks section from
-            # one file overwrite the frameworks from previous includes!
-            lookup_dict = _resolve_frameworks(included_data, lookup_dict)
+        # first check if this is an include block
+        if k in (constants.SINGLE_INCLUDE_SECTION, constants.MULTI_INCLUDE_SECTION):
+            if k == constants.SINGLE_INCLUDE_SECTION:
+                include_files = [v]
+            else:
+                include_files = v
 
-            # also, keep track of where the framework has been referenced from:
-            for fw_name in included_data["frameworks"].keys():
-                fw_lookup[fw_name] = include_file
+            for include_file in include_files:
+                resolved_file = _resolve_include(file_name, include_file, context)
+                if not resolved_file:
+                    continue
 
-            del(included_data["frameworks"])
+                # Read the include file
+                include_data = yaml_cache.g_yaml_cache.get(resolved_file, deepcopy_data=False)
 
-        fw_lookup.update(included_fw_lookup)
-        lookup_dict.update(included_data)
+                # ...process the contents
+                included_data, included_fw_lookup = _process_template_includes_r(resolved_file, include_data)
 
-    return lookup_dict, fw_lookup
+                # ...and merge the results
+                for k2, v2 in included_data.iteritems():
+                    # Update output_data with the include file's data
+                    if isinstance(v2, dict):
+                        # Only merge the "frameworks" section
+                        if k2 == "frameworks":
+                            if k2 not in output_data:
+                                output_data[k2] = dict()
+                            dict_merge(output_data[k2], v2)
+                        else:
+                            output_data[k2] = v2
+                    elif v2 is not None:
+                        output_data[k2] = v2
+
+                fw_lookup.update(included_fw_lookup)
+
+            # Move on to the next key
+            continue
+
+        # If this is a frameworks section, add entries to the fw_lookup dict
+        if k == "frameworks":
+            # keep track of where the framework has been referenced from
+            for fw_name in v.keys():
+                fw_lookup[fw_name] = file_name
+
+        # Update output_data with the current file's data
+        if isinstance(v, dict):
+            # Only merge the "frameworks" section
+            if k == "frameworks":
+                if k not in output_data:
+                    output_data[k] = dict()
+                dict_merge(output_data[k], v)
+            else:
+                output_data[k] = v
+        elif v is not None:
+            output_data[k] = v
+
+    # return the processed data
+    return output_data, fw_lookup
     
 
 def find_framework_location(file_name, framework_name, context):
@@ -309,7 +347,7 @@ def find_framework_location(file_name, framework_name, context):
                             defined in or None if not found.
     """
     # load the data in for the root file:
-    data = g_yaml_cache.get(file_name, context=context) or {}
+    data = g_yaml_cache.get(file_name, context=context)
 
     # track root frameworks:
     root_fw_lookup = {}
@@ -369,63 +407,77 @@ def find_reference(file_name, context, token, absolute_location=False):
     :rtype: tuple
     """
     # load the data in 
-    data = g_yaml_cache.get(file_name, context=context) or {}
+    data = g_yaml_cache.get(file_name, context=context)
     
-    # first build our big fat lookup dict
-    include_files = _resolve_includes(file_name, data, context)
     found_file = None
     found_token = token
 
-    for include_file in include_files:
-        # path exists, so try to read it
-        included_data = g_yaml_cache.get(include_file, context=context) or {}
-        
-        if token in included_data:
-            # If we've been asked to ensure an absolute location, we need
-            # to do some extra work, which might involve recursing up the
-            # config stack until we get to a location descriptor dictionary.
-            if not absolute_location:
-                # We've not been asked to resolve the absolute location, so we
-                # don't do any additional work.
-                found_file = include_file
-            else:
-                token_data = included_data[token]
-                include_token = None
+    # Since the data is an OrderedDict, process the elements "in order"
+    for k, v in data.iteritems():
 
-                # If the value of the token is an include, then we can
-                # recurse up, directly referencing the include name as
-                # the new token.
-                if isinstance(token_data, basestring) and token_data.startswith("@"):
-                    include_token = token_data
-                else:
-                    # In the case where the data isn't itself an include,
-                    # we also need to make sure that the location descriptor
-                    # is itself not an include. If it is, then we still have
-                    # to recurse up the stack until we find the absolute
-                    # location descriptor. In that case, the location value
-                    # becomes the token we're looking for.
-                    if constants.ENVIRONMENT_LOCATION_KEY in included_data[token]:
-                        # Check to see if there's a location descriptor. If there
-                        # is then we need to check to see if that's an include.
-                        location = included_data[token][constants.ENVIRONMENT_LOCATION_KEY]
-                        if location and isinstance(location, basestring) and location.startswith("@"):
-                            include_token = location
+        # first ensure this is an include block
+        if k not in (constants.SINGLE_INCLUDE_SECTION, constants.MULTI_INCLUDE_SECTION):
+            continue
 
-                # If we have an include we need to resolve, we take the current
-                # file where we found the include, and the included name becomes
-                # the new token we're looking for.
-                if include_token is not None:
-                    found_file, found_token = find_reference(
-                        include_file,
-                        context,
-                        include_token[1:],
-                        absolute_location=True,
-                    )
+        if k == constants.SINGLE_INCLUDE_SECTION:
+            include_files = [v]
+        else:
+            include_files = v
+
+        for include_file in include_files:
+            resolved_file = _resolve_include(file_name, include_file, context)
+            if not resolved_file:
+                continue
+
+            # path exists, so try to read it
+            included_data = g_yaml_cache.get(resolved_file, context=context)
+
+            if token in included_data:
+                # If we've been asked to ensure an absolute location, we need
+                # to do some extra work, which might involve recursing up the
+                # config stack until we get to a location descriptor dictionary.
+                if not absolute_location:
+                    # We've not been asked to resolve the absolute location, so we
+                    # don't do any additional work.
+                    found_file = resolved_file
                 else:
-                    # We're at the top and we have the concrete location
-                    # descriptor. We can return the include file and token
-                    # where the data was found.
-                    found_file = include_file
-                    found_token = token
+                    token_data = included_data[token]
+                    include_token = None
+
+                    # If the value of the token is an include, then we can
+                    # recurse up, directly referencing the include name as
+                    # the new token.
+                    if isinstance(token_data, basestring) and token_data.startswith("@"):
+                        include_token = token_data
+                    else:
+                        # In the case where the data isn't itself an include,
+                        # we also need to make sure that the location descriptor
+                        # is itself not an include. If it is, then we still have
+                        # to recurse up the stack until we find the absolute
+                        # location descriptor. In that case, the location value
+                        # becomes the token we're looking for.
+                        if constants.ENVIRONMENT_LOCATION_KEY in included_data[token]:
+                            # Check to see if there's a location descriptor. If there
+                            # is then we need to check to see if that's an include.
+                            location = included_data[token][constants.ENVIRONMENT_LOCATION_KEY]
+                            if location and isinstance(location, basestring) and location.startswith("@"):
+                                include_token = location
+
+                    # If we have an include we need to resolve, we take the current
+                    # file where we found the include, and the included name becomes
+                    # the new token we're looking for.
+                    if include_token is not None:
+                        found_file, found_token = find_reference(
+                            resolved_file,
+                            context,
+                            include_token[1:],
+                            absolute_location=True,
+                        )
+                    else:
+                        # We're at the top and we have the concrete location
+                        # descriptor. We can return the include file and token
+                        # where the data was found.
+                        found_file = resolved_file
+                        found_token = token
 
     return (found_file, found_token)
