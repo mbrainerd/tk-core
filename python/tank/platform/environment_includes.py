@@ -288,7 +288,7 @@ def _process_includes_r(file_name, data, context):
                     continue
 
                 # Read the include file
-                include_data = yaml_cache.g_yaml_cache.get(resolved_file, deepcopy_data=False)
+                include_data = g_yaml_cache.get(resolved_file, deepcopy_data=False)
 
                 # ...process the contents
                 included_data, included_fw_lookup = _process_template_includes_r(resolved_file, include_data)
