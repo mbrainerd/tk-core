@@ -539,7 +539,7 @@ class Sgtk(object):
         return list(found_files) 
 
 
-    def abstract_paths_from_template(self, template, fields):
+    def abstract_paths_from_template(self, template, fields, skip_keys=None, skip_missing_optional_keys=False):
         """
         Returns an abstract path based on a template.
 
@@ -624,7 +624,7 @@ class Sgtk(object):
             search_template = template.parent
 
         # now carry out a regular search based on the template
-        found_files = self.paths_from_template(search_template, fields)
+        found_files = self.paths_from_template(search_template, fields, skip_keys, skip_missing_optional_keys)
 
         st_abstract_key_names = [k.name for k in search_template.keys.values() if k.is_abstract]
 
