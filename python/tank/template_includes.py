@@ -122,7 +122,7 @@ def _process_template_includes_r(file_name, data):
                 output_data[k] = v
 
         else:
-            raise TankError("Unrecognized template section!")
+            raise TankError("Unrecognized template section '%s'!" % k)
 
     return output_data
         
