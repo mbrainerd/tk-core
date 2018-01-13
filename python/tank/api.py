@@ -591,6 +591,10 @@ class Sgtk(object):
         :type  template: :class:`TemplatePath`
         :param fields: Mapping of keys to values with which to assemble the abstract path.
         :type fields: dictionary
+        :param skip_keys: Keys whose values should be ignored from the fields parameter.
+        :type  skip_keys: List of key names
+        :param skip_missing_optional_keys: Specify if optional keys should be skipped if they 
+                                        aren't found in the fields collection
 
         :returns: A list of paths whose abstract keys use their abstract(default) value unless
                   a value is specified for them in the fields parameter.
