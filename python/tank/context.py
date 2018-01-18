@@ -25,6 +25,7 @@ from . import authentication
 from .util import login
 from .util import shotgun_entity
 from .util import shotgun
+from .util.singleton import Threaded
 from . import constants
 from .errors import TankError, TankContextDeserializationError
 from .path_cache import PathCache
@@ -32,6 +33,63 @@ from .template import TemplatePath
 from . import LogManager
 
 log = LogManager.get_logger(__name__)
+
+
+class ContextCache(Threaded):
+    """
+    Cache of plugin settings per context.
+    """
+    def __init__(self):
+        """
+        Constructor.
+        """
+        Threaded.__init__(self)
+        self._cache = dict()
+
+    def __build_key(self, entity_dict):
+        """
+        Helper method to build the lookup key from an entity dict
+
+        :param entity_dict: The dictionary to use to generate the key
+
+        :returns: A unique identifier that can be used as a key for context lookup
+        """
+        key_dict = {}
+        if "type" in entity_dict:
+            key_dict["type"] = entity_dict["type"]
+        if "id" in entity_dict:
+            key_dict["id"] = entity_dict["id"]
+        if "user" in entity_dict:
+            key_dict["user"] = entity_dict["user"].get("id")
+        if "step" in entity_dict:
+            key_dict["step"] = entity_dict["step"].get("id")
+
+        return tuple(sorted(key_dict.items()))
+
+    @Threaded.exclusive
+    def get(self, entity_dict):
+        """
+        Retrieve the cached context.
+
+        :param entity_dict: The entity dict for the context we desire.
+
+        :returns: The associated Context object or None
+        """
+        key = self.__build_key(entity_dict)
+        return self._cache.get(key)
+
+    @Threaded.exclusive
+    def add(self, entity_dict, context):
+        """
+        Cache the Context for a given entity lookup dict.
+
+        :param entity_dict: The entity dict to associate with the context.
+        :param context: Context object to be cached.
+        """
+        key = self.__build_key(entity_dict)
+        self._cache[key] = copy.deepcopy(context)
+
+g_context_cache = ContextCache()
 
 
 class Context(object):
@@ -96,7 +154,7 @@ class Context(object):
         msg.append("  Additional Entities: %s" % str(self.__additional_entities))
         msg.append("  Source Entity: %s" % str(self.__source_entity))
 
-        return "<Sgtk Context: %s>" % ("\n".join(msg))
+        return "<Sgtk Context:\n%s>" % ("\n".join(msg))
 
     def __str__(self):
         """
@@ -1123,7 +1181,7 @@ def from_path(tk, path, previous_context=None):
         raise TankError("Cannot get entity in path_cache for path: %s" % path)
 
     # Pass along the entity to be processed by from_entity_dictionary()
-    log.debug("Running context_from_path: %s ==> %s" % (path, pprint.pformat(entity_dict)))
+    log.debug("Running context_from_path:\n%s ==>\n%s" % (path, pprint.pformat(entity_dict)))
     return _from_entity_dictionary(tk, entity_dict, previous_context)
 
 
@@ -1147,7 +1205,7 @@ def from_entity(tk, entity_type, entity_id, previous_context=None):
     entity_dict = {"type": entity_type, "id": entity_id }
 
     # Pass along the entity to be processed by from_entity_dictionary()
-    log.debug("Running context_from_entity: %s" % pprint.pformat(entity_dict))
+    log.debug("Running context_from_entity:\n%s" % pprint.pformat(entity_dict))
     return _from_entity_dictionary(tk, entity_dict, previous_context)
 
 
@@ -1169,13 +1227,24 @@ def from_entity_dictionary(tk, entity_dict, previous_context=None):
     :returns: :class:`Context`
     """
     # Pass along the entity_dict to be processed by from_entity_dictionary()
-    log.debug("Running context_from_entity_dictionary: %s" % pprint.pformat(entity_dict))
+    log.debug("Running context_from_entity_dictionary:\n%s" % pprint.pformat(entity_dict))
     return _from_entity_dictionary(tk, entity_dict, previous_context)
 
 
 def _from_entity_dictionary(tk, entity_dict, previous_context=None):
     """
     """
+    # Basic sanity check
+    if not isinstance(entity_dict, dict):
+        raise TankError("Cannot create a context from an empty or invalid entity dictionary!")
+
+    # Check if we've processed a context for this entity before and if so
+    # return from cache
+    context = g_context_cache.get(entity_dict)
+    if context:
+        log.debug("Loading context from cache:\n%r" % context)
+        return context
+
     # Get a context-valid entity dictionary
     entity_dict = _get_valid_entity_dict(tk, entity_dict)
 
@@ -1217,8 +1286,14 @@ def _from_entity_dictionary(tk, entity_dict, previous_context=None):
                     if context_dict.get("step") == previous_context.step:
                         context_dict["task"] = previous_context.task
 
-    log.debug("Building context:\n%s" % pprint.pformat(context_dict))
-    return Context(**context_dict)
+    # Build the context object
+    context = Context(**context_dict)
+
+    # Add context to cache
+    g_context_cache.add(entity_dict, context)
+
+    log.debug("Built context:\n%r" % context)
+    return context
 
 
 ################################################################################################
@@ -1498,10 +1573,6 @@ def _build_entity_dict_from_path(tk, path, required_fields=None, additional_type
 def _get_valid_entity_dict(tk, entity_dict):
     """
     """
-    # Basic sanity check
-    if not isinstance(entity_dict, dict):
-        raise TankError("Cannot create a context from an empty or invalid entity dictionary!")
-
     # Since we are modifying in place, make a copy
     entity_dict = copy.deepcopy(entity_dict)
 
