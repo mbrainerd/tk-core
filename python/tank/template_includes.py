@@ -29,39 +29,37 @@ c:\foo\bar\hello.yml - absolute path, windows
 """
 
 import os
+import collections
 
 from .errors import TankError
 from . import constants
 from .util import yaml_cache
 from .util.includes import resolve_include
 
+def dict_merge(dct, merge_dct):
+    """ Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
+    updating only top-level keys, dict_merge recurses down into dicts nested
+    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
+    ``dct``.
+    :param dct: dict onto which the merge is executed
+    :param merge_dct: dct merged into dct
+    :return: None
+    """
+    for k, v in merge_dct.iteritems():
+        if (k in dct and isinstance(dct[k], dict)
+                and isinstance(merge_dct[k], collections.Mapping)):
+            dict_merge(dct[k], merge_dct[k])
+        else:
+            dct[k] = merge_dct[k]
 
-def _get_includes(file_name, data):
+def _resolve_include(file_name, include):
     """
     Parse the includes section and return a list of valid paths
 
     :param str file_name: Name of the file to parse.
     :param aray or str data: Include path or array of include paths to evaluate.
     """
-    includes = []
-
-    resolved_includes = set()
-
-    if constants.SINGLE_INCLUDE_SECTION in data:
-        # single include section
-        includes.append( data[constants.SINGLE_INCLUDE_SECTION] )
-
-    if constants.MULTI_INCLUDE_SECTION in data:
-        # multi include section
-        includes.extend( data[constants.MULTI_INCLUDE_SECTION] )
-
-    for include in includes:
-        resolved = resolve_include(file_name, include)
-        if resolved:
-            resolved_includes.add(resolved)
-
-    return list(resolved_includes)
-
+    return resolve_include(file_name, include)
 
 def _process_template_includes_r(file_name, data):
     """
@@ -70,36 +68,55 @@ def _process_template_includes_r(file_name, data):
     For each of the sections keys, strings, path, populate entries based on
     include files.
     """
-    
     # return data    
     output_data = {}
-    # add items for keys, paths, strings etc
+
+    # normalize the incoming path
+    file_name = os.path.normpath(file_name)
+
+    # initialize the keys for paths, strings, aliases etc
     for ts in constants.TEMPLATE_SECTIONS:
         output_data[ts] = {}
 
+    # basic sanity check
     if data is None:
         return output_data
 
-    # process includes
-    included_paths = _get_includes(file_name, data)
-    
-    for included_path in included_paths:
-        included_data = yaml_cache.g_yaml_cache.get(included_path, deepcopy_data=False) or dict()
-        
-        # before doing any type of processing, allow the included data to be resolved.
-        included_data = _process_template_includes_r(included_path, included_data)
-        
-        # add the included data's different sections
-        for ts in constants.TEMPLATE_SECTIONS:
-            if ts in included_data:
-                output_data[ts].update( included_data[ts] or dict() )
-        
-    # now all include data has been added into the data structure.
-    # now add the template data itself
-    for ts in constants.TEMPLATE_SECTIONS:
-        if ts in data:
-            output_data[ts].update( data[ts] or dict() )
-    
+    # Since the data is an OrderedDict, process the elements "in order"
+    for k, v in data.iteritems():
+
+        # first check if this is an include block
+        if k in (constants.SINGLE_INCLUDE_SECTION, constants.MULTI_INCLUDE_SECTION):
+            if k == constants.SINGLE_INCLUDE_SECTION:
+                include_files = [v]
+            else:
+                include_files = v
+
+            for include_file in include_files:
+                resolved_file = _resolve_include(file_name, include_file)
+                if not resolved_file:
+                    continue
+
+                # Read the include file
+                include_data = yaml_cache.g_yaml_cache.get(resolved_file, deepcopy_data=False)
+
+                # ...process the contents
+                included_data = _process_template_includes_r(resolved_file, include_data)
+
+                # ...and merge the results
+                dict_merge(output_data, included_data)
+
+        # Now check if this is a known template section
+        elif k in constants.TEMPLATE_SECTIONS:
+            # Update output_data with the current file's data
+            if isinstance(v, dict):
+                output_data[k].update(v)
+            elif v is not None:
+                output_data[k] = v
+
+        else:
+            raise TankError("Unrecognized template section '%s'!" % k)
+
     return output_data
         
 def process_includes(file_name, data):

@@ -18,6 +18,7 @@ from __future__ import with_statement
 import os
 import copy
 import threading
+from collections import OrderedDict
 
 from tank_vendor import yaml
 from ..errors import (
@@ -25,6 +26,17 @@ from ..errors import (
     TankUnreadableFileError,
     TankFileDoesNotExistError,
 )
+
+class OrderedLoader(yaml.Loader):
+    pass
+
+def construct_mapping(loader, node):
+    loader.flatten_mapping(node)
+    return OrderedDict(loader.construct_pairs(node))
+
+OrderedLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    construct_mapping)
 
 class CacheItem(object):
     """
@@ -46,7 +58,7 @@ class CacheItem(object):
         :raises:        tank.errors.TankUnreadableFileError: File stat failure.
         """
         self._path = os.path.normpath(path)
-        self._data = data
+        self._data = data or {}
 
         if stat is None:
             try:
@@ -123,7 +135,7 @@ class CacheItem(object):
         """
         try:
             with open(self.path, "r") as fh:
-                raw_data = yaml.load(fh)
+                raw_data = yaml.load(fh, Loader=OrderedLoader)
         except IOError:
             raise TankFileDoesNotExistError("File does not exist: %s" % self.path)
         except Exception as e:

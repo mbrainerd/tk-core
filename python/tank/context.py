@@ -96,7 +96,7 @@ class Context(object):
         msg.append("  Additional Entities: %s" % str(self.__additional_entities))
         msg.append("  Source Entity: %s" % str(self.__source_entity))
 
-        return "<Sgtk Context: %s>" % ("\n".join(msg))
+        return "<Sgtk Context:\n%s>" % ("\n".join(msg))
 
     def __str__(self):
         """
@@ -601,7 +601,7 @@ class Context(object):
         if template:
             keys = template.keys.values()
         else:
-            keys = self.tk.template_keys.values()
+            keys = self.sgtk.template_keys.values()
 
         # First attempt to get fields from the entities stored in the context
         fields.update(self._fields_from_entities(keys, entities))
@@ -1123,7 +1123,7 @@ def from_path(tk, path, previous_context=None):
         raise TankError("Cannot get entity in path_cache for path: %s" % path)
 
     # Pass along the entity to be processed by from_entity_dictionary()
-    log.debug("Running context_from_path: %s ==> %s" % (path, pprint.pformat(entity_dict)))
+    log.debug("Running context_from_path:\n%s ==>\n%s" % (path, pprint.pformat(entity_dict)))
     return _from_entity_dictionary(tk, entity_dict, previous_context)
 
 
@@ -1147,7 +1147,7 @@ def from_entity(tk, entity_type, entity_id, previous_context=None):
     entity_dict = {"type": entity_type, "id": entity_id }
 
     # Pass along the entity to be processed by from_entity_dictionary()
-    log.debug("Running context_from_entity: %s" % pprint.pformat(entity_dict))
+    log.debug("Running context_from_entity:\n%s" % pprint.pformat(entity_dict))
     return _from_entity_dictionary(tk, entity_dict, previous_context)
 
 
@@ -1169,7 +1169,7 @@ def from_entity_dictionary(tk, entity_dict, previous_context=None):
     :returns: :class:`Context`
     """
     # Pass along the entity_dict to be processed by from_entity_dictionary()
-    log.debug("Running context_from_entity_dictionary: %s" % pprint.pformat(entity_dict))
+    log.debug("Running context_from_entity_dictionary:\n%s" % pprint.pformat(entity_dict))
     return _from_entity_dictionary(tk, entity_dict, previous_context)
 
 
@@ -1217,8 +1217,11 @@ def _from_entity_dictionary(tk, entity_dict, previous_context=None):
                     if context_dict.get("step") == previous_context.step:
                         context_dict["task"] = previous_context.task
 
-    log.debug("Building context:\n%s" % pprint.pformat(context_dict))
-    return Context(**context_dict)
+    # Build the context object
+    context = Context(**context_dict)
+
+    log.debug("Built context:\n%r" % context)
+    return context
 
 
 ################################################################################################

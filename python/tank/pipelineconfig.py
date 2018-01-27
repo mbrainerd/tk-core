@@ -971,11 +971,8 @@ class PipelineConfiguration(object):
             constants.CONTENT_TEMPLATES_FILE
         )
 
-        try:
-            data = yaml_cache.g_yaml_cache.get(templates_file) or {}
-            data = template_includes.process_includes(templates_file, data)
-        except TankUnreadableFileError:
-            data = dict()
+        data = yaml_cache.g_yaml_cache.get(templates_file)
+        data = template_includes.process_includes(templates_file, data)
 
         return data
 
