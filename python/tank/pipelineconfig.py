@@ -110,8 +110,8 @@ class PipelineConfiguration(object):
         )
 
         # Enable the use of env variables for project and pipeline configuration settings
-        self._project_name = os.path.expandvars(self._project_name) if isinstance(self._project_name, str) else self._project_name
-        self._pc_name = os.path.expandvars(self._pc_name) if isinstance(self._pc_name, str) else self._pc_name
+        self._project_name = os.path.expandvars(self._project_name)
+        self._pc_name = os.path.expandvars(self._pc_name)
         self._project_id = int(os.path.expandvars(self._project_id)) if isinstance(self._project_id, str) else self._project_id
         self._pc_id = int(os.path.expandvars(self._pc_id)) if isinstance(self._pc_id, str) else self._pc_id
 
@@ -262,11 +262,7 @@ class PipelineConfiguration(object):
         curr_settings.update(updates)
         
         # write the record to disk
-        pipe_config_sg_id_path = os.path.join(
-            self.get_config_location(),
-            "core",
-            constants.PIPELINECONFIG_FILE
-        )
+        pipe_config_sg_id_path = self._get_pipeline_config_file_location()
         
         old_umask = os.umask(0)
         try:
@@ -299,13 +295,28 @@ class PipelineConfiguration(object):
         self._pc_id = curr_settings.get("pc_id")
         self._pc_name = curr_settings.get("pc_name")
 
+    def _get_pipeline_config_file_location(self):
+        """
+        Returns the location of the pipeline_configuration.yml file.
+        """
+        return os.path.join(
+            self.get_config_location(),
+            "core",
+            constants.PIPELINECONFIG_FILE
+        )
+
+    def _get_yaml_cache_location(self):
+        """
+        Returns the location of the yaml cache for this configuration.
+        """
+        return os.path.join(self.get_cache_location(), "yaml_cache.pickle")
 
     def _populate_yaml_cache(self):
         """
         Loads pickled yaml_cache items if they are found and merges them into
         the global YamlCache.
         """
-        cache_file = os.path.join(self.get_cache_location(), "yaml_cache.pickle")
+        cache_file = self._get_yaml_cache_location()
         if not os.path.exists(cache_file):
             return
 
@@ -345,7 +356,7 @@ class PipelineConfiguration(object):
         """
         Returns the path to this config for all operating systems,
         as defined in the install_locations file.
-        
+
         :returns: ShotgunPath
         """
         return pipelineconfig_utils.resolve_all_os_paths_to_config(self._pc_root)
@@ -871,31 +882,35 @@ class PipelineConfiguration(object):
     def get_core_hooks_location(self):
         """
         Returns the path to the core hooks location
-        
+
         :returns: path string
         """
-        return os.path.join(self.get_config_location(), "core", "hooks")
+        return os.path.join(
+            os.path.join(self.get_config_location(), "core"), "hooks"
+        )
 
     def get_schema_config_location(self):
         """
         Returns the location of the folder schema
-        
+
         :returns: path string
         """
-        return os.path.join(self.get_config_location(), "core", "schema")
+        return os.path.join(
+            os.path.join(self.get_config_location(), "core"), "schema"
+        )
 
     def get_config_location(self):
         """
-        Returns the config folder for the project
-        
+        Returns the config folder location for the project
+
         :returns: path string
         """
-        return os.path.join(self._pc_root, "config")
+        return self._descriptor.get_config_folder()
 
     def get_hooks_location(self):
         """
         Returns the hooks folder for the project
-        
+
         :returns: path string
         """
         return os.path.join(self.get_config_location(), "hooks")
@@ -929,9 +944,8 @@ class PipelineConfiguration(object):
         """
         Returns a list with all the environments in this configuration.
         """
-        env_root = os.path.join(self.get_config_location(), "env")
         env_names = []
-        for f in glob.glob(os.path.join(env_root, "*.yml")):
+        for f in glob.glob(self.get_environment_path("*")):
             file_name = os.path.basename(f)
             (name, _) = os.path.splitext(file_name)
             env_names.append(name)
@@ -963,16 +977,21 @@ class PipelineConfiguration(object):
         :returns:           String path to the environment yaml file.
         """
         return os.path.join(self.get_config_location(), "env", "%s.yml" % env_name)
+
+    def _get_templates_config_location(self):
+        """
+        Returns the path to the configuration's template file.
+        """
+        return os.path.join(
+            os.path.join(self.get_config_location(), "core"),
+            constants.CONTENT_TEMPLATES_FILE,
+        )
     
     def get_templates_config(self):
         """
         Returns the templates configuration as an object
         """
-        templates_file = os.path.join(
-            self.get_config_location(),
-            "core",
-            constants.CONTENT_TEMPLATES_FILE
-        )
+        templates_file = self._get_templates_config_location()
 
         data = yaml_cache.g_yaml_cache.get(templates_file)
         data = template_includes.process_includes(templates_file, data)
