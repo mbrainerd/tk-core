@@ -8,8 +8,7 @@ import textwrap
 import traceback
 
 import sgtk
-
-from PySide import QtCore, QtGui
+from sgtk.platform.qt import QtCore, QtGui
 
 __version__ = '1.4.3'
 
