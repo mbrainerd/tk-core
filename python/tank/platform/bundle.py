@@ -24,7 +24,7 @@ from .. import hook
 from ..util.metrics import EventMetric
 from ..log import LogManager
 from ..errors import TankError, TankNoDefaultValueError
-from .errors import TankContextChangeNotSupportedError
+from .errors import TankContextChangeNotSupportedError, TankCurrentModuleNotFoundError
 from . import constants
 from .import_stack import ImportStack
 
@@ -1418,8 +1418,11 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
 
     :returns: Resolved value of input setting key
     """
-    from .util import current_bundle
-    bundle = bundle or current_bundle()
+    try:
+        from .util import current_bundle
+        bundle = bundle or current_bundle()
+    except TankCurrentModuleNotFoundError:
+        pass
 
     # Get the value for the supplied key
     if key in settings:
@@ -1466,8 +1469,11 @@ def resolve_default_value(
         be used.
     :return: The resolved default value
     """
-    from .util import current_bundle
-    bundle = bundle or current_bundle()
+    try:
+        from .util import current_bundle
+        bundle = bundle or current_bundle()
+    except TankCurrentModuleNotFoundError:
+        pass
 
     default_missing = False
 
