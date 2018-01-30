@@ -161,50 +161,14 @@ def _from_path(path, force_reread_shotgun_cache):
 
     # first see if someone is passing the path to an actual pipeline configuration
     if pipelineconfig_utils.is_pipeline_config(path):
+        return PipelineConfiguration(path)
 
-        log.debug("The path %s points at a pipeline configuration." % path)
+    # Get the path to the pipeline configuration for this path
+    pc_path = pipelineconfig_utils.get_config_install_location(path)
+    if pc_path is None:
+        raise TankInitError("There is no pipeline configuration associated with this path:\n'%s'" % path)
 
-        # resolve the "real" location that is stored in Shotgun and
-        # cached in the file system
-        pc_registered_path = pipelineconfig_utils.get_config_install_location(path)
-
-        log.debug("Resolved the official path registered in Shotgun to be %s." % pc_registered_path)
-
-        if pc_registered_path is None:
-            raise TankError("Error starting from the configuration located in '%s' - "
-                            "it looks like this pipeline configuration and tank command "
-                            "has not been configured for the current operating system." % path)
-
-        return PipelineConfiguration(pc_registered_path)
-
-    # now get storage and project data from shotgun.
-    # this will use a cache unless the force flag is set
-    sg_data = _get_pipeline_configs(force_reread_shotgun_cache)
-
-    # now given ALL pipeline configs for ALL projects and their associated projects
-    # and project root paths (in sg_data), figure out which pipeline configurations
-    # are matching the given path. This is done by walking upwards in the path
-    # until a project root is found, and then figuring out which pipeline configurations
-    # belong to that project root.
-    associated_sg_pipeline_configs = _get_pipeline_configs_for_path(path, sg_data)
-
-    log.debug(
-        "Associated pipeline configurations are: %s" % pprint.pformat(associated_sg_pipeline_configs)
-    )
-
-    if len(associated_sg_pipeline_configs) == 0:
-        # no matches! The path is invalid or does not belong to any project on the current sg site.
-        raise TankInitError(
-            "The path '%s' does not belong to any known Toolkit project!" % path
-        )
-
-    # perform various validations to make sure the version of the sgtk codebase running
-    # is associated with the given configuration correctly, and if successful,
-    # create a pipeline configuration
-    return _validate_and_create_pipeline_configuration(
-        associated_sg_pipeline_configs,
-        source=path
-    )
+    return PipelineConfiguration(pc_path)
 
 
 def _validate_and_create_pipeline_configuration(associated_pipeline_configs, source):
