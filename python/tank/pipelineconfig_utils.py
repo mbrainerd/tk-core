@@ -286,6 +286,8 @@ def get_path_to_current_core():
     
     :returns: string with path
     """
+    from dd.runtime import api
+    api.load('prez')
     import prez
     return prez.derive(__file__).path
 
@@ -434,6 +436,8 @@ def get_package_install_location(package_name, level_or_path=None):
     """
     Given a project name or path on disk, return the location of a given package
     """
+    from dd.runtime import api
+    api.load('prez')
     import prez
 
     # HACK: Use dd.runtime to resolve test branches until #99460 is resolved
@@ -448,39 +452,58 @@ def get_package_install_location(package_name, level_or_path=None):
         if prez.Level.parse(prez.derive(path).source.name).isWorkarea:
             return path
 
-    # Get the current environment
-    env = prez.Environment.current()
-
     # HACK: First check if there is an override for this package until #99460 is resolved
     spec = os.environ.get("DD_WITH_OVERRIDE") or ""
     withOverrides = dict(x.partition("=")[::2] for x in spec.split(",") if x != "")
     if withOverrides.get(package_name):
+        # Get the current environment
+        env = prez.Environment.current()
+
         package_version = prez.Version.parse(withOverrides[package_name])
-        return env.getDistribution(package_name, package_version).path
+        distro = env.getDistribution(package_name, package_version)
+        if not distro:
+            raise TankError("Cannot resolve distribution %s for env %s" % (package_name, env))
 
-    # If site is specified, override env to operate at the facility level
+        # Return the path to the resolved distribution
+        return distro.path
+
+    # Get the current config
+    config = prez.Configuration.current()
+
     if level_or_path:
-        if level_or_path == 'site':
-            # Start with the current configuration so we maintain role, site, etc
-            config = env.configuration.replace(level=prez.Level.facility())
+        # Determine if this is a distribution path
+        try:
+            # Specified path is a distribution, so just return its path
+            distro = prez.derive(level_or_path)
+            return distro.path
 
-        # Else if it is a path, derive the level from the path
-        elif os.path.exists(os.path.expandvars(level_or_path)):
-            config = env.configuration.replace(level=prez.Level.derive(level_or_path))
+        except prez.NotFoundError:
 
-        # Else assume it is a level spec
-        else:
-            config = env.configuration.replace(level=prez.Level.parse(level_or_path.upper()))
+            # If level_or_path is set to "site" keyword, use the facility level
+            if level_or_path == "site":
+                level_spec = prez.Level.facility()
 
-    # Else just use the current configuration
-    else:
-        config = env.configuration
+            # Else if it is a path, derive the level
+            elif os.path.exists(level_or_path):
+                level_spec = prez.Level.derive(level_or_path)
 
-    # Get the environment for the updated configuration
+            # Else assume it is a level spec
+            else:
+                level_spec = prez.Level.parse(level_or_path.upper())
+
+            # Update the configuration with the new level
+            config.replace(level=level_spec)
+
+    # Get the environment for the updated Configuration
     env = prez.Environment.forConfiguration(config)
 
+    # Get the distribution for this environment
+    distro = env.resolveDistribution(package_name)
+    if not distro:
+        raise TankError("Cannot resolve distribution %s for env %s" % (package_name, env))
+
     # Return the path to the resolved distribution
-    return env.resolveDistribution(package_name).path
+    return distro.path
 
 
 def _get_install_locations(path):
