@@ -20,6 +20,8 @@ import stat
 import shutil
 
 #  DD
+from dd.runtime import api
+api.load('jstools')
 import jstools
 
 # SETUP LOGGING
