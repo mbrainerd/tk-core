@@ -87,7 +87,7 @@ class ContextCache(Threaded):
         :param context: Context object to be cached.
         """
         key = self.__build_key(entity_dict)
-        self._cache[key] = copy.deepcopy(context)
+        self._cache[key] = context
 
 g_context_cache = ContextCache()
 
@@ -857,6 +857,34 @@ class Context(object):
         # and lastly make the obejct
         return cls(**data)
 
+
+    ##########################################################################################
+    # internal API
+
+    def sync_task_and_step(self, other):
+        """
+        Syncs the current context's task and step with another context.
+
+        This method only sets the task and step if the contexts' entities and
+        additional_entities lists match, and only if the current context's task
+        and step, respectively, are not already set.
+        """
+        if self.__entity and other.entity and \
+           self.__entity["id"] == other.entity["id"] and \
+           self.__additional_entities == other.additional_entities:
+
+            # cool, everything is matching down to the step/task level.
+            # if context is missing a step and a task, we try to auto populate it.
+            # (note: weird edge that a context can have a task but no step)
+            if not self.__task:
+                if not self.__step:
+                    self.__step = other.step
+
+                # now try to assign the previous task but only if the step matches!
+                if self.__step == other.step:
+                    self.__task = other.task
+
+
     ################################################################################################
     # private methods
 
@@ -1238,61 +1266,53 @@ def _from_entity_dictionary(tk, entity_dict, previous_context=None):
     if not isinstance(entity_dict, dict):
         raise TankError("Cannot create a context from an empty or invalid entity dictionary!")
 
-    # Check if we've processed a context for this entity before and if so
-    # return from cache
+    # Check if we've processed a context for this entity before
+    # and if so return from cache
     context = g_context_cache.get(entity_dict)
     if context:
-        log.debug("Loading context from cache:\n%r" % context)
-        return context
+        # Deepcopy so we return a unique object
+        context = copy.deepcopy(context)
+        log_msg = "Loading context from cache"
 
-    # Get a context-valid entity dictionary
-    entity_dict = _get_valid_entity_dict(tk, entity_dict)
-
-    # Embed the entity in the appropriate field
-    entity_type = entity_dict.get("type")
-    if entity_type == "Project":
-        entity_dict["project"] = _build_clean_entity(tk, entity_dict)
-    elif entity_type == "Task":
-        entity_dict["task"] = _build_clean_entity(tk, entity_dict)
     else:
-        entity_dict["entity"] = _build_clean_entity(tk, entity_dict)
+        # Get a context-valid entity dictionary
+        entity_dict = _get_valid_entity_dict(tk, entity_dict)
 
-    # Initialize the new context dictionary
-    context_dict = {
-        "tk":                   tk,
-        "project":              entity_dict.get("project"),
-        "entity":               entity_dict.get("entity"),
-        "step":                 entity_dict.get("step"),
-        "user":                 entity_dict.get("user"),
-        "task":                 entity_dict.get("task"),
-        "source_entity":        entity_dict.get("source_entity"),
-        "additional_entities":  entity_dict.get("additional_entities") or []
-    }
+        # Embed the entity in the appropriate field
+        entity_type = entity_dict.get("type")
+        if entity_type == "Project":
+            entity_dict["project"] = _build_clean_entity(tk, entity_dict)
+        elif entity_type == "Task":
+            entity_dict["task"] = _build_clean_entity(tk, entity_dict)
+        else:
+            entity_dict["entity"] = _build_clean_entity(tk, entity_dict)
 
-    # See if we can populate any missing fields from the previous context
+        # Initialize the new context dictionary
+        context_dict = {
+            "tk":                   tk,
+            "project":              entity_dict.get("project"),
+            "entity":               entity_dict.get("entity"),
+            "step":                 entity_dict.get("step"),
+            "user":                 entity_dict.get("user"),
+            "task":                 entity_dict.get("task"),
+            "source_entity":        entity_dict.get("source_entity"),
+            "additional_entities":  entity_dict.get("additional_entities") or []
+        }
+
+        # Build the context object
+        context = Context(**context_dict)
+        log_msg = "Building context"
+
+        # Add context to cache
+        g_context_cache.add(entity_dict, context)
+
+    # If a previous context has been provided, see if we can populate
+    # any missing fields from it
     if previous_context:
-        if "entity" in context_dict and previous_context.entity:
-            if context_dict["entity"]["id"] == previous_context.entity["id"] and \
-               context_dict["additional_entities"] == previous_context.additional_entities:
+        context.sync_task_and_step(previous_context)
 
-                # cool, everything is matching down to the step/task level.
-                # if context is missing a step and a task, we try to auto populate it.
-                # (note: weird edge that a context can have a task but no step)
-                if not context_dict.get("task"):
-                    if not context_dict.get("step"):
-                        context_dict["step"] = previous_context.step
-
-                    # now try to assign previous task but only if the step matches!
-                    if context_dict.get("step") == previous_context.step:
-                        context_dict["task"] = previous_context.task
-
-    # Build the context object
-    context = Context(**context_dict)
-
-    # Add context to cache
-    g_context_cache.add(entity_dict, context)
-
-    log.debug("Built context:\n%r" % context)
+    # Return the Context object
+    log.debug("%s:\n%r" % (log_msg, context))
     return context
 
 
