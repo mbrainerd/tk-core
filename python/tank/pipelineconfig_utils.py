@@ -17,6 +17,10 @@ from __future__ import with_statement
 
 import os
 
+from dd.runtime import api
+api.load('prez')
+import prez
+
 from tank_vendor import yaml
 
 from . import constants
@@ -286,9 +290,6 @@ def get_path_to_current_core():
     
     :returns: string with path
     """
-    from dd.runtime import api
-    api.load('prez')
-    import prez
     return prez.derive(__file__).path
 
 
@@ -436,10 +437,6 @@ def get_package_install_location(package_name, level_or_path=None):
     """
     Given a project name or path on disk, return the location of a given package
     """
-    from dd.runtime import api
-    api.load('prez')
-    import prez
-
     # HACK: Use dd.runtime to resolve test branches until #99460 is resolved
     if "DD_TEST_BRANCHES" in os.environ:
         from dd import ddos
