@@ -55,6 +55,8 @@ def main():
     """
     Do stuff
     """
+    global logger
+
     # Initialize logging
     log_handler = init_logging()
 
@@ -63,6 +65,10 @@ def main():
 
     # Create an API instance
     tk = sgtk.sgtk_from_path(sgtk.pipelineconfig_utils.get_config_install_location())
+
+    # attach our logger to the tank instance
+    # this will be detected by the shotgun and shell engines and used.
+    tk.log = logger
 
     # If we're opening a new file, get context from cwd
     ctx = tk.context_from_path(os.getcwd())
@@ -89,10 +95,6 @@ def main():
         if os.environ.get("DD_DEBUG"):
             import pdb; pdb.post_mortem()
         raise
-        
-    # If we have an engine, then hand off logging responsibilities
-    # to it and remove the startup log handler
-    LogManager().root_logger.removeHandler(log_handler)
 
     try:
         return engine.execute_command("Publish...", [])
