@@ -101,7 +101,10 @@ def _resolve_include(file_name, include, context):
                 template_keys[key_name] = StringKey(key_name)
 
             # Make a template
-            template = TemplatePath(include, template_keys, primary_data_root)
+            template = TemplatePath(include,
+                                    template_keys,
+                                    context.sgtk.pipeline_configuration,
+                                    primary_data_root)
         except TankError as e:
             raise TankError("Syntax error in %s: Could not transform include path '%s' "
                             "into a template: %s" % (file_name, include, e))

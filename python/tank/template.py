@@ -558,7 +558,12 @@ class TemplatePath(Template):
         """
         parent_definition = os.path.dirname(self.definition)
         if parent_definition:
-            return TemplatePath(parent_definition, self.keys, self.root_path, None, self._per_platform_roots)
+            return TemplatePath(parent_definition,
+                                self.keys,
+                                self.pipeline_configuration,
+                                self.root_path,
+                                None,
+                                self._per_platform_roots)
         return None
 
 

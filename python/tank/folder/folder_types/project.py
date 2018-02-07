@@ -79,7 +79,11 @@ class Project(Entity):
         Should return a TemplatePath object for the path of form: "{Project}"
         """
         template_path = "{%s}" % self._entity_type
-        return TemplatePath(template_path, self._tk.template_keys, self.get_storage_root(), self.name)
+        return TemplatePath(template_path,
+                            self._tk.template_keys,
+                            self._tk.pipeline_configuration,
+                            self.get_storage_root(),
+                            self.name)
 
     def get_storage_root(self):
         """
