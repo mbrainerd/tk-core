@@ -1052,11 +1052,14 @@ class PipelineConfiguration(object):
         :returns: Return value of the hook.
         """
         # this is a new style hook which supports an inheritance chain
-        
+        hook_paths = []
+
         # first add the built-in core hook to the chain
         file_name = "%s.py" % hook_name
-        hooks_path = os.path.abspath(os.path.join(self.get_core_location(), "hooks"))
-        hook_paths = [os.path.join(hooks_path, file_name)]
+        hook_folder = os.path.abspath(os.path.join(self.get_core_location(), "hooks"))
+        hook_path = os.path.join(hook_folder, file_name)
+        if os.path.exists(hook_path):
+            hook_paths.append(hook_path)
 
         # the hook.method display name used when logging the metric
         hook_method_display = "%s.%s" % (hook_name, method_name)
