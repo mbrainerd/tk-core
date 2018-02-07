@@ -24,7 +24,7 @@ from .. import hook
 from ..util.metrics import EventMetric
 from ..log import LogManager
 from ..errors import TankError, TankNoDefaultValueError
-from .errors import TankContextChangeNotSupportedError
+from .errors import TankContextChangeNotSupportedError, TankCurrentModuleNotFoundError
 from . import constants
 from .import_stack import ImportStack
 
@@ -392,6 +392,15 @@ class TankBundle(object):
         :returns: :class:`~sgtk.platform.Environment`
         """
         return self.__env
+
+    @env.setter
+    def env(self, env):
+        """
+        Sets the current environment associated with this item.
+
+        :param env: The new environment to associate with the bundle.
+        """
+        self.__env = env
 
     @property
     def tank(self):
@@ -952,14 +961,14 @@ class TankBundle(object):
             # have some implicit rules for handling ambiguity since
             # there can be multiple items (engines, apps etc) potentially
             # having the same instance name.
-            fw_instances = self.__env.get_frameworks()
+            fw_instances = self.env.get_frameworks()
             if instance not in fw_instances:
                 raise TankError("%s config setting %s: This hook is referring to the configuration value '%s', "
                                 "but no framework with instance name '%s' can be found in the currently "
                                 "running environment. The currently loaded frameworks "
                                 "are %s." % (self, settings_name, hook_expression, instance, ", ".join(fw_instances)))
 
-            fw_desc = self.__env.get_framework_descriptor(instance)
+            fw_desc = self.env.get_framework_descriptor(instance)
             if not(fw_desc.exists_local()):
                 raise TankError("%s config setting %s: This hook is referring to the configuration value '%s', "
                                 "but the framework with instance name '%s' does not exist on disk. Please run "
@@ -1001,7 +1010,7 @@ class TankBundle(object):
 
         # make sure to replace the `{env_name}` token if it exists.
         if "{env_name}" in value:
-            env_name = self.__env.name
+            env_name = self.env.name
             if not env_name:
                 raise TankError(
                     "No environment could be determined for value '%s'. "
@@ -1084,14 +1093,14 @@ class TankBundle(object):
             # have some implicit rules for handling ambiguity since
             # there can be multiple items (engines, apps etc) potentially
             # having the same instance name.
-            fw_instances = self.__env.get_frameworks()
+            fw_instances = self.env.get_frameworks()
             if instance not in fw_instances:
                 raise TankError("%s: This path is referring to the configuration value '%s', "
                                 "but no framework with instance name '%s' can be found in the currently "
                                 "running environment. The currently loaded frameworks "
                                 "are %s." % (self, path, instance, ", ".join(fw_instances)))
 
-            fw_desc = self.__env.get_framework_descriptor(instance)
+            fw_desc = self.env.get_framework_descriptor(instance)
             if not(fw_desc.exists_local()):
                 raise TankError("%s: This path is referring to the configuration value '%s', "
                                 "but the framework with instance name '%s' does not exist on disk. Please run "
@@ -1418,8 +1427,11 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
 
     :returns: Resolved value of input setting key
     """
-    from .util import current_bundle
-    bundle = bundle or current_bundle()
+    try:
+        from .util import current_bundle
+        bundle = bundle or current_bundle()
+    except TankCurrentModuleNotFoundError:
+        pass
 
     # Get the value for the supplied key
     if key in settings:
@@ -1466,8 +1478,11 @@ def resolve_default_value(
         be used.
     :return: The resolved default value
     """
-    from .util import current_bundle
-    bundle = bundle or current_bundle()
+    try:
+        from .util import current_bundle
+        bundle = bundle or current_bundle()
+    except TankCurrentModuleNotFoundError:
+        pass
 
     default_missing = False
 

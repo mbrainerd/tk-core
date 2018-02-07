@@ -75,8 +75,6 @@ class Engine(TankBundle):
         :param env: An Environment object to associate with this engine.
 
         """
-        
-        self.__env = env
         self.__instance_name = instance_name
         self.__applications = {}
         self.__application_pool = {}
@@ -105,10 +103,10 @@ class Engine(TankBundle):
         self._async_invoker = None
 
         # get the engine settings
-        settings = self.__env.get_engine_settings(instance_name)
+        settings = env.get_engine_settings(instance_name)
         
         # get the descriptor representing the engine        
-        descriptor = self.__env.get_engine_descriptor(instance_name)        
+        descriptor = env.get_engine_descriptor(instance_name)        
 
         # create logger for this engine.
         # log will be parented in a sgtk.env.environment_name.instance_name hierarchy
@@ -131,7 +129,7 @@ class Engine(TankBundle):
             )
         
         # set up any frameworks defined
-        setup_frameworks(self, self, self.__env, descriptor)
+        setup_frameworks(self, self, env, descriptor)
         
         # run the engine init
         self.log_debug("Engine init: Instantiating %s" % self)
@@ -265,7 +263,7 @@ class Engine(TankBundle):
     def __repr__(self):
         return "<Sgtk Engine 0x%08x: %s, env: %s>" % (id(self),  
                                                       self.name, 
-                                                      self.__env.name)
+                                                      self.env.name)
 
     ##########################################################################################
     # properties used by internal classes, not part of the public interface
@@ -542,9 +540,9 @@ class Engine(TankBundle):
                   ``description`` and ``disk_location``.
         """
         data = {}
-        data["name"] = self.__env.name
-        data["description"] = self.__env.description
-        data["disk_location"] = self.__env.disk_location
+        data["name"] = self.env.name
+        data["description"] = self.env.description
+        data["disk_location"] = self.env.disk_location
         
         return data
 
@@ -820,7 +818,7 @@ class Engine(TankBundle):
             # been loaded from the __application_pool, which is persistent.
             old_context = copy.deepcopy(self.context)
             new_engine_settings = new_env.get_engine_settings(self.__instance_name)
-            self.__env = new_env
+            self.env = new_env
             self.context = new_context
             self.settings = new_engine_settings
             self.__load_apps(reuse_existing_apps=True, old_context=old_context)
@@ -2330,9 +2328,9 @@ class Engine(TankBundle):
         self.__commands = dict()
         self.__register_reload_command()
 
-        for app_instance_name in self.__env.get_apps(self.__instance_name):
+        for app_instance_name in self.env.get_apps(self.__instance_name):
             # Get a handle to the app bundle.
-            descriptor = self.__env.get_app_descriptor(
+            descriptor = self.env.get_app_descriptor(
                 self.__instance_name,
                 app_instance_name,
             )
@@ -2345,7 +2343,7 @@ class Engine(TankBundle):
             try:
                 # get the app settings data and validate it.
                 app_schema = descriptor.configuration_schema
-                app_settings = self.__env.get_app_settings(
+                app_settings = self.env.get_app_settings(
                     self.__instance_name,
                     app_instance_name,
                 )
@@ -2370,7 +2368,7 @@ class Engine(TankBundle):
                 # validation error - probably some issue with the settings!
                 # report this as an error message.
                 self.log_error("App configuration Error for %s (configured in environment '%s'). "
-                               "It will not be loaded: %s" % (app_instance_name, self.__env.disk_location, e))
+                               "It will not be loaded: %s" % (app_instance_name, self.env.disk_location, e))
                 continue
             
             except Exception:
@@ -2378,7 +2376,7 @@ class Engine(TankBundle):
                 # with the engire call stack!
                 self.log_exception("A general exception was caught while trying to "
                                    "validate the configuration loaded from '%s' for app %s. "
-                                   "The app will not be loaded." % (self.__env.disk_location, app_instance_name))
+                                   "The app will not be loaded." % (self.env.disk_location, app_instance_name))
                 continue
 
             # If we're told to reuse existing app instances, check for it and
@@ -2407,7 +2405,7 @@ class Engine(TankBundle):
 
                         # Make sure our frameworks are up and running properly for
                         # the new context.
-                        setup_frameworks(self, app, self.__env, descriptor)
+                        setup_frameworks(self, app, self.env, descriptor)
 
                         # Repopulate the app's commands into the engine.
                         for command_name, command in self.__command_pool.iteritems():
@@ -2448,10 +2446,10 @@ class Engine(TankBundle):
                                                   descriptor, 
                                                   app_settings, 
                                                   app_instance_name, 
-                                                  self.__env)
+                                                  self.env)
                 
                 # load any frameworks required
-                setup_frameworks(self, app, self.__env, descriptor)
+                setup_frameworks(self, app, self.env, descriptor)
                 
                 # track the init of the app
                 self.__currently_initializing_app = app

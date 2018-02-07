@@ -25,6 +25,7 @@ from . import authentication
 from .util import login
 from .util import shotgun_entity
 from .util import shotgun
+from .util.singleton import Threaded
 from . import constants
 from .errors import TankError, TankContextDeserializationError
 from .path_cache import PathCache
@@ -32,6 +33,63 @@ from .template import TemplatePath
 from . import LogManager
 
 log = LogManager.get_logger(__name__)
+
+
+class ContextCache(Threaded):
+    """
+    Cache of plugin settings per context.
+    """
+    def __init__(self):
+        """
+        Constructor.
+        """
+        Threaded.__init__(self)
+        self._cache = dict()
+
+    def __build_key(self, entity_dict):
+        """
+        Helper method to build the lookup key from an entity dict
+
+        :param entity_dict: The dictionary to use to generate the key
+
+        :returns: A unique identifier that can be used as a key for context lookup
+        """
+        key_dict = {}
+        if "type" in entity_dict:
+            key_dict["type"] = entity_dict["type"]
+        if "id" in entity_dict:
+            key_dict["id"] = entity_dict["id"]
+        if "user" in entity_dict:
+            key_dict["user"] = entity_dict["user"].get("id")
+        if "step" in entity_dict:
+            key_dict["step"] = entity_dict["step"].get("id")
+
+        return tuple(sorted(key_dict.items()))
+
+    @Threaded.exclusive
+    def get(self, entity_dict):
+        """
+        Retrieve the cached context.
+
+        :param entity_dict: The entity dict for the context we desire.
+
+        :returns: The associated Context object or None
+        """
+        key = self.__build_key(entity_dict)
+        return self._cache.get(key)
+
+    @Threaded.exclusive
+    def add(self, entity_dict, context):
+        """
+        Cache the Context for a given entity lookup dict.
+
+        :param entity_dict: The entity dict to associate with the context.
+        :param context: Context object to be cached.
+        """
+        key = self.__build_key(entity_dict)
+        self._cache[key] = context
+
+g_context_cache = ContextCache()
 
 
 class Context(object):
@@ -799,6 +857,34 @@ class Context(object):
         # and lastly make the obejct
         return cls(**data)
 
+
+    ##########################################################################################
+    # internal API
+
+    def sync_task_and_step(self, other):
+        """
+        Syncs the current context's task and step with another context.
+
+        This method only sets the task and step if the contexts' entities and
+        additional_entities lists match, and only if the current context's task
+        and step, respectively, are not already set.
+        """
+        if self.__entity and other.entity and \
+           self.__entity["id"] == other.entity["id"] and \
+           self.__additional_entities == other.additional_entities:
+
+            # cool, everything is matching down to the step/task level.
+            # if context is missing a step and a task, we try to auto populate it.
+            # (note: weird edge that a context can have a task but no step)
+            if not self.__task:
+                if not self.__step:
+                    self.__step = other.step
+
+                # now try to assign the previous task but only if the step matches!
+                if self.__step == other.step:
+                    self.__task = other.task
+
+
     ################################################################################################
     # private methods
 
@@ -1176,51 +1262,57 @@ def from_entity_dictionary(tk, entity_dict, previous_context=None):
 def _from_entity_dictionary(tk, entity_dict, previous_context=None):
     """
     """
-    # Get a context-valid entity dictionary
-    entity_dict = _get_valid_entity_dict(tk, entity_dict)
+    # Basic sanity check
+    if not isinstance(entity_dict, dict):
+        raise TankError("Cannot create a context from an empty or invalid entity dictionary!")
 
-    # Embed the entity in the appropriate field
-    entity_type = entity_dict.get("type")
-    if entity_type == "Project":
-        entity_dict["project"] = _build_clean_entity(tk, entity_dict)
-    elif entity_type == "Task":
-        entity_dict["task"] = _build_clean_entity(tk, entity_dict)
+    # Check if we've processed a context for this entity before
+    # and if so return from cache
+    context = g_context_cache.get(entity_dict)
+    if context:
+        # Deepcopy so we return a unique object
+        context = copy.deepcopy(context)
+        log_msg = "Loading context from cache"
+
     else:
-        entity_dict["entity"] = _build_clean_entity(tk, entity_dict)
+        # Get a context-valid entity dictionary
+        entity_dict = _get_valid_entity_dict(tk, entity_dict)
 
-    # Initialize the new context dictionary
-    context_dict = {
-        "tk":                   tk,
-        "project":              entity_dict.get("project"),
-        "entity":               entity_dict.get("entity"),
-        "step":                 entity_dict.get("step"),
-        "user":                 entity_dict.get("user"),
-        "task":                 entity_dict.get("task"),
-        "source_entity":        entity_dict.get("source_entity"),
-        "additional_entities":  entity_dict.get("additional_entities") or []
-    }
+        # Embed the entity in the appropriate field
+        entity_type = entity_dict.get("type")
+        if entity_type == "Project":
+            entity_dict["project"] = _build_clean_entity(tk, entity_dict)
+        elif entity_type == "Task":
+            entity_dict["task"] = _build_clean_entity(tk, entity_dict)
+        else:
+            entity_dict["entity"] = _build_clean_entity(tk, entity_dict)
 
-    # See if we can populate any missing fields from the previous context
+        # Initialize the new context dictionary
+        context_dict = {
+            "tk":                   tk,
+            "project":              entity_dict.get("project"),
+            "entity":               entity_dict.get("entity"),
+            "step":                 entity_dict.get("step"),
+            "user":                 entity_dict.get("user"),
+            "task":                 entity_dict.get("task"),
+            "source_entity":        entity_dict.get("source_entity"),
+            "additional_entities":  entity_dict.get("additional_entities") or []
+        }
+
+        # Build the context object
+        context = Context(**context_dict)
+        log_msg = "Building context"
+
+        # Add context to cache
+        g_context_cache.add(entity_dict, context)
+
+    # If a previous context has been provided, see if we can populate
+    # any missing fields from it
     if previous_context:
-        if "entity" in context_dict and previous_context.entity:
-            if context_dict["entity"]["id"] == previous_context.entity["id"] and \
-               context_dict["additional_entities"] == previous_context.additional_entities:
+        context.sync_task_and_step(previous_context)
 
-                # cool, everything is matching down to the step/task level.
-                # if context is missing a step and a task, we try to auto populate it.
-                # (note: weird edge that a context can have a task but no step)
-                if not context_dict.get("task"):
-                    if not context_dict.get("step"):
-                        context_dict["step"] = previous_context.step
-
-                    # now try to assign previous task but only if the step matches!
-                    if context_dict.get("step") == previous_context.step:
-                        context_dict["task"] = previous_context.task
-
-    # Build the context object
-    context = Context(**context_dict)
-
-    log.debug("Built context:\n%r" % context)
+    # Return the Context object
+    log.debug("%s:\n%r" % (log_msg, context))
     return context
 
 
@@ -1501,10 +1593,6 @@ def _build_entity_dict_from_path(tk, path, required_fields=None, additional_type
 def _get_valid_entity_dict(tk, entity_dict):
     """
     """
-    # Basic sanity check
-    if not isinstance(entity_dict, dict):
-        raise TankError("Cannot create a context from an empty or invalid entity dictionary!")
-
     # Since we are modifying in place, make a copy
     entity_dict = copy.deepcopy(entity_dict)
 

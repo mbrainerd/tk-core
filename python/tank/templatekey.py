@@ -1,11 +1,11 @@
 # Copyright (c) 2013 Shotgun Software Inc.
-# 
+#
 # CONFIDENTIAL AND PROPRIETARY
-# 
-# This work is provided "AS IS" and subject to the Shotgun Pipeline Toolkit 
+#
+# This work is provided "AS IS" and subject to the Shotgun Pipeline Toolkit
 # Source Code License included in this distribution package. See LICENSE.
-# By accessing, using, copying or modifying this work you indicate your 
-# agreement to the Shotgun Pipeline Toolkit Source Code License. All rights 
+# By accessing, using, copying or modifying this work you indicate your
+# agreement to the Shotgun Pipeline Toolkit Source Code License. All rights
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
 """
@@ -53,15 +53,20 @@ class TemplateKey(object):
 
     def __init__(self,
                  name,
+                 pipeline_configuration,
                  default=None,
                  choices=None,
                  shotgun_entity_type=None,
                  shotgun_field_name=None,
                  exclusions=None,
-                 abstract=False, 
-                 length=None):
+                 abstract=False,
+                 length=None,
+                 validate_hook=None,
+                 str_from_value_hook=None,
+                 value_from_str_hook=None):
         """
         :param str name: Name by which the key will be referred.
+        :param pipeline_configuration: The associated PipelineConfiguration object this key belongs to.
         :param default: Default value for this key. If the default is a callable, it will be invoked
                         without any parameters whenever a default value is required.
         :param choices: List of possible values for this key. Can be either a list or a dictionary
@@ -71,8 +76,12 @@ class TemplateKey(object):
         :param list exclusions: List of forbidden values.
         :param bool abstract: Flagging that this should be treated as an abstract key.
         :param int length: If non-None, indicating that the value should be of a fixed length.
+        :param hook validate_hook: Optional validate() method override
+        :param hook str_from_value_hook: Optional str_from_value() method override
+        :param hook value_from_str_hook: Optional value_from_str() method override
         """
         self._name = name
+        self._pipeline_configuration = pipeline_configuration
         self._default = default
 
         # special handling for choices:
@@ -90,6 +99,9 @@ class TemplateKey(object):
         self._shotgun_field_name = shotgun_field_name
         self._is_abstract = abstract
         self._length = length
+        self._validate_hook = validate_hook
+        self._str_from_value_hook = str_from_value_hook
+        self._value_from_str_hook = value_from_str_hook
         self._last_error = ""
 
         # check that the key name doesn't contain invalid characters
@@ -106,7 +118,7 @@ class TemplateKey(object):
 
         if not ((self.default is None) or self.validate(self.default)):
             raise TankError(self._last_error)
-        
+
         if not all(self.validate(choice) for choice in self.choices):
             raise TankError(self._last_error)
 
@@ -139,6 +151,13 @@ class TemplateKey(object):
         The name that the template will use to refer to the key.
         """
         return self._name
+
+    @property
+    def pipeline_configuration(self):
+        """
+        The parent PipelineConfiguration object this item belongs to.
+        """
+        return self._pipeline_configuration
 
     @property
     def length(self):
@@ -184,14 +203,35 @@ class TemplateKey(object):
         List of choices available, e.g. ``['ma', 'mb']``
         """
         return self._choices.keys()
-    
+
     @property
     def labelled_choices(self):
         """
         Dictionary of labelled choices, e.g. ``{'ma': 'Maya Ascii', 'mb': 'Maya Binary'}``
         """
         return self._choices
-    
+
+    @property
+    def validate_hook(self):
+        """
+        The "validate_hook" setting associated with this item
+        """
+        return self._validate_hook
+
+    @property
+    def str_from_value_hook(self):
+        """
+        The "str_from_value_hook" setting associated with this item
+        """
+        return self._str_from_value_hook
+
+    @property
+    def value_from_str_hook(self):
+        """
+        The "value_from_str_hook" setting associated with this item
+        """
+        return self._value_from_str_hook
+
     def str_from_value(self, value=None, ignore_type=False):
         """
         Returns a string version of a value as appropriate for the key's setting.
@@ -211,7 +251,14 @@ class TemplateKey(object):
             return value if isinstance(value, basestring) else str(value)
 
         if self.validate(value):
-            return self._as_string(value)
+            if self.str_from_value_hook:
+                return self.pipeline_configuration.execute_core_hook_method_internal(
+                                                            self.str_from_value_hook,
+                                                            "str_from_value",
+                                                            self,
+                                                            value=value)
+            else:
+                return self._as_string(value)
         else:
             raise TankError(self._last_error)
 
@@ -222,13 +269,32 @@ class TemplateKey(object):
         :param str_value: The string to translate.
         :returns: The translated value.
         """
-        if self.validate(str_value):
-            value = self._as_value(str_value)
+
+        # this is used by the parser when transforming
+        # a path or string into an actual value.
+        # in this case, we don't want to validate transforms
+        # such as the substring regext transform, since these
+        # may not be valid in both directions.
+        #
+        # for example, a regex that extracts the initials from
+        # a "Firstname Lastname" string will result in a value
+        # which will not match the regex that is used to
+        # extract it.
+        #
+        if self.validate(str_value, validate_transforms=False):
+            if self.value_from_str_hook:
+                value = self.pipeline_configuration.execute_core_hook_method_internal(
+                                                            self.value_from_str_hook,
+                                                            "value_from_str",
+                                                            self,
+                                                            str_value=str_value)
+            else:
+                value = self._as_value(str_value)
         else:
             raise TankError(self._last_error)
         return value
 
-    def validate(self, value):
+    def validate(self, value, validate_transforms=True):
         """
         Test if a value is valid for this key::
 
@@ -248,9 +314,34 @@ class TemplateKey(object):
             False
 
         :param value: Value to test
+        :param validate_transforms: Bool to enable validation of transforms,
+                                    such as a subset calculation
         :returns: Bool
         """
-        
+        if self.validate_hook:
+            try:
+                return self.pipeline_configuration.execute_core_hook_method_internal(
+                                                            self.validate_hook,
+                                                            "validate",
+                                                            self,
+                                                            value=value,
+                                                            validate_transforms=validate_transforms)
+            except Exception as e:
+                # Bad value, report the error to the client code.
+                self._last_error = "validate_hook errored: %s" % str(e)
+                return False
+        else:
+            return self._validate(value, validate_transforms=validate_transforms)
+
+    def _as_string(self, value):
+        raise NotImplementedError
+
+    def _as_value(self, str_value):
+        return str_value
+
+    def _validate(self, value, validate_transforms):
+        """
+        """
         str_value = value if isinstance(value, basestring) else str(value)
 
         # We are not case sensitive
@@ -262,19 +353,13 @@ class TemplateKey(object):
             if str_value.lower() not in [str(x).lower() for x in self.choices]:
                 self._last_error = "%s Illegal value: '%s' not in choices: %s" % (self, value, str(self.choices))
                 return False
-        
+
         if self.length is not None and len(str_value) != self.length:
             self._last_error = ("%s Illegal value: '%s' does not have a length of "
                                 "%d characters." % (self, value, self.length))
             return False
-                        
+
         return True
-
-    def _as_string(self, value):
-        raise NotImplementedError
-
-    def _as_value(self, str_value):
-        return str_value
 
     def __repr__(self):
         return "<Sgtk %s %s>" % (self.__class__.__name__, self.name)
@@ -286,16 +371,20 @@ class StringKey(TemplateKey):
     """
     def __init__(self,
                  name,
+                 pipeline_configuration,
                  default=None,
                  choices=None,
                  filter_by=None,
                  shotgun_entity_type=None,
-                 shotgun_field_name=None, 
+                 shotgun_field_name=None,
                  exclusions=None,
-                 abstract=False, 
+                 abstract=False,
                  length=None,
                  subset=None,
-                 subset_format=None):
+                 subset_format=None,
+                 validate_hook=None,
+                 str_from_value_hook=None,
+                 value_from_str_hook=None):
         """
         :param str name: Name by which the key will be referred.
         :param str default: Default value for the key.
@@ -317,17 +406,17 @@ class StringKey(TemplateKey):
         #
         # Note that we cannot use a traditional [^a-zA-Z0-9] regex since we want
         # to support unicode and not just ascii. \W covers "Non-word characters",
-        # which is basically the international equivalent of 7-bit ascii 
-        #        
+        # which is basically the international equivalent of 7-bit ascii
+        #
         self._filter_regex_u = None
         self._custom_regex_u = None
 
         if self._filter_by == "alphanumeric":
             self._filter_regex_u = re.compile(u"[\W_]", re.UNICODE)
-        
+
         elif self._filter_by == "alpha":
             self._filter_regex_u = re.compile(u"[\W_0-9]", re.UNICODE)
-        
+
         elif self._filter_by is not None:
             # filter_by is a regex
             self._custom_regex_u = re.compile(self._filter_by, re.UNICODE)
@@ -349,13 +438,17 @@ class StringKey(TemplateKey):
             self._subset_regex = None
 
         super(StringKey, self).__init__(name,
+                                        pipeline_configuration,
                                         default=default,
                                         choices=choices,
                                         shotgun_entity_type=shotgun_entity_type,
                                         shotgun_field_name=shotgun_field_name,
                                         exclusions=exclusions,
                                         abstract=abstract,
-                                        length=length)
+                                        length=length,
+                                        validate_hook=validate_hook,
+                                        str_from_value_hook=str_from_value_hook,
+                                        value_from_str_hook=value_from_str_hook)
 
         if self._subset_format and not self._subset_str:
             raise TankError("%s: Cannot specify subset_format parameter without a subset parameter." % self)
@@ -430,41 +523,6 @@ class StringKey(TemplateKey):
         """
         return self._subset_format
 
-    def validate(self, value):
-        """
-        Test if a value is valid for this key.
-
-        :param value: Value to test
-        :returns: True if valid, false if not.
-        """
-        # make sure that transforms such as a subset calculation
-        # are valid.
-        return self.__validate(value, validate_transforms=True)
-
-    def value_from_str(self, str_value):
-        """
-        Validates and translates a string into an appropriate value for this key.
-
-        :param str_value: The string to translate.
-        :returns: The translated value.
-        """
-        # this is used by the parser when transforming
-        # a path or string into an actual value.
-        # in this case, we don't want to validate transforms
-        # such as the substring regext transform, since these
-        # may not be valid in both directions.
-        #
-        # for example, a regex that extracts the initials from
-        # a "Firstname Lastname" string will result in a value
-        # which will not match the regex that is used to
-        # extract it.
-        #
-        if self.__validate(str_value, validate_transforms=False):
-            value = self._as_value(str_value)
-        else:
-            raise TankError(self._last_error)
-        return value
-
     def _as_string(self, value):
         """
         Converts the given value to a string representation.
@@ -513,7 +571,7 @@ class StringKey(TemplateKey):
 
         return str_value
 
-    def __validate(self, value, validate_transforms):
+    def _validate(self, value, validate_transforms):
         """
         Test if a value is valid for this key.
 
@@ -565,8 +623,8 @@ class StringKey(TemplateKey):
                     )
                     return False
 
-
-        return super(StringKey, self).validate(value)
+        # Run the parent validation
+        return super(StringKey, self)._validate(value, validate_transforms)
 
 
 
@@ -578,8 +636,12 @@ class TimestampKey(TemplateKey):
     def __init__(
         self,
         name,
+        pipeline_configuration,
         default=None,
-        format_spec="%Y-%m-%d-%H-%M-%S"
+        format_spec="%Y-%m-%d-%H-%M-%S",
+        validate_hook=None,
+        str_from_value_hook=None,
+        value_from_str_hook=None
     ):
         """
         :param str name: Name by which the key will be referred.
@@ -628,7 +690,11 @@ class TimestampKey(TemplateKey):
 
         super(TimestampKey, self).__init__(
             name,
-            default=default
+            pipeline_configuration,
+            default=default,
+            validate_hook=validate_hook,
+            str_from_value_hook=str_from_value_hook,
+            value_from_str_hook=value_from_str_hook
         )
 
     @property
@@ -663,7 +729,7 @@ class TimestampKey(TemplateKey):
         """
         return datetime.datetime.utcnow()
 
-    def validate(self, value):
+    def _validate(self, value, validate_transforms):
         """
         Test if a value is valid for this key.
 
@@ -723,6 +789,7 @@ class IntegerKey(TemplateKey):
 
     def __init__(self,
                  name,
+                 pipeline_configuration,
                  default=None,
                  choices=None,
                  format_spec=None,
@@ -731,7 +798,10 @@ class IntegerKey(TemplateKey):
                  exclusions=None,
                  abstract=False,
                  length=None,
-                 strict_matching=None):
+                 strict_matching=None,
+                 validate_hook=None,
+                 str_from_value_hook=None,
+                 value_from_str_hook=None):
         """
         :param str name: Name by which the key will be referred.
         :param int default: Default value for this key.
@@ -757,13 +827,17 @@ class IntegerKey(TemplateKey):
         # Validate and set up strict matching defailts
         self._init_strict_matching(name, strict_matching)
         super(IntegerKey, self).__init__(name,
+                                         pipeline_configuration,
                                          default=default,
                                          choices=choices,
                                          shotgun_entity_type=shotgun_entity_type,
                                          shotgun_field_name=shotgun_field_name,
                                          exclusions=exclusions,
                                          abstract=abstract,
-                                         length=length)
+                                         length=length,
+                                         validate_hook=validate_hook,
+                                         str_from_value_hook=str_from_value_hook,
+                                         value_from_str_hook=value_from_str_hook)
 
     @property
     def format_spec(self):
@@ -855,7 +929,7 @@ class IntegerKey(TemplateKey):
 
         self._strict_matching = strict_matching
 
-    def validate(self, value):
+    def _validate(self, value, validate_transforms):
         if value is not None:
             if isinstance(value, basestring):
                 # We have a string, make sure it loosely or strictly matches the format.
@@ -866,7 +940,7 @@ class IntegerKey(TemplateKey):
             elif not isinstance(value, int):
                 self._last_error = "%s Illegal value '%s', expected an Integer" % (self, value)
                 return False
-            return super(IntegerKey, self).validate(value)
+            return super(IntegerKey, self)._validate(value, validate_transforms)
         return True
 
     def _loosely_matches(self, value):
@@ -990,22 +1064,26 @@ class SequenceKey(IntegerKey):
         '/mnt/proj/shot_2/publish/render.$F4.exr'
 
     """
-    
+
     # special keywork used when format is specified directly in value
     FRAMESPEC_FORMAT_INDICATOR = "FORMAT:"
     # valid format strings that can be used with this Key type
     VALID_FORMAT_STRINGS = ["%d", "#", "@", "$F", "<UDIM>", "$UDIM"]
     # flame sequence pattern regex ('[1234-5434]')
     FLAME_PATTERN_REGEX = "^\[[0-9]+-[0-9]+\]$"
-    
+
     def __init__(self,
                  name,
+                 pipeline_configuration,
                  default=None,
                  choices=None,
                  format_spec='01',
                  shotgun_entity_type=None,
                  shotgun_field_name=None,
-                 exclusions=None):
+                 exclusions=None,
+                 validate_hook=None,
+                 str_from_value_hook=None,
+                 value_from_str_hook=None):
         """
         :param str name: Name by which the key will be referred.
         :param str default: Default value for this key.
@@ -1019,15 +1097,16 @@ class SequenceKey(IntegerKey):
         """
         # determine the actual frame specs given the padding (format_spec)
         # and the allowed formats
-        self._frame_specs = [self._resolve_frame_spec(x, format_spec) for x in self.VALID_FORMAT_STRINGS ]
+        self._frame_specs = [self._resolve_frame_spec(x, format_spec) for x in self.VALID_FORMAT_STRINGS]
 
         # all sequences are abstract by default and have a default value of %0Xd
         abstract = True
         if default is None:
             # default value is %d form
             default = self._resolve_frame_spec("%d", format_spec)
-        
+
         super(SequenceKey, self).__init__(name,
+                                          pipeline_configuration,
                                           default=default,
                                           choices=choices,
                                           strict_matching=False,
@@ -1035,32 +1114,35 @@ class SequenceKey(IntegerKey):
                                           shotgun_entity_type=shotgun_entity_type,
                                           shotgun_field_name=shotgun_field_name,
                                           exclusions=exclusions,
-                                          abstract=abstract)
+                                          abstract=abstract,
+                                          validate_hook=validate_hook,
+                                          str_from_value_hook=str_from_value_hook,
+                                          value_from_str_hook=value_from_str_hook)
 
 
-    def validate(self, value):
+    def _validate(self, value, validate_transforms):
 
         # use a std error message
         full_format_strings = ["%s %s" % (self.FRAMESPEC_FORMAT_INDICATOR, x) for x in self.VALID_FORMAT_STRINGS]
         error_msg = "%s Illegal value '%s', expected an Integer, a frame spec or format spec.\n" % (self, value)
         error_msg += "Valid frame specs: %s\n" % str(self._frame_specs)
         error_msg += "Valid format strings: %s\n" % full_format_strings
-        
+
 
         if isinstance(value, basestring) and value.startswith(self.FRAMESPEC_FORMAT_INDICATOR):
             # FORMAT: YXZ string - check that XYZ is in VALID_FORMAT_STRINGS
-            pattern = self._extract_format_string(value)        
+            pattern = self._extract_format_string(value)
             if pattern in self.VALID_FORMAT_STRINGS:
                 return True
             else:
                 self._last_error = error_msg
                 return False
-                
+
         elif isinstance(value, basestring) and re.match(self.FLAME_PATTERN_REGEX, value):
             # value is matching the flame-style sequence pattern
             # [1234-5678]
             return True
-                
+
         elif not(isinstance(value, int) or value.isdigit()):
             # not a digit - so it must be a frame spec! (like %05d)
             # make sure that it has the right length and formatting.
@@ -1069,12 +1151,12 @@ class SequenceKey(IntegerKey):
             else:
                 self._last_error = error_msg
                 return False
-                
+
         else:
-            return super(SequenceKey, self).validate(value)
+            return super(SequenceKey, self)._validate(value, validate_transforms)
 
     def _as_string(self, value):
-        
+
         if isinstance(value, basestring) and value.startswith(self.FRAMESPEC_FORMAT_INDICATOR):
             # this is a FORMAT: XYZ - convert it to the proper resolved frame spec
             pattern = self._extract_format_string(value)
@@ -1087,19 +1169,19 @@ class SequenceKey(IntegerKey):
         if value in self._frame_specs:
             # a frame spec like #### @@@@@ or %08d
             return value
-        
+
         # resolve it via the integerKey base class
         return super(SequenceKey, self)._as_string(value)
 
     def _as_value(self, str_value):
-        
+
         if str_value in self._frame_specs:
             return str_value
-        
+
         if re.match(self.FLAME_PATTERN_REGEX, str_value):
             # this is a flame style sequence token [1234-56773]
             return str_value
-    
+
         # resolve it via the integerKey base class
         return super(SequenceKey, self)._as_value(str_value)
 
@@ -1113,26 +1195,26 @@ class SequenceKey(IntegerKey):
             # passthrough
             pattern = value
         return pattern
-    
+
     def _resolve_frame_spec(self, format_string, format_spec):
         """
         Turns a format_string %d and a format_spec "03" into a sequence identifier (%03d)
         """
-        
+
         error_msg = "Illegal format pattern for framespec: '%s'. " % format_string
         error_msg += "Legal patterns are: %s" % ", ".join(self.VALID_FORMAT_STRINGS)
-    
-        
+
+
         if format_string not in self.VALID_FORMAT_STRINGS:
             raise TankError(error_msg)
-        
+
         if format_spec.startswith("0") and format_spec != "01":
             use_zero_padding = True
-        else: 
+        else:
             use_zero_padding = False
-        
+
         places = int(format_spec) if format_spec.isdigit() else 1
-        
+
         if use_zero_padding:
             if format_string == "%d":
                 frame_spec = "%%0%dd" % places
@@ -1162,17 +1244,17 @@ class SequenceKey(IntegerKey):
                 frame_spec = format_string
             else:
                 raise TankError(error_msg)
-                
+
         return frame_spec
 
 
-def make_keys(data):
+def make_keys(pipeline_configuration, data):
     """
     Factory method for instantiating template keys.
 
     :param data: Key data.
     :type data: Dictionary of the form: {<key name>: {'type': <key type>, <option>: <option value}
-     
+
     :returns: Dictionary of the form: {<key name>: <TemplateKey object>}
     """
     keys = {}
@@ -1197,6 +1279,6 @@ def make_keys(data):
         else:
             key_name = initial_key_name
 
-        key = KeyClass(key_name, **prepped_data)
+        key = KeyClass(key_name, pipeline_configuration, **prepped_data)
         keys[initial_key_name] = key
     return keys
