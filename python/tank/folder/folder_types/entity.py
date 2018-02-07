@@ -119,7 +119,11 @@ class Entity(Folder):
         if self._parent:
             template_path = os.path.join(str(self._parent.template_path), template_path)
 
-        return TemplatePath(template_path, self._tk.template_keys, self.get_storage_root(), self.name)
+        return TemplatePath(template_path,
+                            self._tk.template_keys,
+                            self._tk.pipeline_configuration,
+                            self.get_storage_root(),
+                            self.name)
 
     def get_entity_type(self):
         """
