@@ -21,15 +21,16 @@ Returns a dict with two keys:
 
 """
 
-from tank import Hook
+import sgtk
+HookBaseClass = sgtk.get_hook_baseclass()
 
-class TemplateAdditionalEntities(Hook):
+class TemplateAdditionalEntities(HookBaseClass):
 
-    def execute(self, key_name, sg_filters, query_function):
+    def execute(self, key_name, sg_filters, query_function, **kwargs):
         """
         Returns an entity
         """
         if key_name in ["Element", "Camera", "Cut"]:
-            return query_function(key_name, sg_filters):
+            return query_function(key_name, sg_filters)
 
         return query_function(key_name, [])
