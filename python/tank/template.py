@@ -19,10 +19,10 @@ import sys
 import copy
 
 from . import templatekey
-from .errors import TankError
 from . import constants
+from .errors import TankError
 from .template_path_parser import TemplatePathParser
-from .util.shotgun import get_sg_connection
+from .util import shotgun
 from . import LogManager
 
 log = LogManager.get_logger(__name__)
@@ -82,6 +82,7 @@ class Template(object):
         """
         self._name = name
         self._pipeline_configuration = pipeline_configuration
+        self._entity_fields_cache = {}
 
         # version for __repr__
         self._repr_def = self._fix_key_names(definition, keys)
@@ -502,71 +503,6 @@ class Template(object):
 
         return fields
 
-
-class TemplatePath(Template):
-    """
-    :class:`Template` representing a complete path on disk. The template definition is multi-platform
-    and you can pass it per-os roots given by a separate :meth:`root_path`.
-    """
-    def __init__(self, definition, keys, pipeline_configuration, root_path, name=None, per_platform_roots=None):
-        """
-        TemplatePath objects are typically created automatically by toolkit reading
-        the template configuration.
-
-        :param definition: Template definition string.
-        :param keys: Mapping of key names to keys (dict)
-        :param pipeline_configuration: The associated PipelineConfiguration object this belongs to.
-        :param root_path: Path to project root for this template.
-        :param name: Optional name for this template.
-        :param per_platform_roots: Root paths for all supported operating systems.
-                                   This is a dictionary with sys.platform-style keys
-        """
-        super(TemplatePath, self).__init__(definition, keys, pipeline_configuration, name=name)
-        self._prefix = root_path
-        self._per_platform_roots = per_platform_roots
-        self._token = os.path.sep
-
-        # Make definition use platform separator
-        for index, rel_definition in enumerate(self._definitions):
-            self._definitions[index] = os.path.join(*split_path(rel_definition))
-
-        # get definition ready for string substitution
-        self._cleaned_definitions = []
-        for definition in self._definitions:
-            self._cleaned_definitions.append(self._clean_definition(definition))
-
-        # split by format strings the definition string into tokens
-        self._static_tokens = []
-        for definition in self._definitions:
-            self._static_tokens.append(self._calc_static_tokens(definition))
-
-    @property
-    def root_path(self):
-        """
-        Returns the root path associated with this template.
-        """
-        return self._prefix
-
-    @property
-    def parent(self):
-        """
-        Returns Template representing the parent of this object.
-
-        For paths, this means the parent folder.
-
-        :returns: :class:`Template`
-        """
-        parent_definition = os.path.dirname(self.definition)
-        if parent_definition:
-            return TemplatePath(parent_definition,
-                                self.keys,
-                                self.pipeline_configuration,
-                                self.root_path,
-                                None,
-                                self._per_platform_roots)
-        return None
-
-
     def get_entities(self, input_path, skip_keys=None):
         """
         Extracts a list of entities from a string that can be used for building a context. Example:
@@ -596,9 +532,18 @@ class TemplatePath(Template):
         # Get fields parsed from the path
         path_fields = self.get_fields(input_path, skip_keys)
 
+        # Copy the list of this template's keys
+        template_keys = copy.copy(self.keys)
+
         if "Project" not in path_fields:
             # Get the project name separately since it isn't typically parsed by get_fields
             path_fields["Project"] = os.path.basename(self.root_path)
+
+            # Add a key for it so we can run our search later on
+            template_keys["Project"] = templatekey.StringKey("Project",
+                                                             self.pipeline_configuration,
+                                                             shotgun_entity_type="Project",
+                                                             shotgun_field_name="name")
 
         def _get_entity_from_key(key_name, sg_filters):
             """
@@ -609,11 +554,11 @@ class TemplatePath(Template):
             if key_name not in path_fields:
                 return None
 
-            if key_name not in self.keys:
+            if key_name not in template_keys:
                 log.warning("Cannot find TemplateKey for '%s'. Skipping..." % key_name)
                 return None
 
-            key = self.keys[key_name]
+            key = template_keys[key_name]
             value = path_fields[key_name]
 
             # Only process this key if it is an entity field
@@ -627,7 +572,7 @@ class TemplatePath(Template):
             fields = ["type", "id", field_name]
 
             # Get the shotgun connection object
-            sg = get_sg_connection()
+            sg = shotgun.get_sg_connection()
 
             entity = sg.find_one(entity_type, filters, fields)
             if entity is None:
@@ -701,6 +646,7 @@ class TemplatePath(Template):
 
             entity = self.pipeline_configuration.execute_core_hook_internal(
                                             "template_additional_entities",
+                                            self,
                                             key_name=key_name,
                                             sg_filters=sg_filters,
                                             query_function=_get_entity_from_key)
@@ -709,6 +655,163 @@ class TemplatePath(Template):
 
         return entities
 
+    def get_entity_fields(self, entities, validate=False):
+        """
+        Returns a dictionary of field keys and their matching values corresponding to the entities
+        that match the fields of the Template object.
+
+        :param entities:    A list of entity dictionaries
+        :type entities:     List
+        :param validate:    If True then the fields found will be checked to ensure that all
+                            expected fields for the entity was found.  If a field is missing then
+                            a :class:`TankError` will be raised
+        :type validate:     Bool
+
+        :returns: A dictionary of template fields found matching the input entities.
+        :rtype: Dictionary
+        """
+        fields = {}
+        entity_dict = dict([(x["type"], x) for x in entities])
+
+        for key in self.keys.values():
+
+            # check each key to see if it has shotgun query information that we should resolve
+            if key.shotgun_field_name:
+                # this key is a shotgun value that needs fetching!
+
+                # ensure that the input list actually provides the desired entities
+                if not key.shotgun_entity_type in entity_dict:
+                    continue
+
+                entity = entity_dict[key.shotgun_entity_type]
+                entity_type = entity["type"]
+
+                # See if we already have the value
+                if key.shotgun_field_name in entity:
+                    fields[key.name] = entity[key.shotgun_field_name]
+
+                else:
+
+                    # check the entity cache
+                    cache_key = (entity["type"], entity["id"], key.shotgun_field_name)
+                    if cache_key in self._entity_fields_cache:
+                        # already have the value cached - no need to fetch from shotgun
+                        fields[key.name] = self._entity_fields_cache[cache_key]
+
+                    else:
+                        # get the value from shotgun
+                        filters = [["id", "is", entity["id"]]]
+                        query_fields = [key.shotgun_field_name]
+
+                        # Get the shotgun connection object
+                        sg = shotgun.get_sg_connection()
+
+                        result = sg.find_one(key.shotgun_entity_type, filters, query_fields)
+                        if not result:
+                            # no record with that id in shotgun!
+                            raise TankError("Could not retrieve Shotgun data for key '%s'. "
+                                            "No records in Shotgun are matching "
+                                            "entity '%s' (Which is part of the current "
+                                            "Template '%s')" % (key, entity, self))
+
+                        value = result.get(key.shotgun_field_name)
+
+                        # note! It is perfectly possible (and may be valid) to return None values from
+                        # shotgun at this point. In these cases, a None field will be returned in the
+                        # fields dictionary from as_template_fields, and this may be injected into
+                        # a template with optional fields.
+
+                        if value is None:
+                            processed_val = None
+
+                        else:
+                            # now convert the shotgun value to a string.
+                            # note! This means that there is no way currently to create an int key
+                            # in a tank template which matches an int field in shotgun, since we are
+                            # force converting everything into strings...
+                            processed_val = self.pipeline_configuration.execute_core_hook_internal(
+                                                            "process_folder_name",
+                                                            self,
+                                                            entity_type=key.shotgun_entity_type,
+                                                            entity_id=entity.get("id"),
+                                                            field_name=key.shotgun_field_name,
+                                                            value=value)
+
+                            if validate and not key.validate(processed_val):
+                                raise TankError("Template validation failed for value '%s'. This "
+                                                "value was retrieved from entity %s in Shotgun to "
+                                                "represent key '%s'." % (processed_val, entity, key))
+
+                        # all good!
+                        # populate dictionary and cache
+                        fields[key.name] = processed_val
+                        self._entity_fields_cache[cache_key] = processed_val
+
+        return fields
+
+
+class TemplatePath(Template):
+    """
+    :class:`Template` representing a complete path on disk. The template definition is multi-platform
+    and you can pass it per-os roots given by a separate :meth:`root_path`.
+    """
+    def __init__(self, definition, keys, pipeline_configuration, root_path, name=None, per_platform_roots=None):
+        """
+        TemplatePath objects are typically created automatically by toolkit reading
+        the template configuration.
+
+        :param definition: Template definition string.
+        :param keys: Mapping of key names to keys (dict)
+        :param pipeline_configuration: The associated PipelineConfiguration object this belongs to.
+        :param root_path: Path to project root for this template.
+        :param name: Optional name for this template.
+        :param per_platform_roots: Root paths for all supported operating systems.
+                                   This is a dictionary with sys.platform-style keys
+        """
+        super(TemplatePath, self).__init__(definition, keys, pipeline_configuration, name=name)
+        self._prefix = root_path
+        self._per_platform_roots = per_platform_roots
+        self._token = os.path.sep
+
+        # Make definition use platform separator
+        for index, rel_definition in enumerate(self._definitions):
+            self._definitions[index] = os.path.join(*split_path(rel_definition))
+
+        # get definition ready for string substitution
+        self._cleaned_definitions = []
+        for definition in self._definitions:
+            self._cleaned_definitions.append(self._clean_definition(definition))
+
+        # split by format strings the definition string into tokens
+        self._static_tokens = []
+        for definition in self._definitions:
+            self._static_tokens.append(self._calc_static_tokens(definition))
+
+    @property
+    def root_path(self):
+        """
+        Returns the root path associated with this template.
+        """
+        return self._prefix
+
+    @property
+    def parent(self):
+        """
+        Returns Template representing the parent of this object.
+
+        For paths, this means the parent folder.
+
+        :returns: :class:`Template`
+        """
+        parent_definition = os.path.dirname(self.definition)
+        if parent_definition:
+            return TemplatePath(parent_definition,
+                                self.keys,
+                                self.pipeline_configuration,
+                                self.root_path,
+                                None,
+                                self._per_platform_roots)
+        return None
 
     def _apply_fields(self, fields, ignore_types=None, platform=None):
         """
