@@ -98,7 +98,7 @@ def _resolve_include(file_name, include, context):
             # create template key objects        
             template_keys = {}
             for key_name in key_names:
-                template_keys[key_name] = StringKey(key_name)
+                template_keys[key_name] = StringKey(key_name, context.sgtk.pipeline_configuration)
 
             # Make a template
             template = TemplatePath(include,
