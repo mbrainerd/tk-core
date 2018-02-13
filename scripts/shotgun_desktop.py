@@ -17,7 +17,7 @@ import textwrap
 import traceback
 
 import sgtk
-from sgtk.platform.qt import QtCore, QtGui
+from PySide import QtCore, QtGui
 
 __version__ = '1.4.3'
 
@@ -518,8 +518,17 @@ def main():
             "path": pc_path
         }
 
+        # Create an API instance
+        tk = sgtk.sgtk_from_path(pc_path)
+
+        # If we're opening a new file, get context from cwd
+        ctx = tk.context_from_path(os.getcwd())
+
+        # Get the appropriate context entity
+        ctx_entity = ctx.task or ctx.entity or ctx.project
+
         splash.set_message("Launching Engine...")
-        engine = mgr.bootstrap_engine("tk-desktop")
+        engine = mgr.bootstrap_engine("tk-desktop", entity=ctx_entity)
         exit_code = engine.run(splash, version=__version__)
         return exit_code
 

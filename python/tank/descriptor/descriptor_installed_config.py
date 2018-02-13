@@ -144,8 +144,7 @@ class InstalledConfigDescriptor(ConfigDescriptor):
             # this would find any localized APIs.
             return pipeline_config_path
 
-        data = pipelineconfig_utils.get_metadata(pipeline_config_path)
-        return pipelineconfig_utils.get_core_location(data.get("project_name", "site"))
+        return pipelineconfig_utils.get_core_path_for_config(pipeline_config_path)
 
     def _get_current_platform_core_location_file_name(self, install_root):
         """

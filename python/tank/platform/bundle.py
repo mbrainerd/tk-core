@@ -1300,7 +1300,8 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
 
     if isinstance(value, basestring):
         # Expand any internal variables (i.e. engine_name, env_name)
-        value = bundle.resolve_setting_expression(value)
+        if bundle:
+            value = bundle.resolve_setting_expression(value)
 
         # Expand any environment variables
         value = os.path.expandvars(os.path.expanduser(value))
@@ -1398,7 +1399,8 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
 
     elif settings_type == "config_path":
         # Expand any "config_path" values
-        processed_val = bundle.expand_path(value)
+        if bundle:
+            processed_val = bundle.expand_path(value)
 
     else:
         # pass-through
@@ -1430,7 +1432,9 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     try:
         from .util import current_bundle
         bundle = bundle or current_bundle()
+        instance_name = bundle.instance_name
     except TankCurrentModuleNotFoundError:
+        instance_name = engine_name or ""
         pass
 
     # Get the value for the supplied key
@@ -1453,7 +1457,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     try:
         value = _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate)
     except Exception as e:
-        key_name = ".".join((bundle.instance_name, key,) + e.args[1:])
+        key_name = ".".join((instance_name, key,) + e.args[1:])
         raise type(e)("Could not determine settings value for key: '%s' - %s" % (key_name, e.args[0]))
 
     return value

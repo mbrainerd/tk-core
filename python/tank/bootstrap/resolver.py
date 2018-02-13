@@ -183,9 +183,9 @@ class ConfigurationResolver(object):
                 resolve_latest=resolve_latest
             )
 
-            return self._create_configuration_from_descriptor(
-                cfg_descriptor, sg_connection, pc_id=None
-            )
+        return self._create_configuration_from_descriptor(
+            cfg_descriptor, sg_connection, pc_id=None
+        )
 
     def _create_configuration_from_descriptor(self, cfg_descriptor, sg_connection, pc_id):
         """

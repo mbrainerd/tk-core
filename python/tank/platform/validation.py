@@ -450,7 +450,7 @@ class _SettingsValidator:
                 continue
 
             settings_value = resolve_setting_value(self._tank_api,
-                                                   None,
+                                                   self._display_name,
                                                    value_schema,
                                                    settings,
                                                    settings_key,
