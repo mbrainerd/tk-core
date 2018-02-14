@@ -1,11 +1,11 @@
 # Copyright (c) 2013 Shotgun Software Inc.
-# 
+#
 # CONFIDENTIAL AND PROPRIETARY
-# 
-# This work is provided "AS IS" and subject to the Shotgun Pipeline Toolkit 
+#
+# This work is provided "AS IS" and subject to the Shotgun Pipeline Toolkit
 # Source Code License included in this distribution package. See LICENSE.
-# By accessing, using, copying or modifying this work you indicate your 
-# agreement to the Shotgun Pipeline Toolkit Source Code License. All rights 
+# By accessing, using, copying or modifying this work you indicate your
+# agreement to the Shotgun Pipeline Toolkit Source Code License. All rights
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
 """
@@ -55,7 +55,7 @@ class PipelineConfiguration(object):
         is handled on the OS level.
 
         :param str pipeline_configuration_path: Path to the pipeline configuration on disk.
-        :param descriptor: Descriptor that was used to create this pipeline configuration. 
+        :param descriptor: Descriptor that was used to create this pipeline configuration.
             Defaults to ``None`` for backwards compatibility with Bootstrapper that only
             pass down one argument. Also this argument was passed down by cores from
             v0.18.72 to 0.18.94. The descriptor is now read from the disk inside
@@ -66,35 +66,6 @@ class PipelineConfiguration(object):
 
         # To cover a very stupid use case
         os.environ["TANK_CURRENT_PC"] = self._pc_root
-
-        # validate that the current code version matches or is compatible with
-        # the code that is locally stored in this config!!!!
-        our_associated_api_version = self.get_associated_core_version()
-
-        # and get the version of the API currently in memory
-        current_api_version = pipelineconfig_utils.get_currently_running_api_version()
-        
-        if our_associated_api_version not in [None, "unknown", "HEAD"] and \
-           is_version_older(current_api_version, our_associated_api_version):
-            # currently running API is too old!
-            current_api_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-            
-            # tell the user that their core is too old for this config
-            #
-            # this can happen if you are running a configuration but you are getting the core
-            # API from somewhere else. For example, if you have added a core to your pythonpath
-            # and then try to do sgtk_from_path("/path/to/pipeline/config") and that config
-            # is using a more recent version of the core. 
-            
-            raise TankError("You are running Toolkit %s located in '%s'. The configuration you are "
-                            "trying to use needs core version %s or higher. To fix this, "
-                            "use the tank command (or Toolkit core API) located at '%s' "
-                            "which is associated with this configuration." % (current_api_version, 
-                                                                              current_api_path, 
-                                                                              our_associated_api_version, 
-                                                                              self.get_install_location()))            
-
-        self._roots = pipelineconfig_utils.get_roots_metadata(self._pc_root)
 
         # get the project tank disk name (Project.tank_name),
         # stored in the pipeline config metadata file.
@@ -110,11 +81,39 @@ class PipelineConfiguration(object):
         )
 
         # Enable the use of env variables for project and pipeline configuration settings
-        self._project_name = os.path.expandvars(self._project_name)
-        self._pc_name = os.path.expandvars(self._pc_name)
+        self._project_name = os.path.expandvars(self._project_name) if isinstance(self._project_name, str) else self._project_name
+        self._pc_name = os.path.expandvars(self._pc_name) if isinstance(self._pc_name, str) else self._pc_name
         self._project_id = int(os.path.expandvars(self._project_id)) if isinstance(self._project_id, str) else self._project_id
         self._pc_id = int(os.path.expandvars(self._pc_id)) if isinstance(self._pc_id, str) else self._pc_id
 
+        # validate that the current code version matches or is compatible with
+        # the code that is locally stored in this config!!!!
+        our_associated_api_version = self.get_associated_core_version()
+
+        # and get the version of the API currently in memory
+        current_api_version = pipelineconfig_utils.get_currently_running_api_version()
+
+        if our_associated_api_version not in [None, "unknown", "HEAD"] and \
+           is_version_older(current_api_version, our_associated_api_version):
+            # currently running API is too old!
+            current_api_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+            # tell the user that their core is too old for this config
+            #
+            # this can happen if you are running a configuration but you are getting the core
+            # API from somewhere else. For example, if you have added a core to your pythonpath
+            # and then try to do sgtk_from_path("/path/to/pipeline/config") and that config
+            # is using a more recent version of the core.
+
+            raise TankError("You are running Toolkit %s located in '%s'. The configuration you are "
+                            "trying to use needs core version %s or higher. To fix this, "
+                            "use the tank command (or Toolkit core API) located at '%s' "
+                            "which is associated with this configuration." % (current_api_version,
+                                                                              current_api_path,
+                                                                              our_associated_api_version,
+                                                                              self.get_install_location()))
+
+        self._roots = pipelineconfig_utils.get_roots_metadata(self._pc_root)
         self._use_shotgun_path_cache = pipeline_config_metadata.get(
             "use_shotgun_path_cache",
             False
@@ -248,7 +247,7 @@ class PipelineConfiguration(object):
 
     ########################################################################################
     # handling pipeline config metadata
-    
+
     def _update_metadata(self, updates):
         """
         Updates the pipeline configuration on disk with the passed in values.
@@ -257,13 +256,13 @@ class PipelineConfiguration(object):
         """
         # get current settings
         curr_settings = pipelineconfig_utils.get_metadata(self._pc_root)
-        
+
         # apply updates to existing cache
         curr_settings.update(updates)
-        
+
         # write the record to disk
         pipe_config_sg_id_path = self._get_pipeline_config_file_location()
-        
+
         old_umask = os.umask(0)
         try:
             os.chmod(pipe_config_sg_id_path, 0o666)
@@ -272,9 +271,9 @@ class PipelineConfiguration(object):
             # using safe_dump instead of dump ensures that we
             # don't serialize any non-std yaml content. In particular,
             # this causes issues if a unicode object containing a 7-bit
-            # ascii string is passed as part of the data. in this case, 
-            # dump will write out a special format which is later on 
-            # *loaded in* as a unicode object, even if the content doesn't  
+            # ascii string is passed as part of the data. in this case,
+            # dump will write out a special format which is later on
+            # *loaded in* as a unicode object, even if the content doesn't
             # need unicode handling. And this causes issues down the line
             # in toolkit code, assuming strings:
             #
@@ -282,14 +281,14 @@ class PipelineConfiguration(object):
             # "{foo: !!python/unicode 'bar'}\n"
             # >>> yaml.safe_dump({"foo": u"bar"})
             # '{foo: bar}\n'
-            #            
+            #
             yaml.safe_dump(curr_settings, fh)
         except Exception as exp:
             raise TankError("Could not write to configuration file '%s'. "
                             "Error reported: %s" % (pipe_config_sg_id_path, exp))
         finally:
             fh.close()
-            os.umask(old_umask)            
+            os.umask(old_umask)
 
         self._project_id = curr_settings.get("project_id")
         self._pc_id = curr_settings.get("pc_id")
@@ -370,7 +369,7 @@ class PipelineConfiguration(object):
     def is_auto_path(self):
         """
         Returns true if this config was set up with auto path mode.
-        This method will connect to shotgun in order to determine the 
+        This method will connect to shotgun in order to determine the
         auto path status.
 
         January 2016:
@@ -404,14 +403,14 @@ class PipelineConfiguration(object):
                 return True
             else:
                 return False
-        
+
         if _is_empty(data.get("linux_path")) and \
            _is_empty(data.get("windows_path")) and \
            _is_empty(data.get("mac_path")):
             # all three pipeline config fields are empty.
             # This means that we are running an auto path config
             return True
-        
+
         else:
             return False
 
@@ -427,7 +426,7 @@ class PipelineConfiguration(object):
     def is_localized(self):
         """
         Returns true if this pipeline configuration has its own Core
-        
+
         :returns: boolean indicating if config is localized
         """
         return pipelineconfig_utils.is_localized(self._pc_root)
@@ -489,30 +488,30 @@ class PipelineConfiguration(object):
         All projects created with 0.14+ automatically sets this to true.
         """
         return self._use_shotgun_path_cache
-    
+
     def turn_on_shotgun_path_cache(self):
         """
         Updates the pipeline configuration settings to have the shotgun based (v0.15+)
         path cache functionality enabled.
-        
-        Note that you need to force a full path sync once this command has been executed. 
+
+        Note that you need to force a full path sync once this command has been executed.
         """
-        
+
         if self.get_shotgun_path_cache_enabled():
             raise TankError("Shotgun based path cache already turned on!")
-                
+
         self._update_metadata({"use_shotgun_path_cache": True})
         self._use_shotgun_path_cache = True
 
-        
+
     ########################################################################################
     # storage roots related
-        
+
     def get_local_storage_roots(self):
         """
-        Returns local OS paths to all shotgun local storages used by toolkit. 
+        Returns local OS paths to all shotgun local storages used by toolkit.
         Paths are validated and guaranteed not to be None.
-        
+
         :returns: dictionary of storages, for example {"primary": "/studio", "textures": "/textures"}
         """
         proj_roots = {}
@@ -525,30 +524,30 @@ class PipelineConfiguration(object):
                 raise TankError(
                     "Undefined toolkit storage! The local file storage '%s' is not defined for this "
                     "operating system! Please contact toolkit support." % storage_name)
-            
+
             proj_roots[storage_name] = local_root_path
 
         return proj_roots
-    
+
     def get_all_platform_data_roots(self):
         """
-        Similar to get_data_roots but instead of returning the data roots for a single 
+        Similar to get_data_roots but instead of returning the data roots for a single
         operating system, the data roots for all operating systems are returned.
-        
+
         The return structure is a nested dictionary structure, for example:
 
         {
-         "primary": {"win32":  "z:\studio\my_project", 
+         "primary": {"win32":  "z:\studio\my_project",
                      "linux2": "/studio/my_project",
                      "darwin": "/studio/my_project"},
-                     
-         "textures": {"win32":  "z:\studio\my_project", 
+
+         "textures": {"win32":  "z:\studio\my_project",
                       "linux2": None,
                       "darwin": "/studio/my_project"},
         }
-         
+
         The operating system keys are returned on sys.platform-style notation.
-        If a data root has not been defined on a particular platform, None is 
+        If a data root has not been defined on a particular platform, None is
         returned (see example above).
 
         @todo - refactor to use ShotgunPath
@@ -563,7 +562,7 @@ class PipelineConfiguration(object):
             proj_roots[storage_name] = project_path.as_system_dict()
 
         return proj_roots
-    
+
     def get_data_roots(self):
         """
         Returns a dictionary of all the data roots available for this PC,
@@ -571,7 +570,7 @@ class PipelineConfiguration(object):
         Paths are guaranteed to be not None.
 
         :returns: A dictionary keyed by storage name, for example
-                  {"primary": "/studio/my_project", "textures": "/textures/my_project"}        
+                  {"primary": "/studio/my_project", "textures": "/textures/my_project"}
         """
         proj_roots = {}
         for storage_name in self._roots:
@@ -585,19 +584,19 @@ class PipelineConfiguration(object):
     def has_associated_data_roots(self):
         """
         Some configurations do not have a notion of a project storage and therefore
-        do not have any storages defined. This flag indicates whether a configuration 
-        has any associated data storages. 
-        
+        do not have any storages defined. This flag indicates whether a configuration
+        has any associated data storages.
+
         :returns: true if the configuration has a primary data root defined, false if not
         """
         return len(self.get_data_roots()) > 0
-        
+
     def get_primary_data_root(self):
         """
         Returns the path to the primary data root for the current platform.
-        For configurations where there is no roots defined at all, 
+        For configurations where there is no roots defined at all,
         an exception will be raised.
-        
+
         :returns: str to local path on disk
         """
         data_roots = self.get_data_roots()
@@ -619,11 +618,11 @@ class PipelineConfiguration(object):
     def get_associated_core_version(self):
         """
         Returns the version string for the core api associated with this config.
-        This method is 'forgiving' and in the case no associated core API can be 
-        found for this pipeline configuration, None will be returned rather than 
-        an exception raised. 
+        This method is 'forgiving' and in the case no associated core API can be
+        found for this pipeline configuration, None will be returned rather than
+        an exception raised.
 
-        :returns: version str e.g. 'v1.2.3', None if no version could be determined. 
+        :returns: version str e.g. 'v1.2.3', None if no version could be determined.
         """
         associated_api_root = self.get_install_location()
         return pipelineconfig_utils.get_core_api_version(associated_api_root)
@@ -635,16 +634,15 @@ class PipelineConfiguration(object):
         Tries to resolve it via the explicit link which exists between
         the pipeline config and the its core. If this fails, it uses
         runtime introspection to resolve it.
-        
+
         :returns: path string to the current core API install root location
         """
-        core_api_root = pipelineconfig_utils.get_core_path_for_config(self._pc_root)
+        if self.is_localized():
+            # first, try to locate an install local to this pipeline configuration.
+            # this would find any localized APIs.
+            return self._pc_root
 
-        if core_api_root is None:
-            # lookup failed. fall back onto runtime introspection
-            core_api_root = pipelineconfig_utils.get_path_to_current_core()
-        
-        return core_api_root
+        return pipelineconfig_utils.get_core_install_location(self._project_name)
 
     def get_core_location(self):
         """
@@ -653,7 +651,7 @@ class PipelineConfiguration(object):
         Tries to resolve it via the explicit link which exists between
         the pipeline config and the its core. If this fails, it uses
         runtime introspection to resolve it.
-        
+
         :returns: path string to the current core API install root location
         """
         return os.path.join(self.get_install_location(), "")
@@ -661,7 +659,7 @@ class PipelineConfiguration(object):
     def get_core_python_location(self):
         """
         Returns the python root for this install.
-        
+
         :returns: path string
         """
         return os.path.join(self.get_core_location(), "python")
@@ -790,7 +788,7 @@ class PipelineConfiguration(object):
         """
         Convenience method that returns a descriptor for the app
         that is associated with the given descriptor.
-        
+
         :param dict_or_uri: Descriptor dictionary or uri
         :returns:           Descriptor object
         """
@@ -800,7 +798,7 @@ class PipelineConfiguration(object):
         """
         Convenience method that returns a descriptor for the engine
         that is associated with the given descriptor.
-        
+
         :param dict_or_uri: Descriptor dictionary or uri
         :returns:        Descriptor object
         """
@@ -810,7 +808,7 @@ class PipelineConfiguration(object):
         """
         Convenience method that returns a descriptor for the framework
         that is associated with the given descriptor.
-        
+
         :param dict_or_uri: Descriptor dictionary or uri
         :returns:        Descriptor object
         """
@@ -929,9 +927,9 @@ class PipelineConfiguration(object):
 
     def get_shotgun_menu_cache_location(self):
         """
-        returns the folder where shotgun menu cache files 
+        returns the folder where shotgun menu cache files
         (used by the browser plugin and java applet) are stored.
-        
+
         :returns: path string
         """
         return os.path.join(self.get_cache_location, "menu")
@@ -956,13 +954,13 @@ class PipelineConfiguration(object):
         Returns an environment object given an environment name.
         You can use the get_environments() method to get a list of
         all the environment names.
-        
+
         :param env_name:    name of the environment to load
         :param context:     context to seed the environment with
-        :param writable:    If true, a writable environment object will be 
+        :param writable:    If true, a writable environment object will be
                             returned, allowing a user to update it.
         :returns:           An environment object
-        """        
+        """
         env_file = self.get_environment_path(env_name)
         EnvClass = WritableEnvironment if writable else InstalledEnvironment
         env_obj = EnvClass(env_file, self, context)
@@ -986,7 +984,7 @@ class PipelineConfiguration(object):
             os.path.join(self.get_config_location(), "core"),
             constants.CONTENT_TEMPLATES_FILE,
         )
-    
+
     def get_templates_config(self):
         """
         Returns the templates configuration as an object
@@ -1004,9 +1002,9 @@ class PipelineConfiguration(object):
     def execute_core_hook_internal(self, hook_name, parent, **kwargs):
         """
         Executes an old-style core hook, passing it any keyword arguments supplied.
-        
+
         Typically you don't want to execute this method but instead
-        the tk.execute_core_hook method. Only use this one if you for 
+        the tk.execute_core_hook method. Only use this one if you for
         some reason do not have a tk object available.
 
         :param hook_name: Name of hook to execute.
@@ -1040,9 +1038,9 @@ class PipelineConfiguration(object):
     def execute_core_hook_method_internal(self, hook_name, method_name, parent, **kwargs):
         """
         Executes a new style core hook, passing it any keyword arguments supplied.
-        
+
         Typically you don't want to execute this method but instead
-        the tk.execute_core_hook method. Only use this one if you for 
+        the tk.execute_core_hook method. Only use this one if you for
         some reason do not have a tk object available.
 
         :param hook_name: Name of hook to execute.
@@ -1063,9 +1061,9 @@ class PipelineConfiguration(object):
 
         # the hook.method display name used when logging the metric
         hook_method_display = "%s.%s" % (hook_name, method_name)
-        
+
         # now add a custom hook if that exists.
-        hook_folder = self.get_core_hooks_location()        
+        hook_folder = self.get_core_hooks_location()
         hook_path = os.path.join(hook_folder, file_name)
         if os.path.exists(hook_path):
             hook_paths.append(hook_path)
