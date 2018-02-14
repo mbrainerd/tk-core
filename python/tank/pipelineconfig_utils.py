@@ -488,8 +488,12 @@ def get_package_install_location(package_name, level_or_path=None):
             else:
                 level_spec = prez.Level.parse(level_or_path.upper())
 
-            # Update the configuration with the new level
-            config.replace(level=level_spec)
+    else:
+        # If level_or_path is not set, resort to facility level config
+        level_spec = prez.Level.facility()
+
+    # Update the configuration with the new level
+    config.replace(level=level_spec)
 
     # Get the environment for the updated Configuration
     env = prez.Environment.forConfiguration(config)
