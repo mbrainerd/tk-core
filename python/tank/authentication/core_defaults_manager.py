@@ -24,14 +24,17 @@ class CoreDefaultsManager(DefaultsManager):
     (shotgun.yml) to provide a default host, proxy and user.
     """
 
-    def __init__(self, mask_script_user=False):
+    def __init__(self, mask_script_user=False, fix_host=False):
         """
         Constructor
 
         :param mask_script_user: Prevents the get_user_credentials method from
             returning the script user credentials if the are available.
+        :param fix_host: Optionally lock down the choice of hosts to the one defined
+            in the core configuration. Default is False.
         """
         self._mask_script_user = mask_script_user
+        self._fix_host = fix_host
         super(CoreDefaultsManager, self).__init__()
 
     def is_host_fixed(self):
@@ -41,7 +44,7 @@ class CoreDefaultsManager(DefaultsManager):
         in the configuration.
         :returns: True
         """
-        return True
+        return self._fix_host
 
     def get_host(self):
         """
