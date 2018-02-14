@@ -1204,6 +1204,12 @@ def from_path(tk, path, previous_context=None):
     :type previous_context: :class:`Context`
     :returns: :class:`Context`
     """
+    # We can't parse the PatchCache if we're running a site configuration,
+    # so just return an empty context
+    if tk.pipeline_configuration.is_site_configuration():
+        log.debug("Cannot parse a context path from the Site PipelineConfiguration.")
+        return create_empty(tk)
+
     entity_dict = _build_entity_dict_from_path(tk, path)
     if not entity_dict:
         raise TankError("Cannot get entity in path_cache for path: %s" % path)
