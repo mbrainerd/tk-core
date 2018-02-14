@@ -461,7 +461,7 @@ def init_logging():
 
     # check if there is a --debug flag anywhere in the args list.
     # in that case turn on debug logging and remove the flag
-    if "--debug" in sys.argv[1:]:
+    if os.environ.get("DD_DEBUG"):
         sgtk.LogManager().global_debug = True
         logger.debug("")
         logger.debug("A log file can be found in %s" % sgtk.LogManager().log_folder)
@@ -540,7 +540,9 @@ def main():
     except sgtk.descriptor.InvalidAppStoreCredentialsError, e:
         __handle_exception(splash, shotgun_authenticator, str(e))
         return -1
-    except Exception, e:
+    except Exception as e:
+        if os.environ.get("DD_DEBUG"):
+            import pdb; pdb.post_mortem()
         __handle_unexpected_exception(splash, shotgun_authenticator, str(e))
         return -1
 
