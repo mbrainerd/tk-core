@@ -145,35 +145,25 @@ class Configuration(object):
             from tank_vendor.shotgun_authentication import ShotgunAuthenticator
             from ..util import CoreDefaultsManager
 
-            # Check to see if there is a user associated with the current project.
-            default_user = ShotgunAuthenticator(CoreDefaultsManager()).get_default_user()
-
-            # Assume we'll use the same user as was used for bootstrapping to authenticate.
-            authenticated_user = user
-            # If we have a user...
-            if default_user:
-                # ... and it doesn't have a login
-                if not default_user.login:
-                    log.debug("Script user found for this project.")
-                    # it means we're dealing with a script user and we'll use that, so override
-                    # the authenticated user.
-                    authenticated_user = default_user
-                else:
-                    # We found a user, but we'll ignore it.
-                    log.debug(
-                        "%r found for this project, "
-                        "but ignoring it in favor of bootstrap's user.", default_user
-                    )
+            if user:
+                # Assume we'll use the same user as was used for bootstrapping to authenticate.
+                authenticated_user = user
             else:
-                # If there is no script user, always use the user passed in instead of the one
-                # detected by the CoreDefaultsManager. This is because how core detects users has
-                # changed over time and sometimes this causes confusion and we might end up with no
-                # users returned by CoreDefaultsManager. By always using the user used to bootstrap,
-                # we ensure we will remain logged with the same credentials.
-                log.debug("No user was found using the core associated with the project.")
+                # Check to see if there is a user associated with the current project.
+                default_user = ShotgunAuthenticator(CoreDefaultsManager()).get_default_user()
+                if default_user:
+                    authenticated_user = default_user
+
+                    # If it doesn't have a login...
+                    if not default_user.login:
+                        log.debug("Script user found for this project.")
+                        # it means we're dealing with a script user
+                else:
+                    # If there is no default user
+                    log.debug("No user was found using the core associated with the project.")
+                    return
 
             log.debug("%r will be used.", authenticated_user)
-
             api.set_authenticated_user(authenticated_user)
         else:
             log.debug("Using pre-0.16 core, no authenticated user will be set.")
