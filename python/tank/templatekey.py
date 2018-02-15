@@ -63,7 +63,8 @@ class TemplateKey(object):
                  length=None,
                  validate_hook=None,
                  str_from_value_hook=None,
-                 value_from_str_hook=None):
+                 value_from_str_hook=None,
+                 **kwargs):
         """
         :param str name: Name by which the key will be referred.
         :param pipeline_configuration: The associated PipelineConfiguration object this key belongs to.
@@ -79,10 +80,12 @@ class TemplateKey(object):
         :param hook validate_hook: Optional validate() method override
         :param hook str_from_value_hook: Optional str_from_value() method override
         :param hook value_from_str_hook: Optional value_from_str() method override
+        :param kwargs: Optional additional parameters defined for this key
         """
         self._name = name
         self._pipeline_configuration = pipeline_configuration
         self._default = default
+        self._kwargs = kwargs
 
         # special handling for choices:
         if isinstance(choices, dict):
@@ -256,7 +259,8 @@ class TemplateKey(object):
                                                             self.str_from_value_hook,
                                                             "str_from_value",
                                                             self,
-                                                            value=value)
+                                                            value=value,
+                                                            **self._kwargs)
             else:
                 return self._as_string(value)
         else:
@@ -287,7 +291,8 @@ class TemplateKey(object):
                                                             self.value_from_str_hook,
                                                             "value_from_str",
                                                             self,
-                                                            str_value=str_value)
+                                                            str_value=str_value,
+                                                            **self._kwargs)
             else:
                 value = self._as_value(str_value)
         else:
@@ -325,7 +330,8 @@ class TemplateKey(object):
                                                             "validate",
                                                             self,
                                                             value=value,
-                                                            validate_transforms=validate_transforms)
+                                                            validate_transforms=validate_transforms,
+                                                            **self._kwargs)
             except Exception as e:
                 # Bad value, report the error to the client code.
                 self._last_error = "validate_hook errored: %s" % str(e)
@@ -384,7 +390,8 @@ class StringKey(TemplateKey):
                  subset_format=None,
                  validate_hook=None,
                  str_from_value_hook=None,
-                 value_from_str_hook=None):
+                 value_from_str_hook=None,
+                 **kwargs):
         """
         :param str name: Name by which the key will be referred.
         :param str default: Default value for the key.
@@ -448,7 +455,8 @@ class StringKey(TemplateKey):
                                         length=length,
                                         validate_hook=validate_hook,
                                         str_from_value_hook=str_from_value_hook,
-                                        value_from_str_hook=value_from_str_hook)
+                                        value_from_str_hook=value_from_str_hook,
+                                        **kwargs)
 
         if self._subset_format and not self._subset_str:
             raise TankError("%s: Cannot specify subset_format parameter without a subset parameter." % self)
@@ -641,7 +649,8 @@ class TimestampKey(TemplateKey):
         format_spec="%Y-%m-%d-%H-%M-%S",
         validate_hook=None,
         str_from_value_hook=None,
-        value_from_str_hook=None
+        value_from_str_hook=None,
+        **kwargs
     ):
         """
         :param str name: Name by which the key will be referred.
@@ -694,7 +703,8 @@ class TimestampKey(TemplateKey):
             default=default,
             validate_hook=validate_hook,
             str_from_value_hook=str_from_value_hook,
-            value_from_str_hook=value_from_str_hook
+            value_from_str_hook=value_from_str_hook,
+            **kwargs
         )
 
     @property
@@ -801,7 +811,8 @@ class IntegerKey(TemplateKey):
                  strict_matching=None,
                  validate_hook=None,
                  str_from_value_hook=None,
-                 value_from_str_hook=None):
+                 value_from_str_hook=None,
+                 **kwargs):
         """
         :param str name: Name by which the key will be referred.
         :param int default: Default value for this key.
@@ -837,7 +848,8 @@ class IntegerKey(TemplateKey):
                                          length=length,
                                          validate_hook=validate_hook,
                                          str_from_value_hook=str_from_value_hook,
-                                         value_from_str_hook=value_from_str_hook)
+                                         value_from_str_hook=value_from_str_hook,
+                                         **kwargs)
 
     @property
     def format_spec(self):
@@ -1083,7 +1095,8 @@ class SequenceKey(IntegerKey):
                  exclusions=None,
                  validate_hook=None,
                  str_from_value_hook=None,
-                 value_from_str_hook=None):
+                 value_from_str_hook=None,
+                 **kwargs):
         """
         :param str name: Name by which the key will be referred.
         :param str default: Default value for this key.
@@ -1117,7 +1130,8 @@ class SequenceKey(IntegerKey):
                                           abstract=abstract,
                                           validate_hook=validate_hook,
                                           str_from_value_hook=str_from_value_hook,
-                                          value_from_str_hook=value_from_str_hook)
+                                          value_from_str_hook=value_from_str_hook,
+                                          **kwargs)
 
 
     def _validate(self, value, validate_transforms):
