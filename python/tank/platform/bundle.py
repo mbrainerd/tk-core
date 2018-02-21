@@ -770,7 +770,7 @@ class TankBundle(object):
         hook_path = os.path.join(hook_folder, "%s.py" % hook_name)
         return hook.execute_hook(hook_path, self, **kwargs)
 
-    def create_hook_instance(self, hook_expression, base_class=None):
+    def create_hook_instance(self, hook_expression, base_class=None, **kwargs):
         """
         Returns the instance of a hook object given an expression.
 
@@ -805,7 +805,8 @@ class TankBundle(object):
         return hook.create_hook_instance(
             resolved_hook_paths,
             self,
-            base_class=base_class
+            base_class=base_class,
+            **kwargs
         )
 
     def ensure_folder_exists(self, path):

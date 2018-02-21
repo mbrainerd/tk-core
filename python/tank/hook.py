@@ -196,7 +196,7 @@ class Hook(object):
     # default method to execute on hooks
     DEFAULT_HOOK_METHOD = "execute"
 
-    def __init__(self, parent):
+    def __init__(self, parent, **kwargs):
         self.__parent = parent
 
     @property
@@ -620,7 +620,7 @@ def execute_hook_method(hook_paths, parent, method_name, base_class=None, **kwar
     return ret_val
 
 
-def create_hook_instance(hook_paths, parent, base_class=None):
+def create_hook_instance(hook_paths, parent, base_class=None, **kwargs):
     """
     New style hook execution, with method arguments and support for inheritance.
 
@@ -708,7 +708,7 @@ def create_hook_instance(hook_paths, parent, base_class=None):
 
     # all class construction done. _current_hook_baseclass contains the last
     # class we iterated over. An instance of this is what we want to return
-    return _current_hook_baseclass.value(parent)
+    return _current_hook_baseclass.value(parent, **kwargs)
 
 
 def get_hook_baseclass():
