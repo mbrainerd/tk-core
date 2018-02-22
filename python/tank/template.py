@@ -532,21 +532,25 @@ class Template(object):
         # Get fields parsed from the path
         path_fields = self.get_fields(input_path, skip_keys)
 
+        # since we are handling sg_asset_type seperately, let's ignore that key
+        entity_fields = {v.shotgun_entity_type: v
+                         for k, v in self.keys.iteritems() if v.shotgun_entity_type and v.shotgun_field_name != "sg_asset_type"}
+
         def _get_entity_from_key(key_name, sg_filters):
             """
             Helper function to get a Shotgun entity from a given path field key
             """
             processed_keys.append(key_name)
 
-            if key_name not in path_fields:
+            if key_name not in entity_fields:
                 return None
 
-            if key_name not in self.keys:
+            if key_name not in entity_fields.keys():
                 log.warning("Cannot find TemplateKey for '%s'. Skipping..." % key_name)
                 return None
 
-            key = self.keys[key_name]
-            value = path_fields[key_name]
+            key = entity_fields[key_name]
+            value = path_fields[entity_fields[key_name].name]
 
             # Only process this key if it is an entity field
             if not key.shotgun_field_name:
@@ -633,7 +637,7 @@ class Template(object):
             entities.append(step_entity)
 
         # Now process the remaining fields
-        for key_name in path_fields.keys():
+        for key_name in entity_fields.keys():
             # Skip the ones we processed manually
             if key_name in processed_keys:
                 continue
