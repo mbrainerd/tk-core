@@ -536,8 +536,29 @@ class Template(object):
         template_keys = copy.copy(self.keys)
 
         if "Project" not in path_fields:
-            # Get the project name separately since it isn't typically parsed by get_fields
-            path_fields["Project"] = os.path.basename(self.root_path)
+            # If defined (i.e. TemplatePath), save ourselves some time and
+            # get the Project name from the root_path property
+            if hasattr(self, "root_path"):
+                root_path = self.root_path
+
+            # Else do a lookup from the PipelineConfiguration data roots
+            else:
+                all_per_platform_roots = self.pipeline_configuration.get_all_platform_data_roots()
+                if len(all_per_platform_roots) > 1:
+                    # If the root name is not explicitly set we use the only one we got
+                    # if dealing with a single root or enforce the use of the good old
+                    # "primary" storage if dealing with multiple entries.
+                    root_name = constants.PRIMARY_STORAGE_NAME
+                else:
+                    root_name = all_per_platform_roots.keys()[0]
+
+                root_path = all_per_platform_roots.get(root_name, {}).get(sys.platform)
+                if root_path is None:
+                    raise TankError("Undefined Shotgun storage! The local file storage '%s' is not defined for this "
+                                    "operating system." % root_name)
+
+            # Set the Project name equal to the path basename
+            path_fields["Project"] = os.path.basename(root_path)
 
             # Add a key for it so we can run our search later on
             template_keys["Project"] = templatekey.StringKey("Project",
