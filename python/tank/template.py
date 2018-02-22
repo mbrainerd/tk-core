@@ -532,40 +532,6 @@ class Template(object):
         # Get fields parsed from the path
         path_fields = self.get_fields(input_path, skip_keys)
 
-        # Copy the list of this template's keys
-        template_keys = copy.copy(self.keys)
-
-        if "Project" not in path_fields:
-            # If defined (i.e. TemplatePath), save ourselves some time and
-            # get the Project name from the root_path property
-            if hasattr(self, "root_path"):
-                root_path = self.root_path
-
-            # Else do a lookup from the PipelineConfiguration data roots
-            else:
-                all_per_platform_roots = self.pipeline_configuration.get_all_platform_data_roots()
-                if len(all_per_platform_roots) > 1:
-                    # If the root name is not explicitly set we use the only one we got
-                    # if dealing with a single root or enforce the use of the good old
-                    # "primary" storage if dealing with multiple entries.
-                    root_name = constants.PRIMARY_STORAGE_NAME
-                else:
-                    root_name = all_per_platform_roots.keys()[0]
-
-                root_path = all_per_platform_roots.get(root_name, {}).get(sys.platform)
-                if root_path is None:
-                    raise TankError("Undefined Shotgun storage! The local file storage '%s' is not defined for this "
-                                    "operating system." % root_name)
-
-            # Set the Project name equal to the path basename
-            path_fields["Project"] = os.path.basename(root_path)
-
-            # Add a key for it so we can run our search later on
-            template_keys["Project"] = templatekey.StringKey("Project",
-                                                             self.pipeline_configuration,
-                                                             shotgun_entity_type="Project",
-                                                             shotgun_field_name="name")
-
         def _get_entity_from_key(key_name, sg_filters):
             """
             Helper function to get a Shotgun entity from a given path field key
@@ -575,11 +541,11 @@ class Template(object):
             if key_name not in path_fields:
                 return None
 
-            if key_name not in template_keys:
+            if key_name not in self.keys:
                 log.warning("Cannot find TemplateKey for '%s'. Skipping..." % key_name)
                 return None
 
-            key = template_keys[key_name]
+            key = self.keys[key_name]
             value = path_fields[key_name]
 
             # Only process this key if it is an entity field
@@ -607,9 +573,16 @@ class Template(object):
         if user_entity:
             entities.append(user_entity)
 
-        # Get the project entity
-        proj_entity = _get_entity_from_key("Project", sg_filters)
-        if proj_entity:
+        # Get the project entity from the PipelineConfiguration
+        proj_id = self.pipeline_configuration.get_project_id()
+        if proj_id is not None:
+            proj_entity = {
+                "type": "Project",
+                "id": proj_id,
+                "name": self.pipeline_configuration.get_project_disk_name()
+            }
+
+            # Append it to the entities list
             entities.append(proj_entity)
 
             # Filter all further entities by this project
