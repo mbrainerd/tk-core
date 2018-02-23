@@ -22,7 +22,7 @@ from . import templatekey
 from . import constants
 from .errors import TankError
 from .template_path_parser import TemplatePathParser
-from .util import shotgun
+from .util import shotgun, shotgun_entity
 from . import LogManager
 
 log = LogManager.get_logger(__name__)
@@ -511,6 +511,7 @@ class Template(object):
             >>> template_path.get_entities(input_path)
 
             [{'type': 'Project',   'id': 10, 'name': 'demo_project_1'},
+             {'type': 'Sequence',  'id': 13, 'code': 'seq_1'},
              {'type': 'Shot',      'id': 60, 'code': 'shot_2'},
              {'type': 'Step',      'id': 14, 'code': 'comp'},
              {'type': 'HumanUser', 'id': 23, 'name': 'Dirk Gently'}]
@@ -527,125 +528,171 @@ class Template(object):
         """
         entities = []
         sg_filters = []
-        processed_keys = []
+        entity_searches_by_type = {}
+
+        # Get the shotgun connection object
+        sg = shotgun.get_sg_connection()
 
         # Get fields parsed from the path
         path_fields = self.get_fields(input_path, skip_keys)
 
-        def _get_entity_from_key(key_name, sg_filters):
+        def _add_entity_search(entity_type, field_name, value):
             """
-            Helper function to get a Shotgun entity from a given path field key
             """
-            processed_keys.append(key_name)
+            sg_filter = [field_name, "is", value]
+            name_field = shotgun_entity.get_sg_entity_name_field(entity_type)
+            fields = ["type", "id", name_field]
 
-            if key_name not in path_fields:
-                return None
+            if entity_type not in entity_searches_by_type:
+                entity_searches_by_type[entity_type] = (entity_type, [sg_filter], fields)
+            else:
+                # Else just append the additional filter
+                entity_searches_by_type[entity_type][1].append(sg_filter)
 
+        # Preprocess the path fields to generate their corresponding entity searches
+        for key_name, value in path_fields.iteritems():
             if key_name not in self.keys:
                 log.warning("Cannot find TemplateKey for '%s'. Skipping..." % key_name)
-                return None
+                continue
 
-            key = self.keys[key_name]
-            value = path_fields[key_name]
+            template_key = self.keys[key_name]
+            if not template_key.shotgun_field_name:
+                # This isn't an Shotgun Entity TemplateKey
+                continue
 
-            # Only process this key if it is an entity field
-            if not key.shotgun_field_name:
-                return None
+            entity_type = template_key.shotgun_entity_type
+            field_name = template_key.shotgun_field_name
 
-            entity_type = key.shotgun_entity_type
-            field_name = key.shotgun_field_name
+            # Add a search for this entity key
+            _add_entity_search(entity_type, field_name, value)
 
-            filters = sg_filters + [[field_name, "is", value]]
-            fields = ["type", "id", field_name]
+            # If this is an entity link field...
+            if "." in field_name:
+                field_split = field_name.split(".")
+                sub_entity_type = field_split[-2]
+                sub_field_name = field_split[-1]
 
-            # Get the shotgun connection object
-            sg = shotgun.get_sg_connection()
+                # Add a search for the linked entity as well
+                _add_entity_search(sub_entity_type, sub_field_name, value)
 
-            entity = sg.find_one(entity_type, filters, fields)
-            if entity is None:
-                raise TankError("Cannot find %s Entity: '%s' in Shotgun using filter: %s"
-                        % (entity_type, value, filters))
 
-            return entity
+        # Treat HumanUser entity special since it can be parsed without a Project entity
+        if "HumanUser" in entity_searches_by_type:
+            entity_search = entity_searches_by_type.pop("HumanUser")
 
-        # Get the user from the login key if its been parsed
-        user_entity = _get_entity_from_key("login", sg_filters)
-        if user_entity:
+            user_entity = sg.find_one(*entity_search)
+            if user_entity is None:
+                raise TankError("Cannot find '%s' Entity matching search: %s %s" % entity_search)
+
+            # Add to list of entities
             entities.append(user_entity)
 
-        # Get the project entity from the PipelineConfiguration
+
+        # First see if we can get the Project entity from the PipelineConfiguration
         proj_id = self.pipeline_configuration.get_project_id()
         if proj_id is not None:
+            name_field = shotgun_entity.get_sg_entity_name_field("Project")
             proj_entity = {
                 "type": "Project",
                 "id": proj_id,
-                "name": self.pipeline_configuration.get_project_disk_name()
+                name_field: self.pipeline_configuration.get_project_disk_name()
             }
 
+        # Else see if we can process a provided Project entity search
+        elif "Project" in entity_searches_by_type:
+            entity_search = entity_searches_by_type.pop("Project")
+
+            proj_entity = sg.find_one(*entity_search)
+            if proj_entity is None:
+                raise TankError("Cannot find '%s' Entity matching search: %s %s" % entity_search)
+
+        # If we have a Project, entity...
+        if proj_entity:
             # Append it to the entities list
             entities.append(proj_entity)
 
-            # Filter all further entities by this project
+            # Filter all further entity searches by it
             sg_filters.append(["project", "is", proj_entity])
+
+            # And make sure we exclude Project from any future searches
+            if "Project" in entity_searches_by_type:
+                entity_searches_by_type.pop("Project")
+
+        # Else we can't resolve anything else if we're outside a project
         else:
-            # We can't resolve anything else if we're outside a project
+            # ...so just return
             return entities
 
-        # Get the sequence entity if defined
-        seq_entity = _get_entity_from_key("Sequence", sg_filters)
-        if seq_entity:
 
-            # Append the sequence entity
-            entities.append(seq_entity)
+        # Next process any primary entity types (in hierarchy order)
+        entity_filter = None
+        for entity_type in ("Sequence", "Shot", "Asset"):
 
-            # Filter shot-level entity by this sequence
-            shot_filters = sg_filters + [["sg_sequence", "is", seq_entity]]
-
-            # Get the shot entity if defined
-            shot_entity = _get_entity_from_key("Shot", shot_filters)
-            if shot_entity:
-                entities.append(shot_entity)
-
-                # Filter further asset entities by this shot
-                sg_filters += [["sg_shot", "is", shot_entity]]
-            else:
-                # Filter further asset entities by this sequence
-                sg_filters += [["sg_sequence", "is", seq_entity]]
-
-        # Get the asset type if defined
-        asset_filters = copy.deepcopy(sg_filters)
-        if "sg_asset_type" in path_fields:
-            # Filter asset entities by this asset type (optional)
-            asset_type = path_fields["sg_asset_type"]
-            asset_filters += [["sg_asset_type", "is", asset_type]]
-            processed_keys.append("sg_asset_type")
-
-        # Get the asset entity if defined
-        asset_entity = _get_entity_from_key("Asset", asset_filters)
-        if asset_entity:
-            entities.append(asset_entity)
-
-        # Filter step entity by the parent entity type
-        step_filters = [["entity_type", "is", entities[-1]["type"]]]
-
-        step_entity = _get_entity_from_key("Step", step_filters)
-        if step_entity:
-            entities.append(step_entity)
-
-        # Now process the remaining fields
-        for key_name in path_fields.keys():
-            # Skip the ones we processed manually
-            if key_name in processed_keys:
+            # Skip if its not in the list of entities to process
+            if entity_type not in entity_searches_by_type:
                 continue
 
-            entity = self.pipeline_configuration.execute_core_hook_internal(
+            entity_search = entity_searches_by_type.pop(entity_type)
+
+            # Append the project entity filter
+            entity_search[1].extend(sg_filters)
+
+            # Append any previous primary entity filter
+            if entity_filter:
+                entity_search[1].append(entity_filter)
+
+            entity = sg.find_one(*entity_search)
+            if entity is None:
+                raise TankError("Cannot find '%s' Entity matching search: %s %s" % entity_search)
+
+            # Append the entity
+            entities.append(entity)
+
+            # Update the entity_filter for the next level
+            entity_filter = ["sg_%s" % entity_type.lower(), "is", entity]
+
+
+        # If we have an entity_filter, then we've processed a primary entity
+        if entity_filter:
+            # Filter all further entity searches by it
+            sg_filters.append(entity_filter)
+
+            # Treat Step entity special since it requires a primary entity
+            if "Step" in entity_searches_by_type:
+                entity_search = entity_searches_by_type.pop("Step")
+
+                # Filter step entity by the parent entity type
+                step_filters = [["entity_type", "is", entities[-1]["type"]]]
+
+                step_entity = sg.find_one(*entity_search)
+                if step_entity is None:
+                    raise TankError("Cannot find '%s' Entity matching search: %s %s" % entity_search)
+
+                # Add to list of entities
+                entities.append(step_entity)
+
+
+        # Now process the remaining fields
+        for entity_type, entity_search in entity_searches_by_type.iteritems():
+
+            # Allow the user to override the entity search to run
+            entity_search = self.pipeline_configuration.execute_core_hook_internal(
                                             "template_additional_entities",
                                             self,
-                                            key_name=key_name,
-                                            sg_filters=sg_filters,
-                                            query_function=_get_entity_from_key)
-            if entity:
-                entities.append(entity)
+                                            entity_type=entity_type,
+                                            entity_search=entity_search,
+                                            sg_filters=sg_filters)
+
+            # Skip if no entity_search is provided
+            if not entity_search:
+                continue
+
+            entity = sg.find_one(*entity_search)
+            if entity is None:
+                raise TankError("Cannot find '%s' Entity matching search: %s %s" % entity_search)
+
+            # Add to list of entities
+            entities.append(entity)
 
         return entities
 

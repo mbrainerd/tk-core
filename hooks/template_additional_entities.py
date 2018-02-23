@@ -9,16 +9,10 @@
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
 """
-Hook which provides advanced customization of template parsing.
-Returns a dict with two keys:
-
-    entity_types_in_path: a list of Shotgun entity types (ie. CustomNonProjectEntity05) that
-        context_from_path should recognize and use to fill its additional_entities list.
-    
-    entity_fields_on_task: a list of Shotgun fields (ie. sg_extra_link) on the Task entity
-        that context_from_entity should query Shotgun for and insert the resulting entities
-        into its additional_entities_list.
-
+Hook which provides advanced customization of the entity search used when
+processing entities in the Template.get_entities() method.
+Returns a tuple representing the updated entity search block of the form:
+    (entity_type, sg_filters, sg_fields)
 """
 
 import sgtk
@@ -26,11 +20,14 @@ HookBaseClass = sgtk.get_hook_baseclass()
 
 class TemplateAdditionalEntities(HookBaseClass):
 
-    def execute(self, key_name, sg_filters, query_function, **kwargs):
+    def execute(self, entity_type, entity_search, sg_filters, **kwargs):
         """
-        Returns an entity
+        Returns an entity_search tuple containing the following:
+            (entity_type, sg_filters, sg_fields)
         """
-        if key_name in ["Element", "Camera", "Cut"]:
-            return query_function(key_name, sg_filters)
+        if entity_type in ("Element", "Camera", "Cut"):
+            if "Project" in entities:
+                entity_search[1].extend(sg_filters)
+            return entity_search
 
-        return query_function(key_name, [])
+        return entity_search
