@@ -129,8 +129,8 @@ class Context(object):
     ):
         """
         Context objects are not constructed by hand but are fabricated by the
-        methods :meth:`Sgtk.context_from_entity`, :meth:`Sgtk.context_from_entity_dictionary`
-        and :meth:`Sgtk.context_from_path`.
+        methods :meth:`sgtk.context_from_entity`, :meth:`sgtk.context_from_entity_dictionary`
+        and :meth:`sgtk.context_from_path`.
         """
         self.__tk = tk
         self.__project = project
@@ -1223,7 +1223,7 @@ def from_entity(tk, entity_type, entity_id, previous_context=None):
     """
     Constructs a context from a shotgun entity.
 
-    For more information, see :meth:`Sgtk.context_from_entity`.
+    For more information, see :meth:`sgtk.context_from_entity`.
 
     :param tk:           Sgtk API handle
     :param entity_type:  The shotgun entity type to produce a context for
@@ -1243,11 +1243,34 @@ def from_entity(tk, entity_type, entity_id, previous_context=None):
     return _from_entity_dictionary(tk, entity_dict, previous_context)
 
 
+def from_entities(tk, entities, previous_context=None):
+    """
+    Constructs a context from a list of shotgun entities.
+
+    For more information, see :meth:`sgtk.context_from_entities`.
+
+    :param tk:               Sgtk API handle
+    :param list entities:    The list of entities to create the context from
+    :param previous_context: A context object to use to try to automatically extend the generated
+                             context if it is incomplete when extracted from the path. For example,
+                             the Task may be carried across from the previous context if it is
+                             suitable and if the task wasn't already expressed in the file system
+                             path passed in via the path argument.
+    :type previous_context: :class:`Context`
+    :returns: :class:`Context`
+    """
+    entity_dict = _build_entity_dict_from_entities(tk, entities)
+
+    # Pass along the entity_dict to be processed by from_entity_dictionary()
+    log.debug("Running context_from_entities:\n%s" % pprint.pformat(entity_dict))
+    return _from_entity_dictionary(tk, entity_dict, previous_context)
+
+
 def from_entity_dictionary(tk, entity_dict, previous_context=None):
     """
     Constructs a context from a shotgun entity dictionary.
 
-    For more information, see :meth:`Sgtk.context_from_entity_dictionary`.
+    For more information, see :meth:`sgtk.context_from_entity_dictionary`.
 
     :param tk: :class:`Sgtk`
     :param dict entity_dictionary: The entity dictionary to create the context from
@@ -1548,6 +1571,57 @@ def _process_entity(curr_entity, entity_dict, required_fields, additional_types=
             entity_dict["additional_entities"] = []
         entity_dict["additional_entities"].append(curr_entity)
 
+
+def _build_entity_dict_from_entities(tk, entities):
+    """
+    Attempts to build an entity dictionary from a list of entities,
+    to be passed to :meth:`sgtk.context_from_entity_dictionary`
+
+    :param entities:        A list of entities
+    :return:                Dictionary of entities in the form needed to pass to
+                            :meth:`sgtk.context_from_entity_dictionary`
+    """
+    entity_dict = {}
+
+    # Get the primary entity
+    entities_by_type = { entity['type'] : entity for entity in entities }
+    for entity_type in ("Task", "Asset", "Shot", "Sequence", "Project"):
+        if entity_type in entities_by_type:
+            entity_dict = entities_by_type.pop(entity_type)
+            break
+
+    # Get the name field
+    name_field = shotgun_entity.get_sg_entity_name_field(entity_type)
+
+    # Get the list of required and optional fields
+    if entity_type == "Project":
+        required_fields = [name_field]
+        optional_fields = []
+        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_project", [])
+
+    elif entity_type == "Task":
+        required_fields = [name_field, "step", "entity", "project"]
+        optional_fields = ["entity.{entity_type}.sg_shot", "entity.{entity_type}.sg_sequence"]
+        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_task", [])            
+
+        # If we have a parent entity, format the entity_type fields
+        for entity_type2 in ("Asset", "Shot", "Sequence"):
+            if entity_type2 in entities_by_type:
+                optional_fields = [field.format(entity_type=entity_type2) for field in optional_fields]
+                break
+
+    else:
+        required_fields = [name_field, "project"]
+        optional_fields = ["sg_sequence", "sg_shot"]
+        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_entity", [])
+
+    # Process the remaining entities into their proper location
+    for entity in entities_by_type.values():
+        _process_entity(entity, entity_dict, required_fields + optional_fields)
+
+    # Return the processed entity dict
+    return entity_dict
+        
 
 def _build_entity_dict_from_path(tk, path, required_fields=None, additional_types=None):
     """

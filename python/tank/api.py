@@ -743,6 +743,30 @@ class Sgtk(object):
         """
         return context.from_entity(self, entity_type, entity_id)
 
+    def context_from_entities(self, entities):
+        """
+        Derives a context from a list of shotgun entities. The list should be in the form:
+
+            [{'type': 'Project',   'id': 10, 'name': 'demo_project_1'},
+             {'type': 'Sequence',  'id': 13, 'code': 'seq_1'},
+             {'type': 'Shot',      'id': 60, 'code': 'shot_2'},
+             {'type': 'Step',      'id': 14, 'code': 'comp'},
+             {'type': 'HumanUser', 'id': 23, 'name': 'Dirk Gently'},
+             {'type': 'Task',      'id': 65, 'content': 'Animation'}]
+
+        However, order does not matter and the same rules apply as
+        :meth:`context_from_entity_dictionary` as far as what entities are required to
+        create a valid context. This method will call :meth:`context_from_entity_dictionary`
+        after first transmogrifying the data into a compatible entity dictionary, and thus
+        follows the same code path. The most common use case is processing the output of
+        :meth:`sgtk.Template.get_entities`
+
+        :param list entities:   A list of Shotgun entities containing at least enough
+                                information to create a valid :class:`Context`
+        :returns: :class:`Context`
+        """
+        return context.from_entities(self, entities)
+
     def context_from_entity_dictionary(self, entity_dictionary):
         """
         Derives a context from a shotgun entity dictionary. This will try to use any
