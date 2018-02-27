@@ -1252,10 +1252,10 @@ def from_entities(tk, entities, previous_context=None):
     :param tk:               Sgtk API handle
     :param list entities:    The list of entities to create the context from
     :param previous_context: A context object to use to try to automatically extend the generated
-                             context if it is incomplete when extracted from the path. For example,
+                             context if it is incomplete when extracted from the list. For example,
                              the Task may be carried across from the previous context if it is
-                             suitable and if the task wasn't already expressed in the file system
-                             path passed in via the path argument.
+                             suitable and if the task wasn't already expressed in the list of
+                             entities passed in via the entities argument.
     :type previous_context: :class:`Context`
     :returns: :class:`Context`
     """

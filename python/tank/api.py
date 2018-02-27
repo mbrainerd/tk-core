@@ -743,7 +743,7 @@ class Sgtk(object):
         """
         return context.from_entity(self, entity_type, entity_id)
 
-    def context_from_entities(self, entities):
+    def context_from_entities(self, entities, previous_context=None):
         """
         Derives a context from a list of shotgun entities. The list should be in the form:
 
@@ -763,9 +763,15 @@ class Sgtk(object):
 
         :param list entities:   A list of Shotgun entities containing at least enough
                                 information to create a valid :class:`Context`
+        :param previous_context: A context object to use to try to automatically extend the generated
+                                 context if it is incomplete when extracted from the list. For example,
+                                 the Task may be carried across from the previous context if it is
+                                 suitable and if the task wasn't already expressed in the list of
+                                 entities passed in via the entities argument.
+        :type previous_context: :class:`Context`
         :returns: :class:`Context`
         """
-        return context.from_entities(self, entities)
+        return context.from_entities(self, entities, previous_context)
 
     def context_from_entity_dictionary(self, entity_dictionary):
         """
