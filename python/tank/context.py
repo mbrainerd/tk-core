@@ -1259,7 +1259,14 @@ def from_entities(tk, entities, previous_context=None):
     :type previous_context: :class:`Context`
     :returns: :class:`Context`
     """
+    entities_by_type = {entity['type']: entity for entity in entities}
     entity_dict = _build_entity_dict_from_entities(tk, entities)
+
+    # Since step is not directly associated to Shot/Sequence/Project entities
+    # step is needed for pick_environment to correctly resolve the env
+    if 'step' not in entity_dict:
+        if 'Step' in entities_by_type:
+            entity_dict['step'] = entities_by_type['Step']
 
     # Pass along the entity_dict to be processed by from_entity_dictionary()
     log.debug("Running context_from_entities:\n%s" % pprint.pformat(entity_dict))
