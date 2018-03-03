@@ -254,7 +254,7 @@ class Context(object):
 
         if not _entity_dicts_eq(self.task, other.task):
             return False
-       
+
         # compare additional entities
         if self.additional_entities and other.additional_entities:
             # compare type, id tuples of all additional entities to ensure they are exactly the same.
@@ -876,13 +876,12 @@ class Context(object):
             # cool, everything is matching down to the step/task level.
             # if context is missing a step and a task, we try to auto populate it.
             # (note: weird edge that a context can have a task but no step)
-            if not self.__task:
-                if not self.__step:
-                    self.__step = other.step
+            if not self.__step:
+                self.__step = other.step
 
+            if not self.__task and self.__step == other.step:
                 # now try to assign the previous task but only if the step matches!
-                if self.__step == other.step:
-                    self.__task = other.task
+                self.__task = other.task
 
 
     ################################################################################################
@@ -1305,7 +1304,7 @@ def _from_entity_dictionary(tk, entity_dict, previous_context=None):
 
     else:
         # Get a context-valid entity dictionary
-        entity_dict = _get_valid_entity_dict(tk, entity_dict)
+        entity_dict = _get_valid_context_entity_dict(tk, entity_dict)
 
         # Embed the entity in the appropriate field
         entity_type = entity_dict.get("type")
@@ -1453,6 +1452,35 @@ def _get_templatekey_sg_fields(tk, entity_type):
     return fields
 
 
+def _get_context_fields_for_entity_type(tk, entity_type):
+    """
+    """
+    # Get the name field
+    name_field = shotgun_entity.get_sg_entity_name_field(entity_type)
+
+    # Get the list of required and optional fields
+    if entity_type in ["PublishedFile", "TankPublishedFile"]:
+        required_fields = ["task", "entity", "project"]
+        optional_fields = []
+
+    elif entity_type == "Project":
+        required_fields = [name_field]
+        optional_fields = []
+        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_project", [])
+
+    elif entity_type == "Task":
+        required_fields = [name_field, "step", "entity", "project"]
+        optional_fields = ["entity.{entity_type}.sg_shot", "entity.{entity_type}.sg_sequence"]
+        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_task", [])
+
+    else:
+        required_fields = [name_field, "project"]
+        optional_fields = ["sg_sequence", "sg_shot"]
+        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_entity", [])
+
+    return required_fields, optional_fields
+
+
 def _get_entity_name(entity_dict):
     """
     Extract the entity name from the specified entity dictionary if it can
@@ -1531,10 +1559,10 @@ def _process_entity(curr_entity, entity_dict, required_fields, additional_types=
 
     curr_type = curr_entity["type"]
 
-    # Treat the "entity" field special, since it is positional
+    # Treat the Task "entity" field special, since it is positional
     if "entity" in required_fields and not entity_dict.get("entity"):
-        # None of these can be the "entity"
-        if curr_type not in ("project", "step", "task", "user"):
+        # None of these can be a Task's parent entity
+        if curr_type not in ("Project", "Step", "Task", "User"):
             # The first entity to match the criteria is the "entity"
             entity_dict["entity"] = curr_entity
             return
@@ -1543,10 +1571,13 @@ def _process_entity(curr_entity, entity_dict, required_fields, additional_types=
     # an entity that matches the field type
     for field_name in required_fields:
 
-        # If we have an entity, format the entity_type field
-        parent_entity = entity_dict.get("entity")
-        if parent_entity:
-            field_name = field_name.format(entity_type=parent_entity["type"])
+        # If this is an entity link field...
+        if "." in field_name:
+            sub_entity_field = field_name.split(".")[0]
+            sub_entity = entity_dict.get(sub_entity_field)
+            if sub_entity:
+                # ...format the {entity_type} field
+                field_name = field_name.format(entity_type=sub_entity["type"])
 
         # Just take the last part of hierarchical fields
         lookup_field = field_name.split(".")[-1]
@@ -1582,46 +1613,38 @@ def _build_entity_dict_from_entities(tk, entities):
                             :meth:`sgtk.context_from_entity_dictionary`
     """
     entity_dict = {}
+    entities_by_type = { entity['type'] : copy.copy(entity) for entity in entities }
 
-    # Get the primary entity
-    entities_by_type = { entity['type'] : entity for entity in entities }
-    for entity_type in ("Task", "Asset", "Shot", "Sequence", "Project"):
-        if entity_type in entities_by_type:
-            entity_dict = entities_by_type.pop(entity_type)
-            break
+    # ask hook for extra entity types we should recognize and insert into the additional_entities list.
+    additional_types = tk.execute_core_hook("context_additional_entities").get("entity_types_in_path", [])
 
-    # Get the name field
-    name_field = shotgun_entity.get_sg_entity_name_field(entity_type)
+    # Create a list of known and unknown entity types
+    # Unknown types may be something like "Element", "Cut", or "Camera"
+    known_types = ["Task", "Asset", "Shot", "Sequence", "Project", "HumanUser", "Step"]
+    unknown_types = list(set(entities_by_type.keys()).difference(set(known_types)))
+    if len(unknown_types) > 1:
+        raise TankError("Cannot determine context entity for >1 unknown entities types: %s" % unknown_types)
 
-    # Get the list of required and optional fields
-    if entity_type == "Project":
-        required_fields = [name_field]
-        optional_fields = []
-        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_project", [])
+    # Now create a combined list of types ordered by precedence
+    # Unknown entity types are given higher precedence than other entities except Tasks
+    ordered_types = known_types[:1] + unknown_types + known_types[1:]
 
-    elif entity_type == "Task":
-        required_fields = [name_field, "step", "entity", "project"]
-        optional_fields = ["entity.{entity_type}.sg_shot", "entity.{entity_type}.sg_sequence"]
-        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_task", [])            
+    # Process the entities in order
+    for entity_type in ordered_types:
+        curr_entity = entities_by_type.get(entity_type)
+        if curr_entity:
+            # The first valid element processed is the primary entity
+            # HumanUser and Step entities cannot be primary entities
+            if not entity_dict.get("type") and entity_type not in ("HumanUser", "Step"):
+                entity_dict.update(curr_entity)
 
-        # If we have a parent entity, format the entity_type fields
-        for entity_type2 in ("Asset", "Shot", "Sequence"):
-            if entity_type2 in entities_by_type:
-                optional_fields = [field.format(entity_type=entity_type2) for field in optional_fields]
-                break
-
-    else:
-        required_fields = [name_field, "project"]
-        optional_fields = ["sg_sequence", "sg_shot"]
-        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_entity", [])
-
-    # Process the remaining entities into their proper location
-    for entity in entities_by_type.values():
-        _process_entity(entity, entity_dict, required_fields + optional_fields)
+            # Else, organize it in the entity dictionary
+            else:
+                _process_entity(curr_entity, entity_dict, None, additional_types)
 
     # Return the processed entity dict
     return entity_dict
-        
+
 
 def _build_entity_dict_from_path(tk, path, required_fields=None, additional_types=None):
     """
@@ -1670,7 +1693,7 @@ def _build_entity_dict_from_path(tk, path, required_fields=None, additional_type
     return entity_dict
 
 
-def _get_valid_entity_dict(tk, entity_dict):
+def _get_valid_context_entity_dict(tk, entity_dict):
     """
     """
     # Since we are modifying in place, make a copy
@@ -1685,55 +1708,30 @@ def _get_valid_entity_dict(tk, entity_dict):
     if not entity_id:
         raise TankError("Cannot create a context without an entity id!")
 
-    # Sanitize name
-    name_field = shotgun_entity.get_sg_entity_name_field(entity_type)
-    if name_field in entity_dict:
-        entity_dict["name"] = entity_dict.pop(name_field)
+    # Get the required and optional context fields for this entity type
+    required_fields, optional_fields = _get_context_fields_for_entity_type(tk, entity_type)
 
     # Special case handling for published file entities
     if entity_type in ["PublishedFile", "TankPublishedFile"]:
 
         # If we are missing all required fields, go get them
-        required_fields = ["task", "entity", "project"]
         if all([not entity_dict.get(x) for x in required_fields]):
             entity_dict = _build_entity_dict(tk, entity_dict, required_fields)
 
         # Iterate (in order) over entity fields to get the new entity to process
         for field in required_fields:
-            new_entity = _build_clean_entity(tk, entity_dict.get(field))
+            new_entity = entity_dict.get(field)
             if new_entity:
 
                 # Add the original entity as the source entity
                 new_entity["source_entity"] = _build_clean_entity(tk, entity_dict)
 
                 # Rerun context creation with new primary entity
-                return _get_valid_entity_dict(tk, new_entity)
+                return _get_valid_context_entity_dict(tk, new_entity)
 
         # If we got here, we don't have a valid entity dictionary
         raise TankError("'%s' entity missing required fields: %s" %
                 (entity_type, pprint.pformat(required_fields)))
-
-    # We have 3 valid types of primary entities: 
-    # Project, Task, or Entity (Shot, Sequence, Asset, etc)
-    if entity_type == "Project":
-        required_fields = ["name"]
-        optional_fields = []
-        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_project", [])
-
-    elif entity_type == "Task":
-        required_fields = ["name", "step", "entity", "project"]
-        optional_fields = ["entity.{entity_type}.sg_shot", "entity.{entity_type}.sg_sequence"]
-        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_task", [])            
-
-        # If we have an entity, format the entity_type fields 
-        parent_entity = entity_dict.get("entity")
-        if parent_entity:
-            optional_fields = [field.format(entity_type=parent_entity["type"]) for field in optional_fields]
-
-    else:
-        required_fields = ["name", "project"]
-        optional_fields = ["sg_sequence", "sg_shot"]
-        optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_entity", [])
 
     # If we are missing any required or optional fields, attempt to go get them
     entity_dict = _build_entity_dict(tk, entity_dict, required_fields + optional_fields)
@@ -1745,18 +1743,21 @@ def _get_valid_entity_dict(tk, entity_dict):
                 (entity_type, pprint.pformat(missing_fields)))
 
     # Add any entities defined in additional_fields
-    for field in optional_fields:
-        # Make sure to format the entity_type field
-        parent_entity = entity_dict.get("entity")
-        if parent_entity:
-            parent_type = parent_entity["type"]
-            field = field.format(entity_type=parent_type)
+    for field_name in optional_fields:
 
-        additional_entity = _build_clean_entity(tk, entity_dict.get(field))
+        # If this is an entity link field...
+        if "." in field_name:
+            sub_entity_field = field_name.split(".")[0]
+            sub_entity = entity_dict.get(sub_entity_field)
+            if sub_entity:
+                # ...format the {entity_type} field
+                field_name = field_name.format(entity_type=sub_entity["type"])
+
+        additional_entity = entity_dict.get(field_name)
         if additional_entity:
             if "additional_entities" not in entity_dict:
                 entity_dict["additional_entities"] = []
-            entity_dict["additional_entities"].append(additional_entity)
+            entity_dict["additional_entities"].append(_build_clean_entity(tk, additional_entity))
 
     # Remove duplicates from additional_entities list
     if "additional_entities" in entity_dict:
@@ -1863,10 +1864,6 @@ def _get_entity_dict_from_path_cache(tk, entity_dict, required_fields):
                                 "with the local storage setup. Please contact %s."
                                 % (curr_path, entity_type, entity_id, constants.SUPPORT_EMAIL))
 
-            # If all we were looking for was type, id, and name, then we're done
-            if all([path_entity.get(x) for x in required_fields]):
-                return path_entity
-
             # Accumulate information about the entity from all relevant path_cache entries
             new_entity_dict = _build_entity_dict_from_path(tk, path, required_fields, [])
             for key in new_entity_dict.keys():
@@ -1892,7 +1889,7 @@ def _get_entity_dict_from_folder_schema(tk, entity_dict, required_fields):
 
     entity_id   = entity_dict["id"]
     entity_type = entity_dict["type"]
-    
+
     sg_data = {entity_type: entity_dict}
 
     # Get matching folder objs and extract sg data from them
@@ -1920,14 +1917,23 @@ def _get_entity_dict_from_shotgun(tk, entity_dict, required_fields):
     entity_id   = entity_dict["id"]
     entity_type = entity_dict["type"]
 
-    name_field = shotgun_entity.get_sg_entity_name_field(entity_type)
-    key_fields = _get_templatekey_sg_fields(tk, entity_type)
-    data = tk.shotgun.find_one(entity_type, [["id", "is", entity_id]], required_fields + key_fields + [name_field])
+    context_fields = []
+    for field_name in required_fields:
+
+        # If this is an entity link field...
+        if "." in field_name:
+            sub_entity_field = field_name.split(".")[0]
+            sub_entity = entity_dict.get(sub_entity_field)
+            if sub_entity:
+                # ...format the {entity_type} field
+                field_name = field_name.format(entity_type=sub_entity["type"])
+
+        context_fields.append(field_name)
+
+    templatekey_fields = _get_templatekey_sg_fields(tk, entity_type)
+    data = tk.shotgun.find_one(entity_type, [["id", "is", entity_id]], context_fields + templatekey_fields)
     if not data:
         raise TankError("Cannot find %s Entity: '%s' in Shotgun." % (entity_type, entity_id))
-
-    # Sanitize the name field
-    data["name"] = data.pop(name_field)
 
     for key in data.keys():
         if key in entity_dict and entity_dict[key] != data[key]:
