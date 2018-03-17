@@ -14,6 +14,7 @@ import copy
 from ...errors import TankError
 from ...util import shotgun_entity, login
 from ...template import TemplatePath
+from ...templatekey import StringKey
 
 from .errors import EntityLinkTypeMismatch
 from .base import Folder
@@ -91,36 +92,49 @@ class Entity(Folder):
         # the schema name is the same as the SG entity type
         Folder.__init__(self, tk, parent, full_path, metadata)
 
+    def _create_template_keys(self):
+        """
+        TemplateKey creation implementation. Implemented by all subclasses.
+        """
+        # Figure out which fields to create keys for
+        fields = self._entity_expression.get_shotgun_fields()
+
+        template_keys = []
+        for field_name in fields:
+
+            # Name the key using the entity_type and field_name to ensure uniqueness
+            key_name = "%s.%s" % (self._entity_type, field_name)
+
+            # If the key already exists, use it
+            if key_name in self.template_keys:
+                template_key = self.template_keys[key_name]
+
+            # Else create an entity key for this pairing
+            else:
+                template_key = StringKey(key_name,
+                                         self._tk.pipeline_configuration,
+                                         shotgun_entity_type=self._entity_type,
+                                         shotgun_field_name=field_name)
+            # Add key to the list
+            template_keys.append(template_key)
+
+        return template_keys
+
     def _create_template_path(self):
         """
         Template path creation implementation. Implemented by all subclasses.
 
         Should return a TemplatePath object for the path of form: "{Project}/{Sequence}/{Shot}/user/{user_workspace}/{Step}"
         """
-        # Find the matching TemplateKey names for the field expression
-        key_names = {}
-        fields = self._entity_expression.get_shotgun_fields()
-        for field in fields:
-            # Get any Shotgun template keys that match this field
-            for key in self._tk.template_keys.values():
-                if not key.shotgun_field_name or not key.shotgun_entity_type:
-                    continue
-
-                if (self._entity_type == key.shotgun_entity_type and
-                    field == key.shotgun_field_name):
-                    key_names[field] = "{%s}" % key.name
-                    break
-
-            if field not in key_names:
-                raise TankError("Cannot create Schema TemplatePath. No matching TemplateKey for %s.%s" \
-                        % (self._entity_type, field))
+        # Generate the TemplatePath using the TemplateKeys collected earlier
+        key_names = dict([(k.shotgun_field_name, "{%s}" % k.name) for k in self._template_keys])
 
         template_path = self._entity_expression.generate_name(key_names, validate=False)
         if self._parent:
             template_path = os.path.join(str(self._parent.template_path), template_path)
 
         return TemplatePath(template_path,
-                            self._tk.template_keys,
+                            self.template_keys,
                             self._tk.pipeline_configuration,
                             self.get_storage_root(),
                             self.name)
