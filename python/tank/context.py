@@ -870,7 +870,7 @@ class Context(object):
         and step, respectively, are not already set.
         """
         if self.__entity and other.entity and \
-           self.__entity["id"] == other.entity["id"] and \
+           self.__entity == other.entity and \
            self.__additional_entities == other.additional_entities:
 
             # cool, everything is matching down to the step/task level.
@@ -1318,13 +1318,13 @@ def _from_entity_dictionary(tk, entity_dict, previous_context=None):
         # Initialize the new context dictionary
         context_dict = {
             "tk":                   tk,
-            "project":              entity_dict.get("project"),
-            "entity":               entity_dict.get("entity"),
-            "step":                 entity_dict.get("step"),
-            "user":                 entity_dict.get("user"),
-            "task":                 entity_dict.get("task"),
-            "source_entity":        entity_dict.get("source_entity"),
-            "additional_entities":  entity_dict.get("additional_entities") or []
+            "project":              _build_clean_entity(tk, entity_dict.get("project")),
+            "entity":               _build_clean_entity(tk, entity_dict.get("entity")),
+            "step":                 _build_clean_entity(tk, entity_dict.get("step")),
+            "user":                 _build_clean_entity(tk, entity_dict.get("user")),
+            "task":                 _build_clean_entity(tk, entity_dict.get("task")),
+            "source_entity":        _build_clean_entity(tk, entity_dict.get("source_entity")),
+            "additional_entities":  [_build_clean_entity(tk, k) for k in entity_dict.get("additional_entities", [])]
         }
 
         # Build the context object
@@ -1436,22 +1436,6 @@ yaml.add_constructor(u'!TankContext', context_yaml_constructor)
 ################################################################################################
 # utility methods
 
-def _get_templatekey_sg_fields(tk, entity_type):
-    """
-    """
-    fields = []
-
-    # Get any Shotgun template keys that match this entity type
-    for key in tk.template_keys.values():
-        if not key.shotgun_field_name or not key.shotgun_entity_type:
-            continue
-
-        if entity_type == key.shotgun_entity_type:
-            fields.append(key.shotgun_field_name)
-
-    return fields
-
-
 def _get_context_fields_for_entity_type(tk, entity_type):
     """
     """
@@ -1531,12 +1515,6 @@ def _build_clean_entity(tk, ent):
         "type": ent_type,
         "name": ent_name
     }
-
-    # Get any Shotgun template keys and store any existing fields of interest
-    fields = _get_templatekey_sg_fields(tk, ent_type)
-    for field in fields:
-        if field in ent:
-            new_ent[field] = ent[field]
 
     # return a clean dictionary:
     return new_ent
@@ -1724,7 +1702,7 @@ def _get_valid_context_entity_dict(tk, entity_dict):
             if new_entity:
 
                 # Add the original entity as the source entity
-                new_entity["source_entity"] = _build_clean_entity(tk, entity_dict)
+                new_entity["source_entity"] = entity_dict
 
                 # Rerun context creation with new primary entity
                 return _get_valid_context_entity_dict(tk, new_entity)
@@ -1757,7 +1735,7 @@ def _get_valid_context_entity_dict(tk, entity_dict):
         if additional_entity:
             if "additional_entities" not in entity_dict:
                 entity_dict["additional_entities"] = []
-            entity_dict["additional_entities"].append(_build_clean_entity(tk, additional_entity))
+            entity_dict["additional_entities"].append(additional_entity)
 
     # Remove duplicates from additional_entities list
     if "additional_entities" in entity_dict:
@@ -1930,8 +1908,7 @@ def _get_entity_dict_from_shotgun(tk, entity_dict, required_fields):
 
         context_fields.append(field_name)
 
-    templatekey_fields = _get_templatekey_sg_fields(tk, entity_type)
-    data = tk.shotgun.find_one(entity_type, [["id", "is", entity_id]], context_fields + templatekey_fields)
+    data = tk.shotgun.find_one(entity_type, [["id", "is", entity_id]], context_fields)
     if not data:
         raise TankError("Cannot find %s Entity: '%s' in Shotgun." % (entity_type, entity_id))
 
