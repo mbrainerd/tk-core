@@ -2397,6 +2397,9 @@ class Engine(TankBundle):
                         # Update the app's internal context pointer.
                         app.context = self.context
 
+                        # Update app's env to the current env.
+                        app.env = self.env
+
                         # Update the app settings.
                         app.settings = app_settings
 
