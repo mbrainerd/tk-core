@@ -20,6 +20,7 @@ from ..util.loader import load_plugin
 from . import constants
 
 from .bundle import TankBundle
+from .engine import get_environment_from_context
 from ..util.metrics import EventMetric
 
 class Application(TankBundle):
@@ -160,6 +161,20 @@ class Application(TankBundle):
         Called by the engine as it is being destroyed.
         """
         pass
+
+    def change_context(self, new_context):
+        if new_context == self.context:
+            return
+        super(Application, self).change_context(new_context)
+
+        # reset the context
+        self.context = new_context
+
+        # reset the environment
+        self.env = get_environment_from_context(self.sgtk, new_context)
+
+        # reset the app settings
+        self.settings = self.env.get_app_settings(self.engine.name, self.name)
 
     ##########################################################################################
     # event handling
