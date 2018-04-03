@@ -20,7 +20,6 @@ from ..util.loader import load_plugin
 from . import constants
 
 from .bundle import TankBundle
-from .engine import get_environment_from_context
 from ..util.metrics import EventMetric
 
 class Application(TankBundle):
@@ -171,6 +170,7 @@ class Application(TankBundle):
         self.context = new_context
 
         # reset the environment
+        from .engine import get_environment_from_context
         self.env = get_environment_from_context(self.sgtk, new_context)
 
         # reset the app settings
