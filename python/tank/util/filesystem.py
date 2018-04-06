@@ -166,6 +166,18 @@ def copy_file(src, dst, permissions=0o666):
     os.chmod(dst, permissions)
 
 
+@with_cleared_umask
+def symlink_file(src, dst):
+    """
+    Symlinks a src file to its' dst file.
+
+    :param src: Source file.
+    :param dst: Symlink file location.
+    """
+
+    dd_jstools_utils.symlink_with_jstools(src, dst)
+
+
 def safe_delete_file(path):
     """
     Deletes the given file if it exists.
