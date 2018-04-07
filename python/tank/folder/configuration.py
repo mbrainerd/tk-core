@@ -98,15 +98,16 @@ class FolderConfiguration(object):
         Returns all the directories for a given path
         """
         directory_paths = []
-        for file_name in os.listdir(parent_path):
-            
-            # check our ignore list
-            if any(fnmatch.fnmatch(file_name, p) for p in self._ignore_files):
-                continue
-            
-            full_path = os.path.join(parent_path, file_name)
-            if os.path.isdir(full_path):
-                directory_paths.append(full_path)
+        if os.path.exists(parent_path):
+            for file_name in os.listdir(parent_path):
+
+                # check our ignore list
+                if any(fnmatch.fnmatch(file_name, p) for p in self._ignore_files):
+                    continue
+
+                full_path = os.path.join(parent_path, file_name)
+                if os.path.isdir(full_path):
+                    directory_paths.append(full_path)
                 
         return directory_paths
 

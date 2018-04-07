@@ -43,7 +43,7 @@ class PipelineConfiguration(object):
     to construct this object, do not create directly via the constructor.
     """
 
-    def __init__(self, pipeline_configuration_path, descriptor=None):
+    def __init__(self, pipeline_configuration_path, descriptor=None, context_path=None):
         """
         Constructor. Do not call this directly, use the factory methods
         in pipelineconfig_factory.
@@ -63,6 +63,7 @@ class PipelineConfiguration(object):
         :type descriptor: :class:`sgtk.descriptor.ConfigDescriptor`
         """
         self._pc_root = pipeline_configuration_path
+        self._context_path = context_path
 
         # To cover a very stupid use case
         os.environ["TANK_CURRENT_PC"] = self._pc_root
@@ -70,7 +71,7 @@ class PipelineConfiguration(object):
         # get the project tank disk name (Project.tank_name),
         # stored in the pipeline config metadata file.
         pipeline_config_metadata = pipelineconfig_utils.get_metadata(self._pc_root)
-        self._project_name = pipeline_config_metadata.get("project_name")
+        self._project_name = pipeline_config_metadata.get("project_name", "site")
         self._project_id = pipeline_config_metadata.get("project_id")
         self._pc_id = pipeline_config_metadata.get("pc_id")
         self._plugin_id = pipeline_config_metadata.get("plugin_id")
@@ -126,7 +127,7 @@ class PipelineConfiguration(object):
             self._bundle_cache_root_override = None
         else:
             # use cache relative to core install
-            self._bundle_cache_root_override = pipelineconfig_utils.get_package_install_location("sgtk_apps")
+            self._bundle_cache_root_override = pipelineconfig_utils.get_package_install_location("sgtk_apps", self._context_path or self._project_name)
 
         if pipeline_config_metadata.get("bundle_cache_fallback_roots"):
             self._bundle_cache_fallback_paths = pipeline_config_metadata.get("bundle_cache_fallback_roots")
@@ -642,7 +643,7 @@ class PipelineConfiguration(object):
             # this would find any localized APIs.
             return self._pc_root
 
-        return pipelineconfig_utils.get_core_install_location(self._project_name)
+        return pipelineconfig_utils.get_core_install_location(self._context_path or self._project_name)
 
     def get_core_location(self):
         """

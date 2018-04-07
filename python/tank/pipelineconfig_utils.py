@@ -144,10 +144,13 @@ def get_metadata(pipeline_config_path):
             # Get the PipelineConfiguration, filtered by ID 1
             pc_entity = sg.find_one("PipelineConfiguration", [["id", "is", 1]], ["code"])
             if pc_entity is None:
-                raise TankError("Cannot find Site PipelineConfiguration.")
+                logger.warning("Cannot find Site PipelineConfiguration.")
+                data["pc_id"]           = 1
+                data["pc_name"]         = constants.PRIMARY_PIPELINE_CONFIG_NAME
+                return data
 
             data["pc_id"]           = pc_entity.get("id")
-            data["pc_name"]         = pc_entity.get("code")                
+            data["pc_name"]         = pc_entity.get("code")
 
     return data
 
@@ -341,8 +344,8 @@ def get_core_path_for_config(pipeline_config_path):
         # this would find any localized APIs.
         return pipeline_config_path
 
-    data = get_metadata(pipeline_config_path)
-    return get_core_install_location(data.get("project_name"))
+    project_name = get_metadata(pipeline_config_path).get("project_name", "site")
+    return get_core_install_location(project_name)
 
 def get_sgtk_module_path():
     """
@@ -419,89 +422,100 @@ def resolve_all_os_paths_to_config(pc_path):
     return _get_install_locations(pc_path)
 
 
-def get_core_install_location(level_or_path=None):
+def get_core_install_location(path_or_project=None):
     """
-    Given a project name or path on disk, return the location of the core api location
+    Given a path on disk or project_name, return the location of the core api location
     """
-    return get_package_install_location('sgtk_core', level_or_path)
+    return get_package_install_location('sgtk_core', path_or_project)
     
 
-def get_config_install_location(level_or_path=None):
+def get_config_install_location(path_or_project=None):
     """
-    Given a project name or path on disk, return the location of the core api location
+    Given a path on disk or project_name, return the location of the core api location
     """
-    return get_package_install_location('sgtk_config', level_or_path)
+    return get_package_install_location('sgtk_config', path_or_project)
     
     
-def get_package_install_location(package_name, level_or_path=None):
+def get_package_install_location(package_name, path_or_project=None):
     """
-    Given a project name or path on disk, return the location of a given package
+    Given a path on disk or project_name, return the location of a given package
     """
-    # HACK: Use dd.runtime to resolve test branches until #99460 is resolved
-    if "DD_TEST_BRANCHES" in os.environ:
-        from dd import ddos
-        from dd.runtime.info import getVersionToBeLoaded, locateNearestDistribution
-
-        version = getVersionToBeLoaded(package_name)
-        path = locateNearestDistribution(package_name, version, ddos.getOsInfo())
-
-        # If the resolved distribution comes from the local work area, return that
-        if prez.Level.parse(prez.derive(path).source.name).isWorkarea:
-            return path
-
-    # HACK: First check if there is an override for this package until #99460 is resolved
-    spec = os.environ.get("DD_WITH_OVERRIDE") or ""
-    withOverrides = dict(x.partition("=")[::2] for x in spec.split(",") if x != "")
-    if withOverrides.get(package_name):
-        # Get the current environment
-        env = prez.Environment.current()
-
-        package_version = prez.Version.parse(withOverrides[package_name])
-        distro = env.getDistribution(package_name, package_version)
-        if not distro:
-            raise TankError("Cannot resolve distribution %s for env %s" % (package_name, env))
-
-        # Return the path to the resolved distribution
-        return distro.path
-
-    # Get the current config
-    config = prez.Configuration.current()
-
-    if level_or_path:
-        # Determine if this is a distribution path
+    # If the input is a path, first see if it is a distribution path
+    if path_or_project and os.path.exists(path_or_project):
         try:
-            # Specified path is a distribution, so just return its path
-            distro = prez.derive(level_or_path)
+            # Attempt to derive a distribution from the path
+            distro = prez.derive(path_or_project)
+
+            # Ensure that the resulting distro corresponds to the requested package
+            if distro.project != package_name:
+                raise TankError("Specified path %s does not correspond to package: %s" % (path_or_project, package_name))
+
+            # Specified path is a distribution, so just return it
             return distro.path
 
         except prez.NotFoundError:
+            # This isn't a distribution path...which is fine
+            pass
 
-            # If level_or_path is set to "site" keyword, use the facility level
-            if level_or_path == "site":
-                level_spec = prez.Level.facility()
+    # Get the current configuration
+    config = prez.Configuration.current()
 
-            # Else if it is a path, derive the level
-            elif os.path.exists(level_or_path):
-                level_spec = prez.Level.derive(level_or_path)
-
-            # Else assume it is a level spec
-            else:
-                level_spec = prez.Level.parse(level_or_path.upper())
-
-    else:
-        # If level_or_path is not set, resort to facility level config
-        level_spec = prez.Level.facility()
-
-    # Update the configuration with the new level
-    config.replace(level=level_spec)
-
-    # Get the environment for the updated Configuration
+    # Get the current environment
     env = prez.Environment.forConfiguration(config)
 
-    # Get the distribution for this environment
-    distro = env.resolveDistribution(package_name)
+    # TODO: Remove this conditional after #118805 is resolved
+    # First check if there is a with override for this package
+    spec = os.environ.get("DD_WITH_OVERRIDE") or ""
+    with_overrides = dict(x.partition("=")[::2] for x in spec.split(",") if x != "")
+
+    # If there is a "with" override, get the corresponding version distribution
+    if with_overrides.get(package_name):
+        package_version = prez.Version.parse(with_overrides[package_name])
+        distro = env.getDistribution(package_name, package_version)
+
+    # Else resolve to find the current environment's distribution
+    else:
+        package_version = None
+        distro = env.resolveDistribution(package_name)
+
+    # If we have a resolved distro...
+    if distro:
+        # ...and it comes from a local workarea, this always wins
+        if prez.Level.parse(prez.derive(distro.path).source.name).isWorkarea:
+            return distro.path
+
+    # If a level_spec was provided, attempt to derive the corresponding environment
+    if path_or_project:
+
+        # If path_or_project is set to "site" keyword, use the facility level
+        if path_or_project == "site":
+            level_spec = prez.Level.facility()
+
+        # Else if it is a path, derive the level
+        elif os.path.exists(path_or_project):
+            level_spec = prez.Level.derive(path_or_project)
+
+        # Else assume it is a project name
+        else:
+            level_spec = prez.Level.parse(path_or_project.upper())
+
+        # Update the config for the new level_spec
+        config.replace(level=level_spec)
+
+        # Get the environment for the updated Configuration
+        env = prez.Environment.forConfiguration(config)
+
+        # If the version isn't set via a with override...
+        if not package_version:
+            # Resolve the version pin for the new environment
+            package_version = env.resolvePin(package_name).version
+
+        # Get the distribution for this environment
+        distro = env.getDistribution(package_name, package_version)
+
+    # Ensure we have a valid distribution
     if not distro:
-        raise TankError("Cannot resolve distribution %s for env %s" % (package_name, env))
+        raise TankError("Cannot get distribution %s-%s for env %s" % (package_name, package_version, env))
 
     # Return the path to the resolved distribution
     return distro.path

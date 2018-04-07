@@ -168,7 +168,7 @@ def _from_path(path, force_reread_shotgun_cache):
     if pc_path is None:
         raise TankInitError("There is no pipeline configuration associated with this path:\n'%s'" % path)
 
-    return PipelineConfiguration(pc_path)
+    return PipelineConfiguration(pc_path, context_path=path)
 
 
 def _validate_and_create_pipeline_configuration(associated_pipeline_configs, source):

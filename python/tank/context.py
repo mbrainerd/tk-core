@@ -1457,6 +1457,10 @@ def _get_context_fields_for_entity_type(tk, entity_type):
         optional_fields = ["entity.{entity_type}.sg_shot", "entity.{entity_type}.sg_sequence"]
         optional_fields += tk.execute_core_hook("context_additional_entities").get("entity_fields_on_task", [])
 
+    elif entity_type in ["Step", "HumanUser"]:
+        required_fields = [name_field]
+        optional_fields = []
+
     else:
         required_fields = [name_field, "project"]
         optional_fields = ["sg_sequence", "sg_shot"]
