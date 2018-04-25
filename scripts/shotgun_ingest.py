@@ -108,9 +108,9 @@ def main():
         raise
 
     try:
-        return engine.execute_command("Publish...", [])
+        return engine.execute_command("Ingest...", [])
     except Exception as e:
-        logger.error("Could not start app: %s" % str(e))
+        logger.error("Could not start app: %s\nThis app is supposed to be launched from ingest role." % str(e))
         if os.environ.get("DD_DEBUG"):
             import pdb; pdb.post_mortem()
         raise
