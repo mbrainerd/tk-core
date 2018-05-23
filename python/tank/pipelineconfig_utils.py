@@ -28,11 +28,46 @@ from . import LogManager
 
 from .util import yaml_cache
 from .util import ShotgunPath
+from .util.singleton import Threaded
 from .util.shotgun import get_deferred_sg_connection, get_sg_connection
 
 from .errors import TankError
 
 logger = LogManager.get_logger(__name__)
+
+class PackageCache(Threaded):
+    """
+    Cache of plugin settings per context.
+    """
+    def __init__(self):
+        """
+        Constructor.
+        """
+        Threaded.__init__(self)
+        self._cache = dict()
+
+    @Threaded.exclusive
+    def get(self, key):
+        """
+        Retrieve the cached context.
+
+        :param key: The key for the package we desire.
+
+        :returns: The associated package location or None
+        """
+        return self._cache.get(key)
+
+    @Threaded.exclusive
+    def add(self, key, package):
+        """
+        Cache the location for a given package lookup dict.
+
+        :param key: The key to associate with the package.
+        :param package: Package location to be cached.
+        """
+        self._cache[key] = package
+
+g_package_cache = PackageCache()
 
 
 def has_core_descriptor(pipeline_config_path):
@@ -440,6 +475,14 @@ def get_package_install_location(package_name, path_or_project=None):
     """
     Given a path on disk or project_name, return the location of a given package
     """
+    package_key = (package_name, path_or_project)
+
+    # Check if we've processed this package before before
+    # and if so return from cache
+    package_path = g_package_cache.get(package_key)
+    if package_path:
+        return package_path
+
     # If the input is a path, first see if it is a distribution path
     if path_or_project and os.path.exists(path_or_project):
         try:
@@ -449,6 +492,9 @@ def get_package_install_location(package_name, path_or_project=None):
             # Ensure that the resulting distro corresponds to the requested package
             if distro.project != package_name:
                 raise TankError("Specified path %s does not correspond to package: %s" % (path_or_project, package_name))
+
+            # Add package path to cache
+            g_package_cache.add(package_key, distro.path)
 
             # Specified path is a distribution, so just return it
             return distro.path
@@ -482,6 +528,11 @@ def get_package_install_location(package_name, path_or_project=None):
     if distro:
         # ...and it comes from a local workarea, this always wins
         if prez.Level.parse(prez.derive(distro.path).source.name).isWorkarea:
+
+            # Add package path to cache
+            g_package_cache.add(package_key, distro.path)
+
+            # Return the path to the resolved distribution
             return distro.path
 
     # If a level_spec was provided, attempt to derive the corresponding environment
@@ -516,6 +567,9 @@ def get_package_install_location(package_name, path_or_project=None):
     # Ensure we have a valid distribution
     if not distro:
         raise TankError("Cannot get distribution %s-%s for env %s" % (package_name, package_version, env))
+
+    # Add package path to cache
+    g_package_cache.add(package_key, distro.path)
 
     # Return the path to the resolved distribution
     return distro.path
