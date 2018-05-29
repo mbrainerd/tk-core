@@ -93,3 +93,6 @@ from .templatekey import TemplateKey, SequenceKey, IntegerKey, StringKey, Timest
 
 from .dd_utils import dd_jstools_utils
 
+from .profiling import CProfileRunner
+from .profiling import CProfileMethodRunner
+
