@@ -12,7 +12,7 @@
 Classes for the main Sgtk API.
 """
 
-import os
+import sys, os
 import glob
 
 from . import folder
@@ -57,7 +57,8 @@ class Sgtk(object):
         try:
             self.templates, self.template_keys = read_templates(self.__pipeline_config)
         except TankError as e:
-            raise TankError("Could not read templates configuration: %s" % e)
+            err_msg = "Could not read templates configuration: %s" % e
+            raise type(e), type(e)(err_msg), sys.exc_info()[2]
 
         # create schema builder
         schema_cfg_folder = self.__pipeline_config.get_schema_config_location()
@@ -294,7 +295,8 @@ class Sgtk(object):
         try:
             self.templates, self.template_keys = read_templates(self.__pipeline_config)
         except TankError as e:
-            raise TankError("Templates could not be reloaded: %s" % e)
+            err_msg = "Templates could not be reloaded: %s" % e
+            raise type(e), type(e)(err_msg), sys.exc_info()[2]
 
     def list_commands(self):
         """

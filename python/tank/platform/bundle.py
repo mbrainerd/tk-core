@@ -1459,7 +1459,8 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
         value = _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate)
     except Exception as e:
         key_name = ".".join((instance_name, key,) + e.args[1:])
-        raise type(e)("Could not determine settings value for key: '%s' - %s" % (key_name, e.args[0]))
+        err_msg = "Could not determine settings value for key: '%s' - %s" % (key_name, e.args[0])
+        raise type(e), type(e)(err_msg), sys.exc_info()[2]
 
     return value
 
