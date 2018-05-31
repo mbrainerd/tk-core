@@ -126,31 +126,6 @@ def _resolve_include(file_name, include, context):
     return resolved_include
 
 
-def _find_matching_ref(lookup_dict, ref_string):
-    """
-    Find a reference whose name matches a portion of ref_string.  This
-    will find the longest/best match.
-    """
-    matching_refs = []
-    
-    # find all references that match the start of the ref string:
-    for name, definition in lookup_dict.iteritems():
-        if ref_string.startswith(name):
-            matching_refs.append((name, definition))
-
-    # if there is more than one match then choose the one with the longest
-    # name/longest match:
-    best_match = None
-    best_match_len = 0
-    for name, definition in matching_refs:
-        name_len = len(name)
-        if name_len > best_match_len:
-            best_match_len = name_len
-            best_match = (name, definition)
-
-    return best_match
-
-
 def _resolve_refs_r(lookup_dict, data):
     """
     Scans data for @refs and attempts to replace based on lookup data
@@ -165,7 +140,7 @@ def _resolve_refs_r(lookup_dict, data):
     
     elif isinstance(data, dict):
         processed_val = {}
-        for (k,v) in data.items():
+        for (k, v) in data.items():
             processed_val[k] = _resolve_refs_r(lookup_dict, v)
         
     elif isinstance(data, basestring):
@@ -178,13 +153,20 @@ def _resolve_refs_r(lookup_dict, data):
                 # this would have been an @ so ignore!
                 continue
 
-            # find a reference that matches the start of the ref string:                
-            ref_match = _find_matching_ref(lookup_dict, ref_part)
-            if not ref_match:
-                raise TankError("Failed to resolve reference '@%s'" % ref_part)
+            # Check to see if we have braces surrounding our reference.
+            alpha_num_string = "[a-zA-Z0-9_.-]"
+            regex = "^{?(%s+)}?(\S*)" % alpha_num_string
+            match = re.match(regex, ref_part)
+            if not match:
+                raise TankError("Failed to parse reference '@%s'" % ref_part)
 
-            # resolve the reference:
-            ref_name, ref_definition = ref_match
+            ref_name = match.group(1)
+            ref_extra = match.group(2)
+
+            # find a reference that matches the start of the ref string
+            ref_definition = lookup_dict.get(ref_name)
+            if not ref_definition:
+                raise TankError("Failed to resolve reference '@%s'" % ref_name)
 
             # other parts of the code are making changes nilly-willy to data
             # structures (ick) so flatten everything out here.... :(
@@ -193,14 +175,14 @@ def _resolve_refs_r(lookup_dict, data):
             # Cannot concatenate non-basestrings
             if not isinstance(resolved_ref, basestring):
                 # If we have a string prefix or suffix
-                if processed_val or ref_part[len(ref_name):]:
+                if processed_val or ref_extra:
                     raise TankError("Cannot concatenate a string and non-string value for '%s'" % data)
 
                 # We've evaluated the entire string value, so just return this
                 return resolved_ref
             else:
                 # Add back any remaining prefix and suffix
-                processed_val += resolved_ref + ref_part[len(ref_name):]
+                processed_val += resolved_ref + ref_extra
 
     return processed_val
             
@@ -242,7 +224,8 @@ def process_includes(file_name, data, context):
         data = _resolve_refs_r(lookup_dict, data)
         data = _resolve_frameworks(lookup_dict, data)
     except TankError as e:
-        raise TankError("Include error. Could not resolve references for %s: %s" % (file_name, e))
+        err_msg = "Include error. Could not resolve references for %s: %s" % (file_name, e)
+        raise type(e), type(e)(err_msg), sys.exc_info()[2]
 
     return data
         
