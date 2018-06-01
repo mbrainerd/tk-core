@@ -25,6 +25,7 @@ from .platform.environment import InstalledEnvironment, WritableEnvironment
 from .util import shotgun, yaml_cache
 from .util import ShotgunPath
 from .util import LocalFileStorageManager
+from .util import StorageRoots
 from . import hook
 from . import pipelineconfig_utils
 from . import template_includes
@@ -95,7 +96,7 @@ class PipelineConfiguration(object):
         current_api_version = pipelineconfig_utils.get_currently_running_api_version()
 
         if our_associated_api_version not in [None, "unknown", "HEAD"] and \
-           is_version_older(current_api_version, our_associated_api_version):
+                is_version_older(current_api_version, our_associated_api_version):
             # currently running API is too old!
             current_api_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -114,7 +115,26 @@ class PipelineConfiguration(object):
                                                                               our_associated_api_version,
                                                                               self.get_install_location()))
 
-        self._roots = pipelineconfig_utils.get_roots_metadata(self._pc_root)
+        # keep a storage roots object interface instance in order to query roots
+        # info as needed
+        config_folder = os.path.join(self._pc_root, "config")
+        self._storage_roots = StorageRoots.from_config(config_folder)
+
+        # If there are storage required for this configuration, ensure one of
+        # them can be identified as the default storage. We need to keep this
+        # constraint as we are not able to keep roots definition in the order
+        # they were defined, so this is the only way we can guarantee we always
+        # use the same root for any template which does not have an explicit
+        # root setting.
+        if (
+            self._storage_roots.required_roots and not
+            self._storage_roots.default_path
+        ):
+            raise TankError(
+                "Could not identify a default storage root for this pipeline "
+                "configuration! File: '%s'" % (self._storage_roots.roots_file,)
+            )
+
         self._use_shotgun_path_cache = pipeline_config_metadata.get(
             "use_shotgun_path_cache",
             False
@@ -134,7 +154,7 @@ class PipelineConfiguration(object):
         else:
             self._bundle_cache_fallback_paths = []
 
-        # There are four ways this initializer can be invoked.
+        # There are five ways this initializer can be invoked.
         #
         # 1) Classic: We're instantiated from sgtk_from_path with a single path.
         # 2) Bootstrap: path is set, descriptor is unset and no descriptor inside
@@ -143,6 +163,8 @@ class PipelineConfiguration(object):
         #    pipeline_configuration.yml
         # 4) Bootstrap, path is set, descriptor is set and descriptor inside
         #    pipeline_configuration.yml
+        # 5) Baked configs via bootstrap, path is set, the rest is None. A baked
+        #    config has got the same layout as a classic installation.
         #
         # The correct way to handle all of this is to go from a descriptor string or dictionary and
         # instantiate the correct descriptor type.
@@ -160,6 +182,7 @@ class PipelineConfiguration(object):
             # The bootstrapper wrote the descriptor in the pipeline_configuration.yml file, nothing
             # more needs to be done.
             pass
+
         # If there's nothing in the file, but we're being passed down something by the bootstrapper,
         # we should use it! (3)
         elif descriptor:
@@ -175,7 +198,8 @@ class PipelineConfiguration(object):
                 is_installed = True
 
             descriptor_dict = descriptor.get_dict()
-        # Now we only have a path set. (1&2). We can't assume anything, but since all pipeline
+
+        # Now we only have a path set. (1, 2, 5). We can't assume anything, but since all pipeline
         # configurations, cached or installed, have the same layout on disk, we'll assume that we're
         # in an installed one. Also, since installed configurations are a bit more lenient about
         # things like info.yml, its a great fit since there are definitely installed configurations
@@ -213,6 +237,11 @@ class PipelineConfiguration(object):
                 external_data = pickle.loads(os.environ[constants.ENV_VAR_EXTERNAL_PIPELINE_CONFIG_DATA])
             except Exception as e:
                 log.warning("Could not load external config data from: %s" % e)
+            finally:
+                # The passing of state from bootstrap to core is complete.
+                # Make sure we clean up so we don't interfere any further
+                # bootstrapping or forked process bootstrapping.
+                del os.environ[constants.ENV_VAR_EXTERNAL_PIPELINE_CONFIG_DATA]
 
             if "project_id" in external_data:
                 self._project_id = external_data["project_id"]
@@ -232,8 +261,7 @@ class PipelineConfiguration(object):
 
             if "bundle_cache_paths" in external_data:
                 self._bundle_cache_fallback_paths = external_data["bundle_cache_paths"]
-                log.debug(
-                    "%s: Setting bundle cache fallbacks to %s from external config data" % (self, self._bundle_cache_fallback_paths)
+                log.debug("%s: Setting bundle cache fallbacks to %s from external config data" % (self, self._bundle_cache_fallback_paths)
                 )
 
         # Populate the global yaml_cache if we find a pickled cache on disk.
@@ -335,7 +363,6 @@ class PipelineConfiguration(object):
             fh.close()
 
         log.debug("Read %s items from yaml cache %s" % (len(cache_items), cache_file))
-
 
     ########################################################################################
     # general access and properties
@@ -463,6 +490,10 @@ class PipelineConfiguration(object):
     def get_project_disk_name(self):
         """
         Returns the project name for the project associated with this PC.
+
+        .. note:: If the project name spans over multiple folder levels,
+                  it will contain a forward slash regardless of the current
+                  operating system platform.
         """
         return self._project_name
 
@@ -504,114 +535,238 @@ class PipelineConfiguration(object):
         self._update_metadata({"use_shotgun_path_cache": True})
         self._use_shotgun_path_cache = True
 
-
     ########################################################################################
     # storage roots related
 
     def get_local_storage_roots(self):
         """
-        Returns local OS paths to all shotgun local storages used by toolkit.
-        Paths are validated and guaranteed not to be None.
+        Returns local OS paths to each shotgun local storage defined in this
+        configuration. Paths are validated and guaranteed not to be None.
 
-        :returns: dictionary of storages, for example {"primary": "/studio", "textures": "/textures"}
+        Raises a ``TankError`` exception if no local path could be determined
+        for any storage defined in the configuration.
+
+        :returns: dictionary of storages
+
+        Example return dictionary::
+
+            {
+                "primary": "/studio",
+                "textures": "/textures"
+            }
         """
-        proj_roots = {}
 
-        for storage_name in self._roots:
+        current_os_path_lookup = {}
+
+        for root_name, sg_path in self._storage_roots.as_shotgun_paths.iteritems():
+
             # get current os path
-            local_root_path = self._roots[storage_name].current_os
+            local_path = sg_path.current_os
+
             # validate it
-            if local_root_path is None:
+            if local_path is None:
+
                 raise TankError(
-                    "Undefined toolkit storage! The local file storage '%s' is not defined for this "
-                    "operating system! Please contact toolkit support." % storage_name)
+                    "Undefined storage! The local file storage '%s' is not "
+                    "defined for this operating system! Please contact "
+                    "toolkit support." % (root_name,)
+                )
 
-            proj_roots[storage_name] = local_root_path
+            current_os_path_lookup[root_name] = local_path
 
-        return proj_roots
+        return current_os_path_lookup
+
+    def get_local_storage_for_root(self, root_name):
+        """
+        Given a root name, return the associated local storage in SG.
+
+        If no local storage can be determined, ``None`` will be returned.
+
+        :param root_name:
+        :return: A standard SG entity dictionary for the matching SG local
+            storage.
+        """
+
+        if root_name not in self._storage_roots.required_roots:
+            log.warning(
+                "Unable to identify SG local storage for root name '%s'. "
+                "This root name is not required by the configuration." %
+                (root_name,)
+            )
+            return None
+
+        # get the storage data for required roots
+        (mapped_roots, unmapped_roots) = self.get_local_storage_mapping()
+
+        if root_name in mapped_roots:
+            return mapped_roots[root_name]
+        else:
+            log.warning(
+                "Unable to identify SG local storage for root name '%s'. "
+                "The root is not mapped to any SG local storage. It does "
+                "not explicitly define a local storage id and does not match "
+                "the name of any known storages." % (root_name,)
+            )
+            return None
+
+    def get_local_storage_mapping(self):
+        """
+        Returns a tuple of information about the required storage roots and how
+        they map to local storages in SG.
+
+        The first item in the tuple is a dictionary of storage root names mapped
+        to a corresponding dictionary of fields for a local storage defined in
+        Shotgun.
+
+        The second item is a list of storage roots required by the configuration
+        that can not be mapped to a SG local storage.
+
+        Example return value::
+
+            (
+                {
+                    "work": {
+                        "code": "primary",
+                        "type": "LocalStorage",
+                        "id": 123
+                        "linux_path": "/proj/work"
+                        "mac_path": "/proj/work"
+                        "windows_path": None
+                    }
+                    "data": {
+                        "code": "data",
+                        "type": "LocalStorage",
+                        "id": 456
+                        "linux_path": "/proj/data"
+                        "mac_path": "/proj/data"
+                        "windows_path": None
+                    }
+                },
+                ["data2", "data3"]
+            )
+
+        In the example above, 4 storage roots are defined by the configuration:
+        "work", "data", "data2", and "data3". The "work" and "data" roots can
+        be associated with a SG local storage. The other two roots have no
+        corresponding local storage in SG.
+
+        :param: A shotgun connection
+        :returns: A tuple of information about local storages mapped to the
+            configuration's required storage roots.
+        """
+        # get the storage data for required roots
+        sg = shotgun.get_sg_connection()
+        return self._storage_roots.get_local_storages(sg)
 
     def get_all_platform_data_roots(self):
         """
-        Similar to get_data_roots but instead of returning the data roots for a single
-        operating system, the data roots for all operating systems are returned.
+        Similar to get_data_roots but instead of returning project data roots
+        for a single operating system, the data roots for all operating systems
+        are returned.
 
-        The return structure is a nested dictionary structure, for example:
+        The return structure is a nested dictionary structure, for example::
 
-        {
-         "primary": {"win32":  "z:\studio\my_project",
-                     "linux2": "/studio/my_project",
-                     "darwin": "/studio/my_project"},
-
-         "textures": {"win32":  "z:\studio\my_project",
-                      "linux2": None,
-                      "darwin": "/studio/my_project"},
-        }
+            {
+                "primary": {
+                    "win32": "z:\studio\my_project",
+                    "linux2": "/studio/my_project",
+                    "darwin": "/studio/my_project"
+                },
+                "textures": {
+                    "win32": "z:\textures\my_project",
+                    "linux2": None,
+                    "darwin": "/textures/my_project"
+                },
+            }
 
         The operating system keys are returned on sys.platform-style notation.
         If a data root has not been defined on a particular platform, None is
         returned (see example above).
 
-        @todo - refactor to use ShotgunPath
-
         :returns: dictionary of dictionaries. See above.
         """
-        proj_roots = {}
-        for storage_name in self._roots:
-            # join the project name to the storage ShotgunPath
-            project_path = self._roots[storage_name].join(self._project_name)
-            # break out the ShotgunPath object in sys.platform style dict
-            proj_roots[storage_name] = project_path.as_system_dict()
 
-        return proj_roots
+        project_roots_lookup = {}
+
+        for root_name, sg_path in self._storage_roots.as_shotgun_paths.iteritems():
+
+            # join the project name to the storage ShotgunPath
+            project_root = sg_path.join(self._project_name)
+
+            # break out the ShotgunPath object in sys.platform style dict
+            project_roots_lookup[root_name] = project_root.as_system_dict()
+
+        return project_roots_lookup
 
     def get_data_roots(self):
         """
-        Returns a dictionary of all the data roots available for this PC,
-        keyed by their storage name. Only returns paths for current platform.
-        Paths are guaranteed to be not None.
+        Returns a dictionary of all the data roots defined for this pipeline
+        configuration, keyed by their storage name. Only returns paths for
+        current platform. Paths are guaranteed to be not None.
 
-        :returns: A dictionary keyed by storage name, for example
-                  {"primary": "/studio/my_project", "textures": "/textures/my_project"}
+        Exaple return dictionary::
+
+            {
+                "primary": "/studio/my_project",
+                "textures": "/textures/my_project"
+            }
+
+        :returns: A dictionary of root name to project local path. See above.
         """
-        proj_roots = {}
-        for storage_name in self._roots:
-            # join the project name to the storage ShotgunPath
-            project_path = self._roots[storage_name].join(self._project_name)
-            # break out the ShotgunPath object in sys.platform style dict
-            proj_roots[storage_name] = project_path.current_os
 
-        return proj_roots
+        project_roots_lookup = {}
+
+        for root_name, sg_path in self._storage_roots.as_shotgun_paths.iteritems():
+
+            # join the project name to the storage ShotgunPath
+            project_root = sg_path.join(self._project_name)
+
+            # break out the ShotgunPath object in sys.platform style dict
+            project_roots_lookup[root_name] = project_root.current_os
+
+        return project_roots_lookup
 
     def has_associated_data_roots(self):
         """
-        Some configurations do not have a notion of a project storage and therefore
-        do not have any storages defined. This flag indicates whether a configuration
-        has any associated data storages.
+        Some configurations do not have a notion of a project storage and
+        therefore do not have any storages defined. This flag indicates whether
+        a configuration has any associated data storages.
 
-        :returns: true if the configuration has a primary data root defined, false if not
+        :returns: True if the configuration has a data root defined, False
+            otherwise.
         """
-        return len(self.get_data_roots()) > 0
+
+        # Return True if the default path can be identified. this implies there
+        # is at least one storage root has been defined.
+        return self._storage_roots.default_path is not None
+
+    def get_primary_data_root_name(self):
+        """
+        Returns the default root name as defined by the required roots for this
+        configuration.
+
+        :returns: str name of a storage root
+        """
+        return self._storage_roots.default
 
     def get_primary_data_root(self):
         """
-        Returns the path to the primary data root for the current platform.
-        For configurations where there is no roots defined at all,
-        an exception will be raised.
+        Returns the path to the primary (default) data root for the current
+        platform. For configurations where no default root path can be
+        determined, a ``TankError`` exception will be raised.
 
         :returns: str to local path on disk
         """
-        data_roots = self.get_data_roots()
-        roots_count = len(data_roots)
-        if roots_count == 0:
-            raise TankError("Your current pipeline configuration does not have any project data "
-                            "storages defined and therefore does not have a primary project data root!")
-        elif roots_count == 1:
-            # If we have a single root, it is the primary root.
-            return data_roots[data_roots.keys()[0]]
-        else:
-            # If we have multiple roots, it is required that one of them is named
-            # "primary".
-            return data_roots.get(constants.PRIMARY_STORAGE_NAME)
+
+        default_path = self._storage_roots.default_path
+
+        if not default_path:
+            raise TankError(
+                "Could not identify a default storage root for this pipeline "
+                "configuration! File: '%s'" % (self._storage_roots.roots_file,)
+            )
+
+        return default_path.join(self._project_name).current_os
 
     ########################################################################################
     # installation payload (core/apps/engines) disk locations
@@ -710,30 +865,33 @@ class PipelineConfiguration(object):
     def _preprocess_descriptor(self, descriptor_dict):
         """
         Preprocess descriptor dictionary to resolve config-specific
-        constants and directives such as {PIPELINE_CONFIG}.
+        constants and directives such as {PIPELINE_CONFIG} and
+        {CONFIG_FOLDER}
 
         :param descriptor_dict: Descriptor dict to operate on
         :returns: Descriptor dict with any directives resolved.
         """
 
-        if descriptor_dict.get("type") == "dev":
-            # several different path parameters are supported by the dev descriptor.
-            # scan through all path keys and look for pipeline config token
+        # Not a path or dev descriptor, early out.
+        if descriptor_dict.get("type") not in ["dev", "path"]:
+            return descriptor_dict
 
-            # platform specific resolve
-            platform_key = ShotgunPath.get_shotgun_storage_key()
-            if platform_key in descriptor_dict:
-                descriptor_dict[platform_key] = descriptor_dict[platform_key].replace(
-                    constants.PIPELINE_CONFIG_DEV_DESCRIPTOR_TOKEN,
-                    self.get_path()
-                )
+        # several different path parameters are supported by path based descriptors.
 
-            # local path resolve
-            if "path" in descriptor_dict:
-                descriptor_dict["path"] = descriptor_dict["path"].replace(
-                    constants.PIPELINE_CONFIG_DEV_DESCRIPTOR_TOKEN,
-                    self.get_path()
-                )
+        substitutions = {
+            constants.PIPELINE_CONFIG_DESCRIPTOR_TOKEN: self.get_path(),
+            constants.CONFIG_FOLDER_DESCRIPTOR_TOKEN: self.get_config_location()
+        }
+
+        # For each token, check if the platform or the generic path key are specified
+        # and replace the token if found.
+        for token, substitution in substitutions.iteritems():
+            for key in ["path", ShotgunPath.get_shotgun_storage_key()]:
+                if key in descriptor_dict:
+                    descriptor_dict[key] = descriptor_dict[key].replace(
+                        token,
+                        substitution
+                    )
 
         return descriptor_dict
 
@@ -843,7 +1001,8 @@ class PipelineConfiguration(object):
         """
         return self._get_descriptor(Descriptor.ENGINE, dict_or_uri, latest=True)
 
-    def get_latest_framework_descriptor(self, dict_or_uri, constraint_pattern=None):
+    def get_latest_framework_descriptor(self, dict_or_uri,
+                                        constraint_pattern=None):
         """
         Convenience method that returns the latest descriptor for the
         given framework. The descriptor dictionary or uri does not have to contain
