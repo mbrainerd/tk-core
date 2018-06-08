@@ -92,11 +92,13 @@ class AltCustomFormatter(logging.Formatter):
             if record.levelno in (logging.WARNING, logging.ERROR, logging.CRITICAL):
                 record.msg = '%s: %s' % (record.levelname, record.msg)
 
-            if record.levelno == logging.DEBUG:
+            elif record.levelno == logging.DEBUG:
                 # time stamps in debug logging!
                 record.msg = 'DEBUG [%s %s]: %s' % (datetime.datetime.now().strftime("%H:%M:%S"),
                                                     record.msecs,
                                                     record.msg)
+            else:
+                record.msg = str(record.msg)
 
             if not("Code Traceback" in record.msg or record.levelno < logging.INFO):
                 # do not wrap exceptions and debug
