@@ -21,6 +21,8 @@ from .folder_types import Static, ListField, Entity, Project, UserWorkspace, Sho
 from ..errors import TankError, TankUnreadableFileError
 from ..util import yaml_cache
 
+import threading
+
 
 def read_ignore_files(schema_config_path):
     """
@@ -43,7 +45,51 @@ def read_ignore_files(schema_config_path):
             open_file.close()
     return ignore_files
 
-class FolderConfiguration(object):
+
+class Singleton(object):
+    """
+    Thread-safe base class for singletons. Derived classes must implement _init_singleton.
+    """
+
+    __lock = threading.Lock()
+    _instances = dict()
+
+    def __new__(cls, *args, **kwargs):
+        """
+        Create the singleton instance if it hasn't been created already. Once instantiated,
+        the object will be cached for a specific schema_config_path and never be instantiated again for performance
+        reasons.
+        """
+
+        schema_config_path = args[1]
+        # Check if the instance has been created before taking the lock for performance
+        # reason.
+        if schema_config_path not in cls._instances:
+            # Take the lock.
+            with cls.__lock:
+                # Check the instance again, it might have been created between the
+                # if and the lock.
+                if schema_config_path in cls._instances:
+                    return cls._instances[schema_config_path]
+
+                # Create the instance.
+                instance = super(Singleton, cls).__new__(
+                    cls,
+                    *args,
+                    **kwargs
+                )
+
+                # And, init the instance.
+                instance.__init__(*args, **kwargs)
+                instance._init_singleton()
+
+                # remember the instance so that no more are created
+                cls._instances[schema_config_path] = instance
+
+        return cls._instances[schema_config_path]
+
+
+class FolderConfiguration(Singleton):
     """
     Class that loads the schema from disk and constructs folder objects.
     """
@@ -52,21 +98,30 @@ class FolderConfiguration(object):
         """
         Constructor
         """
+
         self._tk = tk
+
+        # store the schema config path for singleton initialization
+        self._schema_config_path = schema_config_path
+
+    def _init_singleton(self):
+        """
+        Singleton Initialization
+        """
+
         self._folders = []
-        
+
         # access shotgun nodes by their entity_type
         self._entity_nodes_by_type = {}
-        
+
         # maintain a list of all Step nodes for special introspection
         self._step_fields = []
-        
-        # read skip files config
-        self._ignore_files = read_ignore_files(schema_config_path)
-        
-        # load schema
-        self._load_schema(schema_config_path)
 
+        # read skip files config
+        self._ignore_files = read_ignore_files(self._schema_config_path)
+
+        # load schema
+        self._load_schema(self._schema_config_path)
 
     ##########################################################################################
     # public methods
