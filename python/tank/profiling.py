@@ -1,6 +1,14 @@
 # built-in packages
+import os
 import pstats
 import cProfile
+
+# sgtk packages
+from .util import LocalFileStorageManager
+from .platform import get_logger
+
+logger = get_logger(__name__)
+
 
 class CProfileMethodRunner(object):
     """
@@ -12,51 +20,74 @@ class CProfileMethodRunner(object):
 
     Usage::
 
-    from sgtk import CProfileMethodRunner
+    from sgtk.profiling import CProfileMethodRunner
 
-    @CProfileMethodRunner.start_profiler(save_stats=False)
+    @CProfileMethodRunner.start_profiler(profiling_identifier="tk-nuke-writenode")
     def init_app(self):
         entry_point_function_contents
 
-    @CProfileMethodRunner.stop_profiler(profiling_output="/dd/home/gverma/work/profiling_output_tk-nuke-write.pstat",
-                                        save_stats=True)
+    @CProfileMethodRunner.stop_profiler(profiling_identifier="tk-nuke-writenode")
     def destroy_app(self):
         exit_point_function_contents
+
+    The above profiler will output the stats in `$SHOTGUN_HOME/logs/profiling_output_tk-nuke-writenode.pstat`.
     """
 
     profiler_mapping = dict()
 
-    def __init__(self, profiling_output, init_new_profiler, stop_profiler, save_stats):
+    def __init__(self, profiling_identifier, init_new_profiler, stop_profiler, save_stats=True):
         """
-        CProfileMethodRunner Decorator class to output profiling stats
+        CProfileMethodRunner Decorator class to output profiling stats.
 
-        :param profiling_output: File to write the output to.
+        On the basis of profiling_identifier, it writes out stat files,
+        to $SHOTGUN_HOME/logs/profiling_output_<profiling_identifier>.pstat.
+
+        If, profiling_identifier is None, it writes out stat files,
+        to $SHOTGUN_HOME/logs/profiling_output_unnamed.pstat.
+
+
+        :param profiling_identifier: Identifier of the file that we are writing the output.
         :param init_new_profiler: Initialize the class instance of the profiler with a new cProfile instance.
         :param stop_profiler: Disable/Dump the stats of the class instance of the profiler, and make it None again.
-        :param save_stats: Whether to dump out unprocessed stats or not.
+        :param save_stats: Whether to dump out a pstat file or not, by default it writes out pstat file.
         """
+
+        if profiling_identifier:
+            self._profiling_identifier = profiling_identifier
+        else:
+            self._profiling_identifier = "unnamed"
+
+        if save_stats:
+            self._file_extension = "pstat"
+        else:
+            self._file_extension = "stats"
+
+        output_directory = LocalFileStorageManager.get_global_root(LocalFileStorageManager.LOGGING)
+        output_filename = "profiling_output_%s.%s" % (self._profiling_identifier, self._file_extension)
+        profiling_output = os.path.join(output_directory, output_filename)
 
         self.profiling_output = profiling_output
         self.init_new_profiler = init_new_profiler
         self.stop_profiler = stop_profiler
         self.save_stats = save_stats
+
         # to save ourselves from this! the classmethod should have some *args
         # otherwise the __call__ function doesn't get "func" as the argument
         # self.func = func
 
     @classmethod
-    def start_profiler(cls, save_stats):
+    def start_profiler(cls, profiling_identifier):
         """
         Start the profiler instance of the class
         """
-        return cls(profiling_output=None, init_new_profiler=True, stop_profiler=False, save_stats=save_stats)
+        return cls(profiling_identifier=profiling_identifier, init_new_profiler=True, stop_profiler=False)
 
     @classmethod
-    def stop_profiler(cls, profiling_output, save_stats):
+    def stop_profiler(cls, profiling_identifier, save_stats=True):
         """
         Stop the profiler instance of the class
         """
-        return cls(profiling_output=profiling_output,
+        return cls(profiling_identifier=profiling_identifier,
                    init_new_profiler=False, stop_profiler=True, save_stats=save_stats)
 
     def __call__(self, func):
@@ -71,10 +102,10 @@ class CProfileMethodRunner(object):
                 if func_module not in CProfileMethodRunner.profiler_mapping and self.init_new_profiler:
                     CProfileMethodRunner.profiler_mapping[func_module] = cProfile.Profile()
                     profiler = CProfileMethodRunner.profiler_mapping[func_module]
-                    print "Starting CProfiler on %s.%s..." % (func_module, func_name)
+                    logger.info("Starting CProfiler on %s.%s.%s..." % (self._profiling_identifier, func_module, func_name))
                     profiler.enable()
                 elif self.init_new_profiler:
-                    print "CProfile is already running for %s!" % func_module
+                    logger.info("CProfile is already running for %s.%s!" % (self._profiling_identifier, func_module))
                 # execute the actual function
                 result = func(*args, **kwargs)
                 return result
@@ -93,7 +124,8 @@ class CProfileMethodRunner(object):
                     # disable the profiler and clean for the next session
                     profiler.disable()
                     del profiler
-                    print "Ending CProfiler on %s.%s..." % (func_module, func_name)
+                    logger.info("Ending CProfiler on %s.%s.%s..." % (self._profiling_identifier, func_module, func_name))
+                    logger.info("Writing: %s" % self.profiling_output)
 
         return wrapped_f
 
@@ -102,20 +134,42 @@ class CProfileRunner(object):
     """
     Usage::
 
-    from sgtk import CProfileRunner
+    from sgtk.profiling import CProfileRunner
 
-    @CProfileRunner(profiling_output="path_to_pstat_or_resolved_stat_file_if_save_stats_is_false", save_stats=True)
+    @CProfileRunner(profiling_identifier="tk-nuke-writenode")
     def start_toolkit():
         function_contents
+
+    The above profiler will output the stats in `$SHOTGUN_HOME/logs/profiling_output_tk-nuke-writenode.pstat`.
     """
 
-    def __init__(self, profiling_output, save_stats=False):
+    def __init__(self, profiling_identifier, save_stats=True):
         """
         CProfileRunner Decorator class to output profiling stats
 
-        :param profiling_output: File to write the output to.
-        :param save_stats: Whether to dump out unprocessed stats or not.
+        On the basis of profiling_identifier, it writes out stat files,
+        to $SHOTGUN_HOME/logs/profiling_output_<profiling_identifier>.pstat.
+
+        If, profiling_identifier is None, it writes out stat files,
+        to $SHOTGUN_HOME/logs/profiling_output_unnamed.pstat.
+
+        :param profiling_identifier: Identifier of the file that we are writing the output.
+        :param save_stats: Whether to dump out a pstat file or not, by default it writes out pstat file.
         """
+
+        if profiling_identifier:
+            self._profiling_identifier = profiling_identifier
+        else:
+            self._profiling_identifier = "unnamed"
+
+        if save_stats:
+            self._file_extension = "pstat"
+        else:
+            self._file_extension = "stats"
+
+        output_directory = LocalFileStorageManager.get_global_root(LocalFileStorageManager.LOGGING)
+        output_filename = "profiling_output_%s.%s" % (self._profiling_identifier, self._file_extension)
+        profiling_output = os.path.join(output_directory, output_filename)
 
         self.profiling_output = profiling_output
         self.save_stats = save_stats
@@ -125,14 +179,17 @@ class CProfileRunner(object):
         Call function runs the wrapped function to perform the decoration.
         """
         def wrapped_f(*args, **kwargs):
+            func_module = func.__module__
+            func_name = func.__name__
             profiler = cProfile.Profile()
             try:
-                print "Starting CProfiler on %s.%s..." % (func.__module__, func.__name__)
+                logger.info("Starting CProfiler on %s.%s.%s..." % (self._profiling_identifier, func_module, func_name))
                 profiler.enable()
                 # execute the actual function
                 result = func(*args, **kwargs)
                 profiler.disable()
-                print "Ending CProfiler on %s.%s..." % (func.__module__, func.__name__)
+                logger.info("Ending CProfiler on %s.%s.%s..." % (self._profiling_identifier, func_module, func_name))
+                logger.info("Writing: %s" % self.profiling_output)
                 return result
             finally:
                 if self.save_stats:
