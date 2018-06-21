@@ -165,7 +165,7 @@ def _resolve_refs_r(lookup_dict, data):
 
             # find a reference that matches the start of the ref string
             ref_definition = lookup_dict.get(ref_name)
-            if not ref_definition:
+            if ref_definition is None:
                 raise TankError("Failed to resolve reference '@%s'" % ref_name)
 
             # other parts of the code are making changes nilly-willy to data
