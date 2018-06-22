@@ -1643,8 +1643,6 @@ def _build_entity_dict_from_path(tk, path, required_fields=None, additional_type
     # Grab all project roots
     project_roots = tk.pipeline_configuration.get_data_roots().values()
 
-    # note - paths returned by get_paths are always prefixed with a
-    # project root so there is no risk we end up with an infinite loop here..
     try:
         curr_path = path
         while True:
@@ -1667,7 +1665,11 @@ def _build_entity_dict_from_path(tk, path, required_fields=None, additional_type
                 break
 
             # Move up to the next level directory and repeat
-            curr_path = os.path.dirname(curr_path)
+            next_path = os.path.dirname(curr_path)
+            if curr_path == next_path:
+                break
+            curr_path = next_path
+
 
     finally:
         path_cache.close()
