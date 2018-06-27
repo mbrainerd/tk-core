@@ -1332,7 +1332,7 @@ def _from_entity_dictionary(tk, entity_dict, previous_context=None):
         log_msg = "Building context"
 
         # Add context to cache
-        g_context_cache.add(entity_dict, context)
+        g_context_cache.add(entity_dict, copy.deepcopy(context))
 
     # If a previous context has been provided, see if we can populate
     # any missing fields from it
