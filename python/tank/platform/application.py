@@ -173,8 +173,8 @@ class Application(TankBundle):
         from .engine import get_environment_from_context
         self.env = get_environment_from_context(self.sgtk, new_context)
 
-        # reset the app settings
-        self.settings = self.env.get_app_settings(self.engine.name, self.name)
+        # reset the settings of the app instance!
+        self.settings = self.env.get_app_settings(self.engine.name, self.instance_name)
 
     ##########################################################################################
     # event handling
