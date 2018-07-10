@@ -15,6 +15,7 @@ Defines the base class for all Tank Apps.
 
 import os
 import sys
+import copy
 
 from ..util.loader import load_plugin
 from . import constants
@@ -162,19 +163,56 @@ class Application(TankBundle):
         pass
 
     def change_context(self, new_context):
-        if new_context == self.context:
-            return
+        """
+        """
         super(Application, self).change_context(new_context)
 
-        # reset the context
-        self.context = new_context
+        if new_context == self.context:
+            return
 
-        # reset the environment
-        from .engine import get_environment_from_context
-        self.env = get_environment_from_context(self.sgtk, new_context)
+        # Run the pre_context_change method to allow for any app-specific
+        # prep work to happen.
+        self.log_debug(
+            "Executing pre_context_change for %r, changing from %r to %r." % (
+                self,
+                self.context,
+                new_context
+            )
+        )
 
-        # reset the settings of the app instance!
-        self.settings = self.env.get_app_settings(self.engine.name, self.instance_name)
+        from .engine import _CoreContextChangeHookGuard
+        with _CoreContextChangeHookGuard(self.sgtk, self.context, new_context):
+            self.pre_context_change(self.context, new_context)
+            self.log_debug("Execution of pre_context_change for app %r is complete." % self)
+
+            # Now that we're certain we can perform a context change,
+            # we can tell the environment what the new context is, update
+            # our own context property, and load the apps.
+            old_context = copy.deepcopy(self.context)
+
+            from .engine import get_environment_from_context
+            new_env = get_environment_from_context(self.sgtk, new_context)
+            new_app_settings = new_env.get_app_settings(self.engine.name, self.instance_name)
+
+            self.env = new_env
+            self.context = new_context
+            self.settings = new_app_settings
+
+            # Call the post_context_change method to allow for any engine
+            # specific post-change logic to be run.
+            self.log_debug(
+                "Executing post_context_change for %r, changing from %r to %r." % (
+                    self,
+                    old_context,
+                    new_context
+                )
+            )
+
+            # Emit the core level event.
+            self.post_context_change(old_context, new_context)
+
+        self.log_debug("Execution of post_context_change for app %r is complete." % self)
+
 
     ##########################################################################################
     # event handling

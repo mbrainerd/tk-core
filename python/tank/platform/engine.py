@@ -738,7 +738,7 @@ class Engine(TankBundle):
     def change_context(self, new_context):
         """
         Called when the engine is being asked to change contexts. This
-        will only be allowed if the engine explicitly suppose on-the-fly
+        will only be allowed if the engine explicitly supports on-the-fly
         context changes by way of its context_change_allowed property. Any
         apps that do not support context changing will be restarted instead.
         Custom behavior at the engine level should be handled by overriding
