@@ -659,14 +659,16 @@ class Template(object):
 
             # Treat Step entity special since it requires a primary entity
             if "Step" in entity_searches_by_type:
-                entity_search = entity_searches_by_type.pop("Step")
+                step_entity_type, step_sg_filters, step_sg_fields = entity_searches_by_type.pop("Step")
 
                 # Filter step entity by the parent entity type
                 step_filters = [["entity_type", "is", entities[-1]["type"]]]
+                step_sg_filters.extend(step_filters)
 
-                step_entity = sg.find_one(*entity_search)
+                step_entity = sg.find_one(step_entity_type, step_sg_filters, step_sg_fields)
                 if step_entity is None:
-                    raise TankError("Cannot find '%s' Entity matching search: %s %s" % entity_search)
+                    raise TankError("Cannot find '%s' Entity matching search: %s %s" %
+                                    (step_entity_type, step_sg_filters, step_sg_fields))
 
                 # Add to list of entities
                 entities.append(step_entity)
