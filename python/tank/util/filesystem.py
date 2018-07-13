@@ -374,6 +374,7 @@ def create_valid_filename(value):
         u_src = value.decode("utf-8")
         return exp.sub("_", u_src).encode("utf-8")
 
+
 def get_permissions(path):
     """
     Retrieve the file system permissions for the file or folder in the
@@ -384,6 +385,20 @@ def get_permissions(path):
     :raises: OSError - if there was a problem retrieving permissions for the path
     """
     return stat.S_IMODE(os.stat(path)[stat.ST_MODE])
+
+
+@with_cleared_umask
+def freeze_permissions(path, permission=0o444):
+    """
+    Set file system permissions for the given path to given permissions.
+    If none is given, make it read-only.
+
+    :param path: path to alter permissions for
+    :param permission: permission bits to use
+    :raises: OSError - if there was a problem setting the file permissions
+    """
+    os.chmod(path, permission)
+
 
 def safe_delete_folder(path):
     """
