@@ -836,7 +836,7 @@ class TankBundle(object):
 
         .. note:: This method calls out to the ``expand_show_tree`` core hook, making
                   the show tree expansion configurable. We recommend using this method
-                  over the methods provided in ``sgtk.util.filesystem``.
+                  over the methods provided in ``sgtk.dd_xplatform_utils``.
 
         :param path: path to map on the show tree.
         """

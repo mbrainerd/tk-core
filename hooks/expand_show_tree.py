@@ -20,7 +20,7 @@ introspection inside the hook.
 
 import os
 
-from sgtk.util import filesystem
+from sgtk import dd_xplatform_utils
 from sgtk import Hook
 
 
@@ -112,4 +112,4 @@ class ExpandShowTree(Hook):
             branch_paths = []
 
         # this only returns us the paths that actually exist, hence enabling us to follow this search path pattern
-        return filesystem.build_path(*filesystem.combine_paths(prefixes, branch_paths, paths))
+        return dd_xplatform_utils.build_path(*dd_xplatform_utils.combine_paths(prefixes, branch_paths, paths))
