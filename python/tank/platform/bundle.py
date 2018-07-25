@@ -829,7 +829,7 @@ class TankBundle(object):
         except Exception as e:
             raise TankError("Error creating folder %s: %s" % (path, e))
 
-    def expand_show_tree(self, path):
+    def expand_show_tree(self, path, subdirectories=[]):
         """
         Resolve the given path, on the show tree.
         Convenience method to make it easy for apps and engines to map the given path on a show tree.
@@ -839,9 +839,11 @@ class TankBundle(object):
                   over the methods provided in ``sgtk.dd_xplatform_utils``.
 
         :param path: path to map on the show tree.
+        :param subdirectories: additional subdirectories to be included in the show hierarchy
         """
         try:
-            resolved_path = self.__tk.execute_core_hook("expand_show_tree", path=path, bundle_obj=self)
+            resolved_path = self.__tk.execute_core_hook("expand_show_tree", path=path,
+                                                        additional_subdirectories=subdirectories, bundle_obj=self)
             return resolved_path
         except Exception as e:
             raise TankError("Error expanding show tree %s: %s" % (path, e))
@@ -963,10 +965,12 @@ class TankBundle(object):
             # possible declaration of correct hook name in the sgtk_config preferences files.
             path = hook_expression.replace("{show}/", "")
             # check the show tree for the hook!
-            resolved_hook_path = self.expand_show_tree(path)
-            if resolved_hook_path:
-                # we found a relavant hook on the show!
-                path = resolved_hook_path
+            resolved_hook_path_list = self.expand_show_tree(path,
+                                                            subdirectories=["SHARED/etc/sgtk/hooks", "etc/sgtk/hooks"])
+            if resolved_hook_path_list:
+                # we found a relavant list of hooks on the show!
+                # list is in the order Test_User:Shot:Seq:Project
+                path = resolved_hook_path_list[0]
 
             path = path.replace("/", os.path.sep)
 
