@@ -1903,6 +1903,9 @@ class Engine(TankBundle):
         processed_style_sheet = style_sheet
         for (token, value) in constants.SG_STYLESHEET_CONSTANTS.iteritems():
             processed_style_sheet = processed_style_sheet.replace("{{%s}}" % token, value)
+
+        # Process the ENGINE_ROOT_PATH key
+        processed_style_sheet = processed_style_sheet.replace("{{ENGINE_ROOT_PATH}}", self.disk_location)
         return processed_style_sheet
     
     def _apply_external_stylesheet(self, bundle, widget):
