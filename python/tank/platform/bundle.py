@@ -829,7 +829,7 @@ class TankBundle(object):
         except Exception as e:
             raise TankError("Error creating folder %s: %s" % (path, e))
 
-    def expand_show_tree(self, path, subdirectories=[]):
+    def expand_show_tree(self, path):
         """
         Resolve the given path, on the show tree.
         Convenience method to make it easy for apps and engines to map the given path on a show tree.
@@ -842,8 +842,7 @@ class TankBundle(object):
         :param subdirectories: additional subdirectories to be included in the show hierarchy
         """
         try:
-            resolved_path = self.__tk.execute_core_hook("expand_show_tree", path=path,
-                                                        additional_subdirectories=subdirectories, bundle_obj=self)
+            resolved_path = self.__tk.execute_core_hook("expand_show_tree", path=path, bundle_obj=self)
             return resolved_path
         except Exception as e:
             raise TankError("Error expanding show tree %s: %s" % (path, e))
@@ -965,12 +964,10 @@ class TankBundle(object):
             # possible declaration of correct hook name in the sgtk_config preferences files.
             path = hook_expression.replace("{show}/", "")
             # check the show tree for the hook!
-            resolved_hook_path_list = self.expand_show_tree(path,
-                                                            subdirectories=["SHARED/etc/sgtk/hooks", "etc/sgtk/hooks"])
-            if resolved_hook_path_list:
-                # we found a relavant list of hooks on the show!
-                # list is in the order Test_User:Shot:Seq:Project
-                path = resolved_hook_path_list[0]
+            resolved_hook_path = self.expand_show_tree(path)
+            if resolved_hook_path:
+                # This hook can return a colon separated list of paths, to keep the show inheritance model intact.
+                path = resolved_hook_path
 
             path = path.replace("/", os.path.sep)
 
@@ -1238,9 +1235,16 @@ class TankBundle(object):
                 if os.path.exists(full_path):
                     # add to inheritance path
                     unresolved_hook_paths.insert(0, default_value)
-
+        resolved_hook_paths = []
         # resolve paths into actual file paths
-        resolved_hook_paths = [self.__resolve_hook_path(settings_name, x) for x in unresolved_hook_paths]
+        for x in unresolved_hook_paths:
+            resolved_hook_path = self.__resolve_hook_path(settings_name, x)
+            # our show resolution hook returns colon separated paths to maintain the inheritance model.
+            resolved_hook_paths.extend(resolved_hook_path.split(os.pathsep))
+
+        # expand_show_tree can return colon separated paths to maintain the show level inheritance model.
+        # so we can't append paths simply to the resolved hooks.
+        # resolved_hook_paths = [self.__resolve_hook_path(settings_name, x) for x in unresolved_hook_paths]
 
         core_logger.debug(
             "%s: Resolved hook expression (associated with setting '%s'): '%s' -> %s" % (

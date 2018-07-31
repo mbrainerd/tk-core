@@ -1,16 +1,29 @@
 """
 This hook is called when an engine, app or framework calls 
 
-> self.expand_show_tree(path)
+> self.expand_show_tree(user_subdir_list, show_subdir_list, path)
 
 Typically apps, engines and frameworks call this method
 when they want to map the given path on a show tree.
 The default implementation expands this path on the basis of the context of ``bundle_obj``
-And would resolve to either shot/sequence/show depending on which folders exist,
-"$DD_SHOWS_ROOT/$DD_SHOW/$DD_SEQ/$DD_SHOT",
-"$DD_SHOWS_ROOT/$DD_SHOW/$DD_SEQ",
-"$DD_SHOWS_ROOT/$DD_SHOW",
-This would typically not needed to be customized.
+And will construct an inheritance model as per the order shown below.
+
+Entries in the lookup path are arranged so the inheritance is as follows:
+
+    - show
+    - show-workarea
+    - sequence
+    - sequence-workarea
+    - shot
+    - shot-workarea
+
+At each level, hook paths are searched for in the following order:
+
+    - <filename>
+    - <filename>_<role>
+    - <filename>_<role>_<subrole>
+
+This would typically not need to be customized.
 
 In case customization is required, the hook is passed the app/engine/framework
 that issued the original request - this gives access to configuration,
@@ -28,24 +41,34 @@ HookBaseClass = sgtk.get_hook_baseclass()
 
 class ExpandShowTree(HookBaseClass):
     
-    def execute(self, path, additional_subdirectories, bundle_obj, **kwargs):
+    def execute(self, path, bundle_obj, user_subdir="etc", show_subdir="SHARED/etc",
+                extra_subdir="sgtk/hooks", **kwargs):
         """
         Handle expansion of the given path on show tree, depending on context issued from an app, framework or engine.
         
         :param path: path to create
-        :param additional_subdirectories: additional subdirectories to be included in the show hierarchy
         :param bundle_obj: object requesting the creation. This is a legacy
                               parameter and we recommend using self.parent instead.
+        :param user_subdir: Subdirectories to use for resolving work-area hooks, can be colon separated.
+        :param show_subdir: Subdirectories to use for resolving show-tree hooks, can be colon separated.
+        :param extra_subdir: additional subdirectories to be included in the hierarchy, CAN'T be colon separated.
 
-        :return: A list of paths in the order of Test_User:Shot:Seq:Project,
+        :return: A colon separated list of paths in the order of Test_User:Shot:Seq:Project,
         code that calls it can decide what to do with that paths.
         """
-        # this is (:) separated list of paths
-        show_paths = self.expand_tree(bundle_obj, additional_subdirectories, path)
-        paths_list = show_paths.split(":")
 
-        # let's return the path list and let the code that calls it decide what to do
-        return paths_list
+        user_subdir_list = user_subdir.split(os.pathsep)
+        show_subdir_list = show_subdir.split(os.pathsep)
+
+        if extra_subdir:
+            user_subdir_list = [os.path.join(x, extra_subdir) for x in user_subdir_list]
+            show_subdir_list = [os.path.join(x, extra_subdir) for x in show_subdir_list]
+
+        # this is (:) separated list of paths
+        show_paths = self.expand_tree(bundle_obj, user_subdir_list, show_subdir_list, path)
+
+        # return colon separated list of paths, to keep the inheritance model intact.
+        return show_paths
 
         # we need to return the first path since that is the override we have configured
         # Seq:Shot:Project
@@ -56,16 +79,27 @@ class ExpandShowTree(HookBaseClass):
         # return ''
 
     @staticmethod
-    def expand_tree(bundle_obj, additional_subdirectories, *paths):
-        """Build search paths to form a lookup-tree where each path
-        is appended to a standard location prefix starting from the
-        bottom, walking up to the top.
+    def expand_tree(bundle_obj, user_subdir_list, show_subdir_list, path):
+        """Iterate over the standard lookup path and build the inheritance model for the hooks.
 
-        >>> self.expand_tree('$DD_OS/solibs', 'lib/xyz').split(":")
-        ['/dd/shows/ABC/RD/cent6/solibs',
-         '/dd/shows/ABC/RD/lib/xyz',
-         '/dd/shows/ABC/cent6/solibs',
-         '/dd/shows/ABC/tools/lib/xyz']
+        In order, hook path will be resolved from top to bottom and accumulated
+        as they are collected. In other words the inheritance model will
+        follow the hierarchy that's shown below.
+
+        Entries in the lookup path are arranged so the inheritance is as follows:
+
+            - show
+            - show-workarea
+            - sequence
+            - sequence-workarea
+            - shot
+            - shot-workarea
+
+        At each level, hook paths are searched for in the following order:
+
+            - <filename>
+            - <filename>_<role>
+            - <filename>_<role>_<subrole>
 
         The generated platform-dependent path is returned with
         variables expanded to values contained in this instance.
@@ -75,6 +109,23 @@ class ExpandShowTree(HookBaseClass):
         context = bundle_obj.context
         default_root = bundle_obj.tank.pipeline_configuration.get_primary_data_root()
 
+        paths = [path]
+
+        if context.step:
+            role = context.step.get("name", "")
+        else:
+            role = os.getenv("DD_ROLE", "")
+
+        # construct role specific file paths
+        if role:
+            sub_roles = role.split("_")
+            base_name, extension = os.path.splitext(path)
+
+            role_suffix = ""
+            for sub_role in sub_roles:
+                role_suffix = role_suffix + "_" + sub_role
+                paths.append("%s%s%s" % (base_name, role_suffix, extension))
+
         if context.project is None:
             # our context is completely empty!
             # there is no show tree to expand these paths on
@@ -82,7 +133,7 @@ class ExpandShowTree(HookBaseClass):
 
         prefixes = []
         if context.entity is None:
-            # we have a project but not an entity
+            # add show paths to the mix
             prefixes.extend([
                 default_root,
             ])
@@ -93,8 +144,8 @@ class ExpandShowTree(HookBaseClass):
             if context.entity["type"] == "Sequence":
                 # add the sequence paths to the mix
                 prefixes.extend([
-                    os.path.join(default_root, context.entity["name"]),
                     default_root,
+                    os.path.join(default_root, context.entity["name"]),
                 ])
 
             if context.entity["type"] == "Shot":
@@ -102,24 +153,33 @@ class ExpandShowTree(HookBaseClass):
                 seq_entity = entities_by_type["Sequence"]
                 # add the sequence and shot paths to the mix
                 prefixes.extend([
-                    os.path.join(default_root, seq_entity["name"], context.entity["name"]),
-                    os.path.join(default_root, seq_entity["name"]),
                     default_root,
+                    os.path.join(default_root, seq_entity["name"]),
+                    os.path.join(default_root, seq_entity["name"], context.entity["name"]),
                 ])
 
             # let's just support project level overrides for an Asset entity
             if context.entity["type"] == "Asset":
+                entities_by_type = dict([(x["type"], x) for x in context.additional_entities])
+                # add show paths to the mix
                 prefixes.extend([
                     default_root,
                 ])
+                # add the sequence paths to the mix
+                seq_entity = entities_by_type.get("Sequence")
+                if seq_entity:
+                    prefixes.append(os.path.join(default_root, seq_entity.entity["name"]))
+                # add the sequence and shot paths to the mix
+                shot_entity = entities_by_type.get("Shot")
+                if shot_entity and seq_entity:
+                    prefixes.append(os.path.join(default_root, seq_entity["name"], shot_entity["name"]))
+
+        branch_paths = show_subdir_list
 
         if os.environ.get("DD_TEST_BRANCHES") == "user" and os.environ.get("DD_WORKAREA"):
-            branch_paths = ["user/work.$DD_WORKAREA", ""]
+            branch_paths.extend([os.path.join("user/work.$DD_WORKAREA", x) for x in user_subdir_list])
         elif os.environ.get("DD_TEST_BRANCHES") == "user" and not os.environ.get("DD_WORKAREA"):
-            branch_paths = ["user/work.$USER", ""]
-        else:
-            branch_paths = []
+            branch_paths.extend([os.path.join("user/work.$USER", x) for x in user_subdir_list])
 
         # this only returns us the paths that actually exist, hence enabling us to follow this search path pattern
-        return dd_xplatform_utils.build_path(*dd_xplatform_utils.combine_paths(prefixes, branch_paths,
-                                                                               additional_subdirectories, paths))
+        return dd_xplatform_utils.build_path(*dd_xplatform_utils.combine_paths(prefixes, branch_paths, paths))
