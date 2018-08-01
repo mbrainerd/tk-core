@@ -11,17 +11,20 @@ And will construct an inheritance model as per the order shown below.
 Entries in the lookup path are arranged so the inheritance is as follows:
 
     - show
-    - show-workarea
+    - show-work-area
     - sequence
-    - sequence-workarea
+    - sequence-work-area
     - shot
-    - shot-workarea
+    - shot-work-area
 
 At each level, hook paths are searched for in the following order:
 
     - <filename>
     - <filename>_<role>
     - <filename>_<role>_<subrole>
+    - <site>/<filename>
+    - <site>/<filename>_<role>
+    - <site>/<filename>_<role>_<subrole>
 
 This would typically not need to be customized.
 
@@ -41,14 +44,18 @@ HookBaseClass = sgtk.get_hook_baseclass()
 
 class ExpandShowTree(HookBaseClass):
     
-    def execute(self, path, bundle_obj, user_subdir="etc", show_subdir="SHARED/etc",
-                extra_subdir="sgtk/hooks", **kwargs):
+    def execute(self, path, bundle_obj, role=None, location=os.getenv("DD_LOCATION", ""), user_subdir="etc",
+                show_subdir="SHARED/etc", extra_subdir="sgtk/hooks", **kwargs):
         """
         Handle expansion of the given path on show tree, depending on context issued from an app, framework or engine.
         
         :param path: path to create
         :param bundle_obj: object requesting the creation. This is a legacy
                               parameter and we recommend using self.parent instead.
+        :param role: Role at which the hook should be resolved for, by default it tries to pick up the step from context
+                    if Step is not there, then it tries to resolved using $DD_ROLE.
+        :param location: Location at which the hook should be resolved for, adds <site> after of the extra_subdir.
+                by default it picks up from $DD_LOCATION
         :param user_subdir: Subdirectories to use for resolving work-area hooks, can be colon separated.
         :param show_subdir: Subdirectories to use for resolving show-tree hooks, can be colon separated.
         :param extra_subdir: additional subdirectories to be included in the hierarchy, CAN'T be colon separated.
@@ -60,12 +67,13 @@ class ExpandShowTree(HookBaseClass):
         user_subdir_list = user_subdir.split(os.pathsep)
         show_subdir_list = show_subdir.split(os.pathsep)
 
+        # add the extra subdir to the search path
         if extra_subdir:
             user_subdir_list = [os.path.join(x, extra_subdir) for x in user_subdir_list]
             show_subdir_list = [os.path.join(x, extra_subdir) for x in show_subdir_list]
 
         # this is (:) separated list of paths
-        show_paths = self.expand_tree(bundle_obj, user_subdir_list, show_subdir_list, path)
+        show_paths = self.expand_tree(bundle_obj, role, location, user_subdir_list, show_subdir_list, path)
 
         # return colon separated list of paths, to keep the inheritance model intact.
         return show_paths
@@ -79,7 +87,7 @@ class ExpandShowTree(HookBaseClass):
         # return ''
 
     @staticmethod
-    def expand_tree(bundle_obj, user_subdir_list, show_subdir_list, path):
+    def expand_tree(bundle_obj, role, location, user_subdir_list, show_subdir_list, path):
         """Iterate over the standard lookup path and build the inheritance model for the hooks.
 
         In order, hook path will be resolved from top to bottom and accumulated
@@ -89,17 +97,21 @@ class ExpandShowTree(HookBaseClass):
         Entries in the lookup path are arranged so the inheritance is as follows:
 
             - show
-            - show-workarea
+            - show-work-area
             - sequence
-            - sequence-workarea
+            - sequence-work-area
             - shot
-            - shot-workarea
+            - shot-work-area
 
         At each level, hook paths are searched for in the following order:
 
             - <filename>
             - <filename>_<role>
             - <filename>_<role>_<subrole>
+            - <site>/<filename>
+            - <site>/<filename>_<role>
+            - <site>/<filename>_<role>_<subrole>
+
 
         The generated platform-dependent path is returned with
         variables expanded to values contained in this instance.
@@ -111,10 +123,12 @@ class ExpandShowTree(HookBaseClass):
 
         paths = [path]
 
-        if context.step:
-            role = context.step.get("name", "")
-        else:
-            role = os.getenv("DD_ROLE", "")
+        # if user didn't provide any role, try to resolve it from the context.
+        if not role:
+            if context.step:
+                role = context.step.get("name", "")
+            else:
+                role = os.getenv("DD_ROLE", "")
 
         # construct role specific file paths
         if role:
@@ -125,6 +139,11 @@ class ExpandShowTree(HookBaseClass):
             for sub_role in sub_roles:
                 role_suffix = role_suffix + "_" + sub_role
                 paths.append("%s%s%s" % (base_name, role_suffix, extension))
+
+        # add site specific paths to the mix as well
+        if location:
+            user_subdir_list.extend([os.path.join(x, location) for x in user_subdir_list])
+            show_subdir_list.extend([os.path.join(x, location) for x in show_subdir_list])
 
         if context.project is None:
             # our context is completely empty!
@@ -158,7 +177,8 @@ class ExpandShowTree(HookBaseClass):
                     os.path.join(default_root, seq_entity["name"], context.entity["name"]),
                 ])
 
-            # let's just support project level overrides for an Asset entity
+            # since there is no quicker way to get an asset level
+            # Let's add support for an Asset entity with show:seq:shot:user
             if context.entity["type"] == "Asset":
                 entities_by_type = dict([(x["type"], x) for x in context.additional_entities])
                 # add show paths to the mix
