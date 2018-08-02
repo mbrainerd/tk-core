@@ -828,6 +828,24 @@ class TankBundle(object):
             self.__tk.execute_core_hook("ensure_folder_exists", path=path, bundle_obj=self)
         except Exception as e:
             raise TankError("Error creating folder %s: %s" % (path, e))
+
+    def expand_show_tree(self, path):
+        """
+        Resolve the given path, on the show tree.
+        Convenience method to make it easy for apps and engines to map the given path on a show tree.
+
+        .. note:: This method calls out to the ``expand_show_tree`` core hook, making
+                  the show tree expansion configurable. We recommend using this method
+                  over the methods provided in ``sgtk.dd_xplatform_utils``.
+
+        :param path: path to map on the show tree.
+        :param subdirectories: additional subdirectories to be included in the show hierarchy
+        """
+        try:
+            resolved_path = self.__tk.execute_core_hook("expand_show_tree", path=path, bundle_obj=self)
+            return resolved_path
+        except Exception as e:
+            raise TankError("Error expanding show tree %s: %s" % (path, e))
         
     def get_metrics_properties(self):
         """
@@ -940,7 +958,19 @@ class TankBundle(object):
             hooks_folder = os.path.join(engine.disk_location, "hooks")
             path = hook_expression.replace("{engine}", hooks_folder)
             path = path.replace("/", os.path.sep)
-        
+
+        elif hook_expression.startswith("{show}"):
+            # this is expected to be used only when there are show overrides, and hence
+            # possible declaration of correct hook name in the sgtk_config preferences files.
+            path = hook_expression.replace("{show}/", "")
+            # check the show tree for the hook!
+            resolved_hook_path = self.expand_show_tree(path)
+            if resolved_hook_path:
+                # This hook can return a colon separated list of paths, to keep the show inheritance model intact.
+                path = resolved_hook_path
+
+            path = path.replace("/", os.path.sep)
+
         elif hook_expression.startswith("{$") and "}" in hook_expression:
             # environment variable: {$HOOK_PATH}/path/to/foo.py
             env_var = re.match("^\{\$([^\}]+)\}", hook_expression).group(1)
@@ -1205,9 +1235,16 @@ class TankBundle(object):
                 if os.path.exists(full_path):
                     # add to inheritance path
                     unresolved_hook_paths.insert(0, default_value)
-
+        resolved_hook_paths = []
         # resolve paths into actual file paths
-        resolved_hook_paths = [self.__resolve_hook_path(settings_name, x) for x in unresolved_hook_paths]
+        for x in unresolved_hook_paths:
+            resolved_hook_path = self.__resolve_hook_path(settings_name, x)
+            # our show resolution hook returns colon separated paths to maintain the inheritance model.
+            resolved_hook_paths.extend(resolved_hook_path.split(os.pathsep))
+
+        # expand_show_tree can return colon separated paths to maintain the show level inheritance model.
+        # so we can't append paths simply to the resolved hooks.
+        # resolved_hook_paths = [self.__resolve_hook_path(settings_name, x) for x in unresolved_hook_paths]
 
         core_logger.debug(
             "%s: Resolved hook expression (associated with setting '%s'): '%s' -> %s" % (
