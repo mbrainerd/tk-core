@@ -13,6 +13,7 @@ Classes for the main Sgtk API.
 """
 
 import sys, os
+import copy
 import glob
 
 from . import folder
@@ -513,8 +514,9 @@ class Sgtk(object):
         if isinstance(skip_keys, basestring):
             skip_keys = [skip_keys]
         
-        # construct local fields dictionary that doesn't include any skip keys:
-        local_fields = dict((field, value) for field, value in fields.iteritems() if field not in skip_keys)
+        # construct fields dictionary that doesn't include any skip keys:
+        req_fields = dict((field, value) for field, value in fields.iteritems() if field not in skip_keys)
+        local_fields = copy.deepcopy(req_fields)
         
         # we always want to automatically skip 'required' keys that weren't
         # specified so add wildcards for them to the local fields
@@ -522,6 +524,12 @@ class Sgtk(object):
             if key not in skip_keys:
                 skip_keys.append(key)
             local_fields[key] = "*"
+
+        # replace any abstract key names with a wildcard as well...
+        abstract_key_names = [k.name for k in template.keys.values() if k.is_abstract]
+        for key in local_fields.keys():
+            if key in abstract_key_names:
+                local_fields[key] = "*"
             
         # iterate for each set of keys in the template:
         found_files = set()
@@ -530,10 +538,10 @@ class Sgtk(object):
             # create fields and skip keys with those that 
             # are relevant for this key set:
             current_local_fields = local_fields.copy()
-            current_skip_keys = []
+            current_ignore_types = copy.deepcopy(abstract_key_names)
             for key in skip_keys:
                 if key in keys:
-                    current_skip_keys.append(key)
+                    current_ignore_types.append(key)
                     current_local_fields[key] = "*"
             
             # find remaining missing keys - these will all be optional keys:
@@ -543,22 +551,24 @@ class Sgtk(object):
                     # Add wildcard for each optional key missing from the input fields
                     for missing_key in missing_optional_keys:
                         current_local_fields[missing_key] = "*"
-                        current_skip_keys.append(missing_key)
+                        current_ignore_types.append(missing_key)
                 else:
                     # if there are missing fields then we won't be able to
                     # form a valid path from them so skip this key set
                     continue
             
             # Apply the fields to build the glob string to search with:
-            glob_str = template._apply_fields(current_local_fields, ignore_types=current_skip_keys)
+            glob_str = template._apply_fields(current_local_fields, ignore_types=current_ignore_types)
             if glob_str in globs_searched:
                 # it's possible that multiple key sets return the same search
                 # string depending on the fields and skip-keys passed in
                 continue
             globs_searched.add(glob_str)
             
-            # Find all files which are valid for this key set
-            found_files.update([found_file for found_file in glob.iglob(glob_str) if template.validate(found_file)])
+            # Find all files which are valid for this key set, ignoring abstract and skip keys
+            for found_file in glob.iglob(glob_str):
+                if template.validate(found_file, req_fields, current_ignore_types):
+                    found_files.add(found_file)
                     
         return list(found_files) 
 
@@ -623,45 +633,28 @@ class Sgtk(object):
         :returns: A list of paths whose abstract keys use their abstract(default) value unless
                   a value is specified for them in the fields parameter.
         """
-        search_template = template
-
         # the logic is as follows:
         # do a glob and collapse abstract fields down into their abstract patterns
         # unless they are specified with values in the fields dictionary
-        #
-        # if the leaf level can be avoided, do so.
-        # the leaf level can be avoided if it contains
-        # a combination of non-abstract templates with values in the fields dict
-        # and abstract templates.
 
-        # can we avoid the leaf level?
-        leaf_keys = set(template.keys.keys()) - set(template.parent.keys.keys())
+        skip_keys = skip_keys or []
+        if isinstance(skip_keys, basestring):
+            skip_keys = [skip_keys]
 
         abstract_key_names = [k.name for k in template.keys.values() if k.is_abstract]
 
-        skip_leaf_level = True
-        for k in leaf_keys:
-            if k not in abstract_key_names:
-                # a non-abstract key
-                if k not in fields:
-                    # with no value
-                    skip_leaf_level = False
-                    break
-
-        if skip_leaf_level:
-            search_template = template.parent
+        # construct fields dictionary that doesn't include any skip keys:
+        req_fields = dict((field, value) for field, value in fields.iteritems() if field not in skip_keys)
 
         # now carry out a regular search based on the template
-        found_files = self.paths_from_template(search_template, fields, skip_keys, skip_missing_optional_keys)
-
-        st_abstract_key_names = [k.name for k in search_template.keys.values() if k.is_abstract]
+        found_files = self.paths_from_template(template, req_fields, skip_keys, skip_missing_optional_keys)
 
         # now collapse down the search matches for any abstract fields,
         # and add the leaf level if necessary
         abstract_paths = set()
         for found_file in found_files:
 
-            cur_fields = search_template.get_fields(found_file)
+            cur_fields = template.get_fields(found_file)
 
             # pass 1 - go through the fields for this file and
             # zero out the abstract fields - this way, apply
@@ -671,7 +664,7 @@ class Sgtk(object):
             # by deleting all eye values they will be replaced by %V
             # as the template is applied.
             #
-            for abstract_key_name in st_abstract_key_names:
+            for abstract_key_name in abstract_key_names:
                 del cur_fields[abstract_key_name]
 
             # pass 2 - if we ignored the leaf level, add those fields back
@@ -679,9 +672,9 @@ class Sgtk(object):
             # since the fields dictionary should only ever contain "real" values.
             # also, we may have deleted actual fields in the pass above and now we
             # want to put them back again.
-            for f in fields:
+            for f in req_fields:
                 if f not in cur_fields:
-                    cur_fields[f] = fields[f]
+                    cur_fields[f] = req_fields[f]
 
             # now we have all the fields we need to compose the full template
             abstract_path = template.apply_fields(cur_fields)
