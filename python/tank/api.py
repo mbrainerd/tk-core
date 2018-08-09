@@ -1,11 +1,11 @@
 # Copyright (c) 2013 Shotgun Software Inc.
-# 
+#
 # CONFIDENTIAL AND PROPRIETARY
-# 
-# This work is provided "AS IS" and subject to the Shotgun Pipeline Toolkit 
+#
+# This work is provided "AS IS" and subject to the Shotgun Pipeline Toolkit
 # Source Code License included in this distribution package. See LICENSE.
-# By accessing, using, copying or modifying this work you indicate your 
-# agreement to the Shotgun Pipeline Toolkit Source Code License. All rights 
+# By accessing, using, copying or modifying this work you indicate your
+# agreement to the Shotgun Pipeline Toolkit Source Code License. All rights
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
 """
@@ -55,7 +55,7 @@ class Sgtk(object):
             self.__pipeline_config = project_path
         else:
             self.__pipeline_config = pipelineconfig_factory.from_path(project_path)
-            
+
         try:
             self.templates, self.template_keys = read_templates(self.__pipeline_config)
         except TankError as e:
@@ -96,7 +96,7 @@ class Sgtk(object):
 
         Internal Use Only - We provide no guarantees that this method
         will be backwards compatible.
-        
+
         :param hook_name: Name of hook to execute.
         :param kwargs:  Additional named parameters will be passed to the hook.
         :returns:         Return value of the hook.
@@ -110,12 +110,12 @@ class Sgtk(object):
 
     def execute_core_hook_method(self, hook_name, method_name, **kwargs):
         """
-        Executes a specific method on a core level hook, 
+        Executes a specific method on a core level hook,
         passing it any keyword arguments supplied.
 
         Internal Use Only - We provide no guarantees that this method
         will be backwards compatible.
-        
+
         :param hook_name:   Name of hook to execute.
         :param method_name: Name of method to execute.
         :param **kwargs:    Additional named parameters will be passed to the hook.
@@ -237,11 +237,11 @@ class Sgtk(object):
 
         This Shotgun API is threadlocal, meaning that each thread will get
         a separate instance of the Shotgun API. This is in order to prevent
-        concurrency issues and add a layer of basic protection around the 
+        concurrency issues and add a layer of basic protection around the
         Shotgun API, which isn't threadsafe.
         """
         sg = shotgun.get_sg_connection()
-        
+
         # pass on information to the user agent manager which core version is returning
         # this sg handle. This information will be passed to the web server logs
         # in the shotgun data centre and makes it easy to track which core versions
@@ -274,7 +274,7 @@ class Sgtk(object):
     def configuration_name(self):
         """
         The name of the currently running pipeline configuration
-        
+
         :returns: pipeline configuration name as string, e.g. 'primary'
         """
         return self.__pipeline_config.get_name()
@@ -306,10 +306,10 @@ class Sgtk(object):
     def list_commands(self):
         """
         Lists the system commands registered with the system.
-        
-        This method will return all system commands which 
+
+        This method will return all system commands which
         are available in the context of a project configuration will be returned.
-        This includes for example commands for configuration management, 
+        This includes for example commands for configuration management,
         anything app or engine related and validation and overview functionality.
         In addition to these commands, the global commands such as project setup
         and core API check commands will also be returned.
@@ -325,24 +325,24 @@ class Sgtk(object):
     def get_command(self, command_name):
         """
         Returns an instance of a command object that can be used to execute a command.
-        
-        Once you have retrieved the command instance, you can perform introspection to 
+
+        Once you have retrieved the command instance, you can perform introspection to
         check for example the required parameters for the command, name, description etc.
         Lastly, you can execute the command by running the execute() method.
-        
+
         In order to get a list of the available commands, use the list_commands() method.
 
         For more information, see :meth:`sgtk.get_command`
 
         :param command_name: Name of command to execute. Get a list of all available commands
                              using the :meth:`list_commands` method.
-        
+
         :returns: :class:`~sgtk.SgtkSystemCommand` object instance
         """
         # avoid cyclic dependencies
         from . import commands
         return commands.get_command(command_name, self)
-        
+
     def templates_from_path(self, path):
         """
         Finds templates that matches the given path::
@@ -361,7 +361,7 @@ class Sgtk(object):
             if template.validate(path):
                 matched_templates.add(template)
         return list(matched_templates)
-            
+
     def template_from_path(self, path):
         """
         Finds a template that matches the given path::
@@ -376,7 +376,7 @@ class Sgtk(object):
         :returns: :class:`TemplatePath` or None if no match could be found.
         """
         matched_templates = self.templates_from_path(path)
-        
+
         if len(matched_templates) == 0:
             return None
         elif len(matched_templates) == 1:
@@ -505,7 +505,7 @@ class Sgtk(object):
         :type  fields: Dictionary
         :param skip_keys: Keys whose values should be ignored from the fields parameter.
         :type  skip_keys: List of key names
-        :param skip_missing_optional_keys: Specify if optional keys should be skipped if they 
+        :param skip_missing_optional_keys: Specify if optional keys should be skipped if they
                                         aren't found in the fields collection
         :returns: Matching file paths
         :rtype: List of strings.
@@ -513,11 +513,12 @@ class Sgtk(object):
         skip_keys = skip_keys or []
         if isinstance(skip_keys, basestring):
             skip_keys = [skip_keys]
-        
-        # construct fields dictionary that doesn't include any skip keys:
-        req_fields = dict((field, value) for field, value in fields.iteritems() if field not in skip_keys)
+
+        # construct fields dictionary that doesn't include any skip keys
+        # or keys that don't exist in the template:
+        req_fields = dict((k, v) for k, v in fields.iteritems() if k in template.keys and k not in skip_keys)
         local_fields = copy.deepcopy(req_fields)
-        
+
         # we always want to automatically skip 'required' keys that weren't
         # specified so add wildcards for them to the local fields
         for key in template.missing_keys(local_fields):
@@ -530,12 +531,12 @@ class Sgtk(object):
         for key in local_fields.keys():
             if key in abstract_key_names:
                 local_fields[key] = "*"
-            
+
         # iterate for each set of keys in the template:
         found_files = set()
         globs_searched = set()
         for keys in template._keys:
-            # create fields and skip keys with those that 
+            # create fields and skip keys with those that
             # are relevant for this key set:
             current_local_fields = local_fields.copy()
             current_ignore_types = copy.deepcopy(abstract_key_names)
@@ -543,7 +544,7 @@ class Sgtk(object):
                 if key in keys:
                     current_ignore_types.append(key)
                     current_local_fields[key] = "*"
-            
+
             # find remaining missing keys - these will all be optional keys:
             missing_optional_keys = template._missing_keys(current_local_fields, keys, False)
             if missing_optional_keys:
@@ -556,7 +557,7 @@ class Sgtk(object):
                     # if there are missing fields then we won't be able to
                     # form a valid path from them so skip this key set
                     continue
-            
+
             # Apply the fields to build the glob string to search with:
             glob_str = template._apply_fields(current_local_fields, ignore_types=current_ignore_types)
             if glob_str in globs_searched:
@@ -564,14 +565,13 @@ class Sgtk(object):
                 # string depending on the fields and skip-keys passed in
                 continue
             globs_searched.add(glob_str)
-            
+
             # Find all files which are valid for this key set, ignoring abstract and skip keys
             for found_file in glob.iglob(glob_str):
                 if template.validate(found_file, req_fields, current_ignore_types):
                     found_files.add(found_file)
-                    
-        return list(found_files) 
 
+        return list(found_files)
 
     def abstract_paths_from_template(self, template, fields, skip_keys=None, skip_missing_optional_keys=False):
         """
@@ -627,7 +627,7 @@ class Sgtk(object):
         :type fields: dictionary
         :param skip_keys: Keys whose values should be ignored from the fields parameter.
         :type  skip_keys: List of key names
-        :param skip_missing_optional_keys: Specify if optional keys should be skipped if they 
+        :param skip_missing_optional_keys: Specify if optional keys should be skipped if they
                                         aren't found in the fields collection
 
         :returns: A list of paths whose abstract keys use their abstract(default) value unless
@@ -643,8 +643,9 @@ class Sgtk(object):
 
         abstract_key_names = [k.name for k in template.keys.values() if k.is_abstract]
 
-        # construct fields dictionary that doesn't include any skip keys:
-        req_fields = dict((field, value) for field, value in fields.iteritems() if field not in skip_keys)
+        # construct fields dictionary that doesn't include any skip keys
+        # or keys that don't exist in the template:
+        req_fields = dict((k, v) for k, v in fields.iteritems() if k in template.keys and k not in skip_keys)
 
         # now carry out a regular search based on the template
         found_files = self.paths_from_template(template, req_fields, skip_keys, skip_missing_optional_keys)
@@ -681,7 +682,6 @@ class Sgtk(object):
             abstract_paths.add(abstract_path)
 
         return list(abstract_paths)
-
 
     def paths_from_entity(self, entity_type, entity_id):
         """
@@ -728,7 +728,7 @@ class Sgtk(object):
         :returns: :class:`Context`
         """
         return context.create_empty(self)
-        
+
     def context_from_path(self, path, previous_context=None):
         """
         Factory method that constructs a context object from a path on disk.
@@ -852,12 +852,12 @@ class Sgtk(object):
     def synchronize_filesystem_structure(self, full_sync=False):
         """
         Ensures that the filesystem structure on this machine is in sync
-        with Shotgun. This synchronization is implicitly carried out as part of the 
+        with Shotgun. This synchronization is implicitly carried out as part of the
         normal folder creation process, however sometimes it is useful to
         be able to call it on its own.
-        
+
         .. note:: That this method is equivalent to the **synchronize_folders** tank command.
-        
+
         :param full_sync: If set to true, a complete sync will be carried out.
                           By default, the sync is incremental.
         :returns: List of folders that were synchronized.
