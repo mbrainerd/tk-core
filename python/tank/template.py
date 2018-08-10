@@ -335,32 +335,69 @@ class Template(object):
 
         # seed with empty string
         definitions = ['']
+        found_optional_keys = {}
         for token in tokens:
             temp_definitions = []
+
             # regex return some blank strings, skip them
             if token == '':
                 continue
-            if token.startswith('['):
-                # check that optional contains a key
-                if not re.search("{*%s}" % constants.TEMPLATE_KEY_NAME_REGEX, token):
-                    raise TankError("Optional sections must include a key definition.")
 
-                # Add definitions skipping this optional value
-                temp_definitions = definitions[:]
+            # If this is an optional section...
+            if token.startswith('['):
                 # strip brackets from token
                 token = re.sub('[\[\]]', '', token)
 
-            # check non-optional contains no dangleing brackets
+                # check that optional contains a key
+                key_names = re.findall("{*%s}" % constants.TEMPLATE_KEY_NAME_REGEX, token)
+                if not key_names:
+                    raise TankError("Optional sections must include a key definition.")
+
+                # Keep track of any found optional keys
+                for key_name in key_names:
+                    if key_name not in found_optional_keys:
+                        found_optional_keys[key_name] = set()
+                    found_optional_keys[key_name].add(token)
+
+                # Add definitions skipping this optional value
+                temp_definitions = definitions[:]
+
+            # check non-optional contains no dangling brackets
             if re.search("[\[\]]", token):
                 raise TankError("Square brackets are not allowed outside of optional section definitions.")
 
-            # make defintions with token appended
+            # make definitions with token appended
             for definition in definitions:
                 temp_definitions.append(definition + token)
 
             definitions = temp_definitions
 
-        return definitions
+        # Trim the list of optionally-keyed definitions to the ones with the max number of matches
+        # This will ensure an "all or nothing" approach to matching optional parameters
+        temp_definitions = definitions[:]
+        for key_name, tokens in found_optional_keys.iteritems():
+            max_matches = 0
+            key_definition = None
+            non_key_definitions = set()
+            for definition in temp_definitions:
+                token_matches = 0
+                for token in tokens:
+                    matches = re.findall(token, definition)
+                    if matches:
+                        token_matches += len(matches)
+
+                if token_matches:
+                    if token_matches > max_matches:
+                        max_matches = token_matches
+                        key_definition = definition
+                else:
+                    non_key_definitions.add(definition)
+
+            temp_definitions = list(non_key_definitions)
+            if key_definition:
+                temp_definitions.append(key_definition)
+
+        return temp_definitions
 
     def _fix_key_names(self, definition, keys):
         """
