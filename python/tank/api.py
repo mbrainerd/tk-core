@@ -514,13 +514,24 @@ class Sgtk(object):
         if isinstance(skip_keys, basestring):
             skip_keys = [skip_keys]
 
-        # construct fields dictionary that doesn't include any skip keys
+        # construct a fields dictionary that doesn't include any skip keys
         # or keys that don't exist in the template:
-        req_fields = dict((k, v) for k, v in fields.iteritems() if k in template.keys and k not in skip_keys)
-        local_fields = copy.deepcopy(req_fields)
+        req_fields = {}
+        for k, v in fields.iteritems():
+            if k in skip_keys:
+                continue
+            found_key = False
+            for key in template.keys.values():
+                for key_name in key.names:
+                    if k == key_name:
+                        found_key = True
+                        break
+            if found_key:
+                req_fields[k] = v
 
         # we always want to automatically skip 'required' keys that weren't
         # specified so add wildcards for them to the local fields
+        local_fields = copy.deepcopy(req_fields)
         for key in template.missing_keys(local_fields):
             if key not in skip_keys:
                 skip_keys.append(key)
@@ -643,9 +654,20 @@ class Sgtk(object):
 
         abstract_key_names = [k.name for k in template.keys.values() if k.is_abstract]
 
-        # construct fields dictionary that doesn't include any skip keys
+        # construct a fields dictionary that doesn't include any skip keys
         # or keys that don't exist in the template:
-        req_fields = dict((k, v) for k, v in fields.iteritems() if k in template.keys and k not in skip_keys)
+        req_fields = {}
+        for k, v in fields.iteritems():
+            if k in skip_keys:
+                continue
+            found_key = False
+            for key in template.keys.values():
+                for key_name in key.names:
+                    if k == key_name:
+                        found_key = True
+                        break
+            if found_key:
+                req_fields[k] = v
 
         # now carry out a regular search based on the template
         found_files = self.paths_from_template(template, req_fields, skip_keys, skip_missing_optional_keys)

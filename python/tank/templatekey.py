@@ -54,6 +54,7 @@ class TemplateKey(object):
     def __init__(self,
                  name,
                  pipeline_configuration,
+                 alias=None,
                  default=None,
                  choices=None,
                  shotgun_entity_type=None,
@@ -82,8 +83,10 @@ class TemplateKey(object):
         :param hook value_from_str_hook: Optional value_from_str() method override
         :param kwargs: Optional additional parameters defined for this key
         """
-        self._name = name
+        self._name = alias or name
         self._pipeline_configuration = pipeline_configuration
+        self._original_name = name
+        self._alias = alias
         self._default = default
         self._kwargs = kwargs
 
@@ -161,6 +164,29 @@ class TemplateKey(object):
         The parent PipelineConfiguration object this item belongs to.
         """
         return self._pipeline_configuration
+
+    @property
+    def original_name(self):
+        """
+        The original name (non-aliased) that the template can use to refer to the key.
+        """
+        return self._original_name
+
+    @property
+    def alias(self):
+        """
+        The alias that the template can use to refer to the key.
+        """
+        return self._alias
+
+    @property
+    def names(self):
+        """
+        Returns both the original name and alias if defined.
+        """
+        if self.alias:
+            return [self.original_name, self.alias]
+        return [self.original_name]
 
     @property
     def length(self):
@@ -368,6 +394,8 @@ class TemplateKey(object):
         return True
 
     def __repr__(self):
+        if self.alias:
+            return "<Sgtk %s %s (Alias: %s)>" % (self.__class__.__name__, self.original_name, self.alias)
         return "<Sgtk %s %s>" % (self.__class__.__name__, self.name)
 
 
@@ -378,6 +406,7 @@ class StringKey(TemplateKey):
     def __init__(self,
                  name,
                  pipeline_configuration,
+                 alias=None,
                  default=None,
                  choices=None,
                  filter_by=None,
@@ -446,6 +475,7 @@ class StringKey(TemplateKey):
 
         super(StringKey, self).__init__(name,
                                         pipeline_configuration,
+                                        alias=alias,
                                         default=default,
                                         choices=choices,
                                         shotgun_entity_type=shotgun_entity_type,
@@ -645,6 +675,7 @@ class TimestampKey(TemplateKey):
         self,
         name,
         pipeline_configuration,
+        alias=None,
         default=None,
         format_spec="%Y-%m-%d-%H-%M-%S",
         validate_hook=None,
@@ -697,15 +728,14 @@ class TimestampKey(TemplateKey):
             raise TankError("default for <Sgtk TimestampKey %s> is not of type string or None: %s" %
                             (name, default.__class__.__name__))
 
-        super(TimestampKey, self).__init__(
-            name,
-            pipeline_configuration,
-            default=default,
-            validate_hook=validate_hook,
-            str_from_value_hook=str_from_value_hook,
-            value_from_str_hook=value_from_str_hook,
-            **kwargs
-        )
+        super(TimestampKey, self).__init__(name,
+                                           pipeline_configuration,
+                                           alias=alias,
+                                           default=default,
+                                           validate_hook=validate_hook,
+                                           str_from_value_hook=str_from_value_hook,
+                                           value_from_str_hook=value_from_str_hook,
+                                           **kwargs)
 
     @property
     def format_spec(self):
@@ -800,6 +830,7 @@ class IntegerKey(TemplateKey):
     def __init__(self,
                  name,
                  pipeline_configuration,
+                 alias=None,
                  default=None,
                  choices=None,
                  format_spec=None,
@@ -839,6 +870,7 @@ class IntegerKey(TemplateKey):
         self._init_strict_matching(name, strict_matching)
         super(IntegerKey, self).__init__(name,
                                          pipeline_configuration,
+                                         alias=alias,
                                          default=default,
                                          choices=choices,
                                          shotgun_entity_type=shotgun_entity_type,
@@ -1087,6 +1119,7 @@ class SequenceKey(IntegerKey):
     def __init__(self,
                  name,
                  pipeline_configuration,
+                 alias=None,
                  default=None,
                  choices=None,
                  format_spec='01',
@@ -1120,6 +1153,7 @@ class SequenceKey(IntegerKey):
 
         super(SequenceKey, self).__init__(name,
                                           pipeline_configuration,
+                                          alias=alias,
                                           default=default,
                                           choices=choices,
                                           strict_matching=False,
@@ -1278,7 +1312,7 @@ def make_keys(pipeline_configuration, data):
         "sequence": SequenceKey,
         "timestamp": TimestampKey
     }
-    for initial_key_name, key_data in data.items():
+    for key_name, key_data in data.items():
         # We need to remove data before passing in as arguments, so copy it.
         prepped_data = key_data.copy()
 
@@ -1287,12 +1321,6 @@ def make_keys(pipeline_configuration, data):
         if not KeyClass:
             raise TankError("Invalid type: '%s'. Valid types are: %s" % (class_name, names_classes.keys()))
 
-        if "alias" in prepped_data:
-            # The alias becomes the key's name and is used internally by Templates as the key's name
-            key_name = prepped_data.pop("alias")
-        else:
-            key_name = initial_key_name
-
         key = KeyClass(key_name, pipeline_configuration, **prepped_data)
-        keys[initial_key_name] = key
+        keys[key_name] = key
     return keys

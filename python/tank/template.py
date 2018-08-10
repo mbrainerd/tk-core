@@ -104,7 +104,7 @@ class Template(object):
         for variation in variations:
             self._definitions.append(self._fix_key_names(variation, keys))
 
-        # get defintion ready for string substitution
+        # get definition ready for string substitution
         self._cleaned_definitions = []
         for definition in self._definitions:
             self._cleaned_definitions.append(self._clean_definition(definition))
@@ -224,11 +224,21 @@ class Template(object):
                   values of None.
         """
         if skip_defaults:
-            required_keys = [key.name for key in keys.values() if key.default is None]
+            required_keys = [key for key in keys.values() if key.default is None]
         else:
-            required_keys = keys
+            required_keys = keys.values()
 
-        return [x for x in required_keys if (x not in fields) or  (fields[x] is None)]
+        missing_key_names = []
+        for key in required_keys:
+            found_key = False
+            for key_name in key.names:
+                if key_name in fields and fields[key_name] is not None:
+                    found_key = True
+                    break
+            if not found_key:
+                missing_key_names.append(key.name)
+
+        return missing_key_names
 
     def apply_fields(self, fields, platform=None):
         """
@@ -313,10 +323,13 @@ class Template(object):
 
         # Process all field values through template keys
         processed_fields = {}
-        for key_name, key in keys.items():
-            value = fields.get(key_name)
+        for key in keys.values():
+            for key_name in key.names:
+                value = fields.get(key_name)
+                if value:
+                    break
             ignore_type = key_name in ignore_types
-            processed_fields[key_name] = key.str_from_value(value, ignore_type=ignore_type)
+            processed_fields[key.name] = key.str_from_value(value, ignore_type=ignore_type)
 
         return self._cleaned_definitions[index] % processed_fields
 
@@ -475,8 +488,27 @@ class Template(object):
             return None
 
         # Check that all required fields were found in the path:
-        for key, value in required_fields.items():
-            if (key not in skip_keys) and (path_fields.get(key) != value):
+        for key_name, value in required_fields.items():
+            if key_name in skip_keys:
+                continue
+
+            # First try and find a matching key for the field_key_name
+            # The result of get_fields will always be keyed by key.name, so ensure
+            # we use that for lookup validation regardless of whether or not the user
+            # specified the key name or key alias.
+            matching_key = None
+            for key in self.keys.values():
+                for name in key.names:
+                    if name == key_name:
+                        matching_key = key
+                        break
+
+            # If we don't have a matching key, just skip it
+            if not matching_key:
+                continue
+
+            # Now ensure that the path_fields value matches the required value
+            if path_fields.get(matching_key.name) != value:
                 return None
 
         return path_fields
@@ -1176,7 +1208,7 @@ def make_template_aliases(pipeline_configuration, data, template_strings, templa
     :returns: Dictionary of form {<template name> : <TemplateString|TemplatePath object>}
     """
     template_aliases = {}
-    templates_data = _process_templates_data(data, "string")
+    templates_data = _process_templates_data(data, "alias")
 
     for template_name, template_data in templates_data.items():
         definition = template_data["definition"]
@@ -1210,7 +1242,7 @@ def _process_templates_data(data, template_type):
     Conforms templates data and checks for duplicate definitions.
 
     :param data: Dictionary in form { <template name> : <data> }
-    :param template_type: path or string
+    :param template_type: path, string, or alias
 
     :returns: Processed data.
     """
