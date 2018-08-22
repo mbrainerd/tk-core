@@ -60,9 +60,9 @@ class ContextCache(Threaded):
         if "id" in entity_dict:
             key_dict["id"] = entity_dict["id"]
         if "user" in entity_dict:
-            key_dict["user"] = entity_dict["user"].get("id")
+            key_dict["user"] = entity_dict["user"].get("id") if entity_dict["user"] else None
         if "step" in entity_dict:
-            key_dict["step"] = entity_dict["step"].get("id")
+            key_dict["step"] = entity_dict["step"].get("id") if entity_dict["step"] else None
 
         return tuple(sorted(key_dict.items()))
 
@@ -1721,7 +1721,7 @@ def _get_valid_context_entity_dict(tk, entity_dict):
     entity_dict = _build_entity_dict(tk, entity_dict, required_fields + optional_fields)
 
     # If we're missing any required fields, we're not a valid entity dictionary
-    missing_fields = list(set(required_fields) - set([k for k, v in entity_dict.items() if v]))
+    missing_fields = list(set(required_fields) - set(entity_dict.keys()))
     if missing_fields:
         raise TankError("'%s' entity missing required fields: %s" %
                 (entity_type, pprint.pformat(missing_fields)))
@@ -1757,7 +1757,7 @@ def _build_entity_dict(tk, entity_dict, required_fields=None):
     required_fields = required_fields or []
 
     # Get the list of missing fields
-    missing_fields = list(set(required_fields) - set([k for k, v in entity_dict.items() if v]))
+    missing_fields = list(set(required_fields) - set(entity_dict.keys()))
     if not missing_fields:
         # We have all required fields, so return
         return entity_dict
@@ -1766,7 +1766,7 @@ def _build_entity_dict(tk, entity_dict, required_fields=None):
     entity_dict = _get_entity_dict_from_path_cache(tk, entity_dict, missing_fields)
 
     # Get the list of missing fields
-    missing_fields = list(set(required_fields) - set([k for k, v in entity_dict.items() if v]))
+    missing_fields = list(set(required_fields) - set(entity_dict.keys()))
     if not missing_fields:
         # We have all required fields, so return
         return entity_dict
@@ -1775,7 +1775,7 @@ def _build_entity_dict(tk, entity_dict, required_fields=None):
 #    entity_dict = _get_entity_dict_from_folder_schema(tk, entity_dict, missing_fields)
 #
 #    # Get the list of missing fields
-#    missing_fields = list(set(required_fields) - set([k for k, v in entity_dict.items() if v]))
+#    missing_fields = list(set(required_fields) - set(entity_dict.keys()))
 #    if not missing_fields:
 #        # We have all required fields, so return
 #        return entity_dict
@@ -1784,7 +1784,7 @@ def _build_entity_dict(tk, entity_dict, required_fields=None):
     entity_dict = _get_entity_dict_from_shotgun(tk, entity_dict, missing_fields)
 
     # Get the list of missing fields
-    missing_fields = list(set(required_fields) - set([k for k, v in entity_dict.items() if v]))
+    missing_fields = list(set(required_fields) - set(entity_dict.keys()))
     if not missing_fields:
         # We have all required fields, so return
         return entity_dict
