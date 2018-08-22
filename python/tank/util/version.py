@@ -10,6 +10,9 @@
 
 import re
 
+from dd.runtime import api
+api.load("setuptools")
+
 from pkg_resources import parse_version as Version
 
 def is_version_head(version):

@@ -32,6 +32,9 @@ __version__ = "HEAD"
 import os
 import sys
 
+from dd.runtime import api
+api.load("ordereddict")
+
 if "TANK_CURRENT_PC" not in os.environ:
     # find the pipeline configuration root, probe for a key file
     # (templates.yml) and use this test to determine if this code is 
