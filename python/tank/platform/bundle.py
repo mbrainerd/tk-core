@@ -342,13 +342,6 @@ class TankBundle(object):
         """
         return self.__instance_name
 
-    @instance_name.setter
-    def instance_name(self, instance_name):
-        """
-        Sets the instance name of the bundle.
-        """
-        self.__instance_name = instance_name
-
     @property
     def context(self):
         """
@@ -881,7 +874,7 @@ class TankBundle(object):
 
         # make sure to replace the `{engine_name}` token if it exists.
         if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in hook_expression:
-            engine_name = self._get_engine_name()
+            engine_name = self._get_engine_instance_name()
             if not engine_name:
                 raise TankError(
                     "No engine could be determined for hook expression '%s'. "
@@ -898,7 +891,7 @@ class TankBundle(object):
             # find the name of the hook from the manifest
 
             manifest = self.__descriptor.configuration_schema
-            engine_name = self._get_engine_name()
+            engine_name = self._get_engine_instance_name()
 
             # Entries are on the following form
             #            
@@ -1028,7 +1021,7 @@ class TankBundle(object):
         """
         # make sure to replace the `{engine_name}` token if it exists.
         if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in value:
-            engine_name = self._get_engine_name()
+            engine_name = self._get_engine_instance_name()
             if not engine_name:
                 raise TankError(
                     "No engine could be determined for value '%s'. "
@@ -1066,7 +1059,7 @@ class TankBundle(object):
 
         # make sure to replace the `{engine_name}` token if it exists.
         if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in path:
-            engine_name = self._get_engine_name()
+            engine_name = self._get_engine_instance_name()
             if not engine_name:
                 raise TankError(
                     "No engine could be determined for path '%s'. "
@@ -1291,6 +1284,25 @@ class TankBundle(object):
 
         return engine_name
 
+    def _get_engine_instance_name(self):
+        """
+        Returns the bundle's engine instance name if available. None otherwise.
+        Convenience method to avoid try/except everywhere.
+
+        :return: The engine instance name or None
+        """
+        # note - this technically violates the generic nature of the bundle
+        # base class implementation because the engine member is not defined
+        # in the bundle base class (only in App and Framework, not Engine) - an
+        # engine trying to define a hook using the {engine_name} construct will
+        # therefore get an error.
+        try:
+            engine_name = self.engine.instance_name
+        except:
+            engine_name = None
+
+        return engine_name
+
 
 def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate):
     """
@@ -1472,7 +1484,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
         bundle = bundle or current_bundle()
         instance_name = bundle.instance_name
     except TankCurrentModuleNotFoundError:
-        instance_name = engine_name or ""
+        instance_name = "bundle"
         pass
 
     # Get the value for the supplied key

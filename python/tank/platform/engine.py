@@ -287,6 +287,25 @@ class Engine(TankBundle):
 
         return engine_name
 
+    def _get_engine_instance_name(self):
+        """
+        Returns the bundle's engine instance name if available. None otherwise.
+        Convenience method to avoid try/except everywhere.
+
+        :return: The engine instance name or None
+        """
+        # note - this technically violates the generic nature of the bundle
+        # base class implementation because the engine member is not defined
+        # in the bundle base class (only in App and Framework, not Engine) - an
+        # engine trying to define a hook using the {engine_name} construct will
+        # therefore get an error.
+        try:
+            engine_name = self.instance_name
+        except:
+            engine_name = None
+
+        return engine_name
+
     def __toggle_debug_logging(self):
         """
         Toggles global debug logging on and off in the log manager.
@@ -2467,7 +2486,7 @@ class Engine(TankBundle):
                 )
 
                 # check that the context contains all the info that the app needs
-                if self.__instance_name != constants.SHOTGUN_ENGINE_NAME: 
+                if self.name != constants.SHOTGUN_ENGINE_NAME: 
                     # special case! The shotgun engine is special and does not have a 
                     # context until you actually run a command, so disable the validation.
                     validation.validate_context(descriptor, self.context)
@@ -2520,9 +2539,6 @@ class Engine(TankBundle):
 
                         # Update the app settings.
                         app.settings = app_settings
-
-                        # Set the instance name.
-                        app.instance_name = app_instance_name
 
                         # Make sure our frameworks are up and running properly for
                         # the new context.
@@ -3091,7 +3107,7 @@ def get_env_and_descriptor_for_engine(engine_name, tk, context):
     """
     Utility method to return commonly needed objects when instantiating engines.
 
-    :param engine_name: system name of the engine to look for, e.g tk-maya
+    :param engine_name: instance name of the engine to look for, e.g tk-maya
     :param tk: :class:`~sgtk.Sgtk` instance
     :param context: :class:`~sgtk.Context` object to use when picking environment
     :returns: tuple with associated environment and engine descriptor)
