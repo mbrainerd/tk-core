@@ -909,11 +909,11 @@ class Context(object):
                 sg_name = shotgun_entity.get_sg_entity_name_field(entity_type)
                 if key.shotgun_field_name == sg_name:
                     # already have the value cached - no need to fetch from shotgun
-                    fields[key.name] = entity["name"]
+                    fields[key.name] = key.str_from_value(entity["name"])
 
                 # Else create a field if we already have the key
                 elif key.shotgun_field_name in entity:
-                    fields[key.name] = entity[key.shotgun_field_name]
+                    fields[key.name] = key.str_from_value(entity[key.shotgun_field_name])
 
         return fields
 
@@ -949,7 +949,7 @@ class Context(object):
                 cache_key = (entity["type"], entity["id"], key.shotgun_field_name)
                 if cache_key in self._entity_fields_cache:
                     # already have the value cached - no need to fetch from shotgun
-                    fields[key.name] = self._entity_fields_cache[cache_key]
+                    value = self._entity_fields_cache[cache_key]
 
                 else:
                     # get the value from shotgun
@@ -965,37 +965,31 @@ class Context(object):
 
                     value = result.get(key.shotgun_field_name)
 
-                    # note! It is perfectly possible (and may be valid) to return None values from
-                    # shotgun at this point. In these cases, a None field will be returned in the
-                    # fields dictionary from as_template_fields, and this may be injected into
-                    # a template with optional fields.
+                    # Store the result for next time
+                    self._entity_fields_cache[cache_key] = value
 
-                    if value is None:
-                        processed_val = None
+                # note! It is perfectly possible (and may be valid) to return None values from
+                # shotgun at this point. In these cases, a None field will be returned in the
+                # fields dictionary from as_template_fields, and this may be injected into
+                # a template with optional fields.
+                if value is None:
+                    processed_val = None
 
-                    else:
+                else:
+                    # now convert the shotgun value to a string.
+                    # note! This means that there is no way currently to create an int key
+                    # in a tank template which matches an int field in shotgun, since we are
+                    # force converting everything into strings...
+                    processed_val = key.str_from_value(value)
 
-                        # now convert the shotgun value to a string.
-                        # note! This means that there is no way currently to create an int key
-                        # in a tank template which matches an int field in shotgun, since we are
-                        # force converting everything into strings...
+                    if not key.validate(processed_val):
+                        raise TankError("Template validation failed for value '%s'. This "
+                                        "value was retrieved from entity %s in Shotgun to "
+                                        "represent key '%s'." % (processed_val, entity, key))
 
-                        processed_val = shotgun_entity.sg_entity_to_string(self.__tk,
-                                                                           key.shotgun_entity_type,
-                                                                           entity.get("id"),
-                                                                           key.shotgun_field_name,
-                                                                           value)
-
-                        if not key.validate(processed_val):
-                            raise TankError("Template validation failed for value '%s'. This "
-                                            "value was retrieved from entity %s in Shotgun to "
-                                            "represent key '%s'." % (processed_val, entity, key))
-
-                    # all good!
-                    # populate dictionary and cache
-                    fields[key.name] = processed_val
-                    self._entity_fields_cache[cache_key] = processed_val
-
+                # all good!
+                # populate dictionary and cache
+                fields[key.name] = processed_val
 
         return fields
 
