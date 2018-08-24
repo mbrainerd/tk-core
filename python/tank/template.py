@@ -387,10 +387,9 @@ class Template(object):
 
         # Trim the list of optionally-keyed definitions to the ones with the max number of matches
         # This will ensure an "all or nothing" approach to matching optional parameters
-        temp_definitions = definitions[:]
+        temp_definitions = set(definitions[:])
         for key_name, tokens in found_optional_keys.iteritems():
-            max_matches = 0
-            key_definition = None
+            key_definitions = {}
             non_key_definitions = set()
             for definition in temp_definitions:
                 token_matches = 0
@@ -399,18 +398,22 @@ class Template(object):
                     if matches:
                         token_matches += len(matches)
 
+                # If this is a matching definition, add it to the list sorted by
+                # the number of matches
                 if token_matches:
-                    if token_matches > max_matches:
-                        max_matches = token_matches
-                        key_definition = definition
+                    if token_matches not in key_definitions:
+                        key_definitions[token_matches] = set()
+                    key_definitions[token_matches].add(definition)
                 else:
                     non_key_definitions.add(definition)
 
-            temp_definitions = list(non_key_definitions)
-            if key_definition:
-                temp_definitions.append(key_definition)
+            temp_definitions = set(non_key_definitions)
+            if key_definitions:
+                # If we have matches, add the ones with the most matches to the list
+                key_defs = key_definitions[max(key_definitions.keys())]
+                temp_definitions.update(key_defs)
 
-        return temp_definitions
+        return list(temp_definitions)
 
     def _fix_key_names(self, definition, keys):
         """
