@@ -188,7 +188,7 @@ class ExpandShowTree(HookBaseClass):
                 # add the sequence paths to the mix
                 seq_entity = entities_by_type.get("Sequence")
                 if seq_entity:
-                    prefixes.append(os.path.join(default_root, seq_entity.entity["name"]))
+                    prefixes.append(os.path.join(default_root, seq_entity["name"]))
                 # add the sequence and shot paths to the mix
                 shot_entity = entities_by_type.get("Shot")
                 if shot_entity and seq_entity:
