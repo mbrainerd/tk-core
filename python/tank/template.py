@@ -223,20 +223,23 @@ class Template(object):
         :returns: Fields needed by template which are not in inputs keys or which have
                   values of None.
         """
-        if skip_defaults:
-            required_keys = [key for key in keys.values() if key.default is None]
-        else:
-            required_keys = keys.values()
-
         missing_key_names = []
-        for key in required_keys:
-            found_key = False
+        for key in keys.values():
+            found_key_name = None
             for key_name in key.names:
-                if key_name in fields and fields[key_name] is not None:
-                    found_key = True
+                if key_name in fields:
+                    found_key_name = key_name
                     break
-            if not found_key:
-                missing_key_names.append(key.name)
+
+            if found_key_name:
+                # If the found field value is explicitly set to None,
+                # call it out as a missing key
+                if fields[found_key_name] is None:
+                    missing_key_names.append(key.name)
+            else:
+                # Only add if there isn't a default and skip_defaults isn't True
+                if not (key.default and skip_defaults):
+                    missing_key_names.append(key.name)
 
         return missing_key_names
 
@@ -314,7 +317,6 @@ class Template(object):
             if not missing_keys:
                 keys = cur_keys
                 break
-
 
         if keys is None:
             raise TankError("Tried to resolve a path from the template %s and a set "
