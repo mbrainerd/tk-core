@@ -57,6 +57,12 @@ class Sgtk(object):
         else:
             self.__pipeline_config = pipelineconfig_factory.from_path(project_path)
 
+        try:
+            self.__templates, self.__template_keys = read_templates(self.__pipeline_config)
+        except TankError as e:
+            err_msg = "Could not read templates configuration: %s" % e
+            raise type(e), type(e)(err_msg), sys.exc_info()[2]
+
         # create schema builder
         schema_cfg_folder = self.__pipeline_config.get_schema_config_location()
         self.folder_config = folder.configuration.FolderConfiguration(self, schema_cfg_folder)
@@ -169,7 +175,7 @@ class Sgtk(object):
         if engine:
             return engine.templates
 
-        return {}
+        return self.__templates
 
     @property
     def template_keys(self):
@@ -182,7 +188,7 @@ class Sgtk(object):
         if engine:
             return engine.template_keys
 
-        return {}
+        return self.__template_keys
 
     @property
     def configuration_descriptor(self):
@@ -321,6 +327,12 @@ class Sgtk(object):
         engine = current_engine()
         if engine:
             engine.reload_templates()
+
+        try:
+            self.__templates, self.__template_keys = read_templates(self.__pipeline_config)
+        except TankError as e:
+            err_msg = "Templates could not be reloaded: %s" % e
+            raise type(e), type(e)(err_msg), sys.exc_info()[2]
 
     def list_commands(self):
         """
