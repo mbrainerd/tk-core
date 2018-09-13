@@ -616,7 +616,7 @@ class TankBundle(object):
         :param template_name
         :returns: :class:`~Template` object
         """
-        return self.tank.templates.get(template_name)
+        return self._get_engine().templates.get(template_name)
                         
     def execute_hook(self, key, base_class=None, **kwargs):
         """
