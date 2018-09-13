@@ -1061,7 +1061,7 @@ def split_path(input_path):
     cur_path = cur_path.replace("\\", "/")
     return cur_path.split("/")
 
-def read_templates(pipeline_configuration, engine_name):
+def read_templates(pipeline_configuration, engine_name=None):
     """
     Creates templates and keys based on contents of templates file.
 
