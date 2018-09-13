@@ -1265,12 +1265,12 @@ class TankBundle(object):
             self.__tk, self._get_engine_name(), schema, settings, key, default, self
         )
 
-    def _get_engine_name(self):
+    def _get_engine(self):
         """
-        Returns the bundle's engine name if available. None otherwise.
+        Returns the bundle's engine if available. None otherwise.
         Convenience method to avoid try/except everywhere.
 
-        :return: The engine name or None
+        :return: The engine object or None
         """
         # note - this technically violates the generic nature of the bundle
         # base class implementation because the engine member is not defined
@@ -1278,11 +1278,24 @@ class TankBundle(object):
         # engine trying to define a hook using the {engine_name} construct will
         # therefore get an error.
         try:
-            engine_name = self.engine.name
+            engine = self.engine
         except:
-            engine_name = None
+            engine = None
 
-        return engine_name
+        return engine
+
+    def _get_engine_name(self):
+        """
+        Returns the bundle's engine name if available. None otherwise.
+        Convenience method to avoid try/except everywhere.
+
+        :return: The engine name or None
+        """
+        engine = self._get_engine()
+        if engine:
+            return engine.name
+
+        return None
 
     def _get_engine_instance_name(self):
         """
@@ -1291,17 +1304,11 @@ class TankBundle(object):
 
         :return: The engine instance name or None
         """
-        # note - this technically violates the generic nature of the bundle
-        # base class implementation because the engine member is not defined
-        # in the bundle base class (only in App and Framework, not Engine) - an
-        # engine trying to define a hook using the {engine_name} construct will
-        # therefore get an error.
-        try:
-            engine_name = self.engine.instance_name
-        except:
-            engine_name = None
+        engine = self._get_engine()
+        if engine:
+            return engine.instance_name
 
-        return engine_name
+        return None
 
 
 def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate):

@@ -42,6 +42,7 @@ CONFIG_FOLDER_DESCRIPTOR_TOKEN = "{CONFIG_FOLDER}"
 
 # the name of the file that holds the templates.yml config
 CONTENT_TEMPLATES_FILE = "templates.yml"
+ENGINE_TEMPLATES_FOLDER = "templates"
 
 # config file with information about which core to use
 CONFIG_CORE_DESCRIPTOR_FILE = "core_api.yml"

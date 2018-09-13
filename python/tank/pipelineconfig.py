@@ -1136,20 +1136,24 @@ class PipelineConfiguration(object):
         """
         return os.path.join(self.get_config_location(), "env", "%s.yml" % env_name)
 
-    def _get_templates_config_location(self):
+    def _get_templates_config_location(self, engine_name):
         """
         Returns the path to the configuration's template file.
         """
-        return os.path.join(
-            os.path.join(self.get_config_location(), "core"),
-            constants.CONTENT_TEMPLATES_FILE,
-        )
+        return os.path.join(self.get_config_location(),
+                            "core",
+                            constants.ENGINE_TEMPLATES_FOLDER,
+                            "%s.yml" % engine_name
+                           )
 
-    def get_templates_config(self):
+    def get_templates_config(self, engine_name):
         """
         Returns the templates configuration as an object
         """
-        templates_file = self._get_templates_config_location()
+        templates_file = self._get_templates_config_location(engine_name)
+        if not os.path.isfile(templates_file):
+            log.debug("Templates file does not exist: %s" % templates_file)
+            return {}
 
         data = yaml_cache.g_yaml_cache.get(templates_file)
         data = template_includes.process_includes(templates_file, data)

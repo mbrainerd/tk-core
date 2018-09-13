@@ -40,6 +40,7 @@ from .errors import (
 from ..util.metrics import EventMetric
 from ..util.metrics import MetricsDispatcher
 from ..log import LogManager
+from ..template import read_templates
 
 from . import application
 from . import constants
@@ -106,7 +107,14 @@ class Engine(TankBundle):
         settings = env.get_engine_settings(instance_name)
         
         # get the descriptor representing the engine        
-        descriptor = env.get_engine_descriptor(instance_name)        
+        descriptor = env.get_engine_descriptor(instance_name)
+
+        # get any engine templates
+        try:
+            self.__templates, self.__template_keys = read_templates(tk.pipeline_configuration, instance_name)
+        except TankError as e:
+            err_msg = "Could not read templates configuration: %s" % e
+            raise type(e), type(e)(err_msg), sys.exc_info()[2]
 
         # create logger for this engine.
         # log will be parented in a sgtk.env.environment_name.instance_name hierarchy
@@ -268,43 +276,11 @@ class Engine(TankBundle):
     ##########################################################################################
     # properties used by internal classes, not part of the public interface
 
-    def _get_engine_name(self):
+    def _get_engine(self):
         """
-        Returns the bundle's engine name if available. None otherwise.
-        Convenience method to avoid try/except everywhere.
-
-        :return: The engine name or None
+        Overrides the bundle base class method to return self.
         """
-        # note - this technically violates the generic nature of the bundle
-        # base class implementation because the engine member is not defined
-        # in the bundle base class (only in App and Framework, not Engine) - an
-        # engine trying to define a hook using the {engine_name} construct will
-        # therefore get an error.
-        try:
-            engine_name = self.name
-        except:
-            engine_name = None
-
-        return engine_name
-
-    def _get_engine_instance_name(self):
-        """
-        Returns the bundle's engine instance name if available. None otherwise.
-        Convenience method to avoid try/except everywhere.
-
-        :return: The engine instance name or None
-        """
-        # note - this technically violates the generic nature of the bundle
-        # base class implementation because the engine member is not defined
-        # in the bundle base class (only in App and Framework, not Engine) - an
-        # engine trying to define a hook using the {engine_name} construct will
-        # therefore get an error.
-        try:
-            engine_name = self.instance_name
-        except:
-            engine_name = None
-
-        return engine_name
+        return self
 
     def __toggle_debug_logging(self):
         """
@@ -573,6 +549,24 @@ class Engine(TankBundle):
         :returns: dictionary with keys being app name and values being app objects
         """
         return self.__applications
+
+    @property
+    def templates(self):
+        """
+        Dictionary of templates associated with this engine
+        
+        :returns: dictionary with keys being template name and values being template objects
+        """
+        return self.__templates
+
+    @property
+    def template_keys(self):
+        """
+        Dictionary of template keys associated with this engine
+
+        :returns: dictionary with keys being key name and values being key objects
+        """
+        return self.__template_keys
     
     @property
     def commands(self):
@@ -1283,6 +1277,27 @@ class Engine(TankBundle):
                     (command_name, instance_name))
 
         return ret_value
+
+    def reload_templates(self):
+        """
+        Reloads the template definitions from disk. If the reload fails a
+        :class:`TankError` will be raised and the previous template definitions
+        will be preserved.
+
+        .. note:: This method can be helpful if you are tweaking
+                 templates inside of for example Maya and want to reload them. You can
+                 then access this method from the python console via the current engine
+                 handle::
+
+                    sgtk.platform.current_engine().sgtk.reload_templates()
+
+        :raises: :class:`TankError`
+        """
+        try:
+            self.__templates, self.__template_keys = read_templates(self.tk.pipeline_configuration, self.instance_name)
+        except TankError as e:
+            err_msg = "Templates could not be loaded: %s" % e
+            raise type(e), type(e)(err_msg), sys.exc_info()[2]
 
     ##########################################################################################
     # logging interfaces

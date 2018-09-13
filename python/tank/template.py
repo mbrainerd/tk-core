@@ -1061,16 +1061,17 @@ def split_path(input_path):
     cur_path = cur_path.replace("\\", "/")
     return cur_path.split("/")
 
-def read_templates(pipeline_configuration):
+def read_templates(pipeline_configuration, engine_name):
     """
     Creates templates and keys based on contents of templates file.
 
     :param pipeline_configuration: pipeline config object
+    :param engine_name: the engine instance name to lookup templates for
 
     :returns: Dictionary of form {template name: template object}
     """
     per_platform_roots = pipeline_configuration.get_all_platform_data_roots()
-    data = pipeline_configuration.get_templates_config()
+    data = pipeline_configuration.get_templates_config(engine_name)
 
     # get dictionaries from the templates config file:
     def get_data_section(section_name):
