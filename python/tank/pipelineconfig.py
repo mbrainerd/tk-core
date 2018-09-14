@@ -1140,16 +1140,11 @@ class PipelineConfiguration(object):
         """
         Returns the path to the configuration's template file.
         """
-        if engine_name:
-            return os.path.join(self.get_config_location(),
-                                "core",
-                                constants.ENGINE_TEMPLATES_FOLDER,
-                                "%s.yml" % engine_name
-                               )
+        template_file = "%s.yml" % engine_name or constants.COMMON_TEMPLATES_FILE
         return os.path.join(self.get_config_location(),
                             "core",
-                            constants.ENGINE_TEMPLATES_FOLDER,
-                            constants.CONTENT_TEMPLATES_FILE
+                            constants.CONTENT_TEMPLATES_FOLDER,
+                            template_file
                            )
 
     def get_templates_config(self, engine_name=None):
