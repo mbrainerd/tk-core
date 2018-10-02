@@ -43,6 +43,12 @@ class TankNoDefaultValueError(TankError):
     """
 
 
+class TankMissingTemplateError(TankError):
+    """
+    Exception that can be raised when a default value is required but none is found.
+    """
+
+
 class TankHookMethodDoesNotExistError(TankError):
     """
     Exception that indicates that a called method does not exist in the hook.
