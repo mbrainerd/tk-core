@@ -147,6 +147,7 @@ class TankBundle(object):
             self.__context,
             self.__descriptor.configuration_schema,
             settings,
+            True,
             self
         )
         self.__settings = settings

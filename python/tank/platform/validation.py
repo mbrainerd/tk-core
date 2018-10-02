@@ -16,7 +16,7 @@ import os
 import sys
 
 from . import constants
-from ..errors import TankError, TankNoDefaultValueError
+from ..errors import TankError, TankNoDefaultValueError, TankMissingTemplateError
 from ..template import TemplateString
 from .bundle import resolve_setting_value
 from ..util.version import is_version_older, is_version_number
@@ -38,7 +38,7 @@ def validate_schema(app_or_engine_display_name, schema, bundle=None):
     v.validate()
 
 
-def validate_settings(app_or_engine_display_name, tank_api, context, schema, settings, bundle=None):
+def validate_settings(app_or_engine_display_name, tank_api, context, schema, settings, skip_missing_templates=False, bundle=None):
     """
     Validates the settings of an app or engine against its
     schema definition (info.yml).
@@ -47,7 +47,7 @@ def validate_settings(app_or_engine_display_name, tank_api, context, schema, set
     if validation succeeds.
     """
     v = _SettingsValidator(app_or_engine_display_name, tank_api, schema, context, bundle)
-    v.validate(settings)
+    v.validate(settings, skip_missing_templates=skip_missing_templates)
     
     
 def validate_context(descriptor, context):
@@ -434,7 +434,7 @@ class _SettingsValidator:
         self._schema = schema
         self._bundle = bundle
         
-    def validate(self, settings):
+    def validate(self, settings, skip_missing_templates=False):
         # first sanity check that the schema is correct
         validate_schema(self._display_name, self._schema, self._bundle)
 
@@ -458,18 +458,18 @@ class _SettingsValidator:
                                                    self._bundle,
                                                    True)
 
-            self.__validate_settings_value(settings_key, value_schema, settings_value)
+            self.__validate_settings_value(settings_key, value_schema, settings_value, skip_missing_templates)
     
-    def validate_setting(self, setting_name, setting_value):
+    def validate_setting(self, setting_name, setting_value, skip_missing_templates=False):
         # first sanity check that the schema is correct
         validate_schema(self._display_name, self._schema, self._bundle)
         
         # make sure the required key exists in the settings
         value_schema = self._schema.get(setting_name, {})
-        self.__validate_settings_value(setting_name, value_schema, setting_value)
+        self.__validate_settings_value(setting_name, value_schema, setting_value, skip_missing_templates)
         
         
-    def __validate_settings_value(self, settings_key, schema, value):
+    def __validate_settings_value(self, settings_key, schema, value, skip_missing_templates):
         data_type = schema.get("type")
 
         # functor values which refer to a hook are never validated
@@ -494,18 +494,25 @@ class _SettingsValidator:
 
         # Now do type-specific validation where possible...
         if data_type == "list":
-            self.__validate_settings_list(settings_key, schema, value)
+            self.__validate_settings_list(settings_key, schema, value, skip_missing_templates)
         elif data_type == "dict":
-            self.__validate_settings_dict(settings_key, schema, value)
+            self.__validate_settings_dict(settings_key, schema, value, skip_missing_templates)
         elif data_type == "template":
-            self.__validate_settings_template(settings_key, schema, value)
+            try:
+                self.__validate_settings_template(settings_key, schema, value)
+            except TankMissingTemplateError as e:
+                if skip_missing_templates:
+                    # Just warn
+                    core_logger.warning(str(e))
+                else:
+                    raise e
         elif data_type == "hook":
             self.__validate_settings_hook(settings_key, schema, value)
         elif data_type == "config_path":
             self.__validate_settings_config_path(settings_key, schema, value)
 
 
-    def __validate_settings_list(self, settings_key, schema, value):
+    def __validate_settings_list(self, settings_key, schema, value, skip_missing_templates):
         value_schema = schema["values"]
 
         # By default all lists should have at least one item in that. Use allows_empty = True in the schema
@@ -520,9 +527,9 @@ class _SettingsValidator:
 
         # Validate each list item against the schema in "values"
         for v in value:
-            self.__validate_settings_value(settings_key, value_schema, v)
+            self.__validate_settings_value(settings_key, value_schema, v, skip_missing_templates)
 
-    def __validate_settings_dict(self, settings_key, schema, value):
+    def __validate_settings_dict(self, settings_key, schema, value, skip_missing_templates):
         items = schema.get("items", {})
         for (key, value_schema) in items.items():            
             # Check for required keys
@@ -531,7 +538,7 @@ class _SettingsValidator:
                 raise TankError("Missing required key '%s' in setting '%s' for '%s'" % params)
 
             # Validate the values
-            self.__validate_settings_value(settings_key, value_schema, value[key])
+            self.__validate_settings_value(settings_key, value_schema, value[key], skip_missing_templates)
 
     def __validate_settings_template(self, settings_key, schema, template_name):
         
@@ -539,7 +546,7 @@ class _SettingsValidator:
         cur_template = self._tank_api.templates.get(template_name) 
         if cur_template is None:
             # this was not found in the master config!
-            raise TankError("The Template '%s' referred to by the setting '%s' does "
+            raise TankMissingTemplateError("The Template '%s' referred to by the setting '%s' does "
                             "not exist in the master template config file!" % (template_name, settings_key))
 
 
