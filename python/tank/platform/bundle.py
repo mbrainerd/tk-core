@@ -1012,10 +1012,12 @@ class TankBundle(object):
 
         return path
 
-    def resolve_setting_expression(self, value):
+    def resolve_setting_expression(self, value, custom_engine_name=None, custom_env_name=None):
         """
         Resolves any embedded references like {engine_name} or {env_name}.
         
+        :param custom_engine_name: Override the engine name.
+        :param custom_env_name: Override the env name.
         :param value: The value that should be resolved.
         
         :returns: An expanded value.
@@ -1023,6 +1025,9 @@ class TankBundle(object):
         # make sure to replace the `{engine_name}` token if it exists.
         if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in value:
             engine_name = self._get_engine_instance_name()
+            # override the engine name if given
+            if custom_engine_name:
+                engine_name = custom_engine_name
             if not engine_name:
                 raise TankError(
                     "No engine could be determined for value '%s'. "
@@ -1036,6 +1041,9 @@ class TankBundle(object):
         # make sure to replace the `{env_name}` token if it exists.
         if "{env_name}" in value:
             env_name = self.env.name
+            # override the env_name if given
+            if custom_env_name:
+                env_name = custom_env_name
             if not env_name:
                 raise TankError(
                     "No environment could be determined for value '%s'. "
