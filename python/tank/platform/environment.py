@@ -89,6 +89,9 @@ class Environment(object):
         # app settings are keyed by tuple (engine_name, app_name)
         self.__app_settings = {}
 
+        # unresolved app settings are also keyed by tuple (engine_name, app_name)
+        self.__unresolved_app_settings = {}
+
         # populate the above data structures
         # pass a copy of the data since process is destructive
         d = copy.deepcopy(self._env_data)
@@ -168,6 +171,7 @@ class Environment(object):
         for app, app_settings in data.items():
             if not self.__is_item_disabled(app_settings):
                 self.__app_settings[(engine, app)] = self.__process_settings(app_settings)
+                self.__unresolved_app_settings[(engine, app)] = copy.deepcopy(app_settings)
 
     def __process_engines(self, engines):
         """
@@ -220,12 +224,14 @@ class Environment(object):
             self.__engine_locations[eng] = self.__engine_settings[eng].pop(constants.ENVIRONMENT_LOCATION_KEY)
 
         for (eng, app) in self.__app_settings:
-            descriptor_dict = self.__app_settings[(eng,app)].get(constants.ENVIRONMENT_LOCATION_KEY)
+            descriptor_dict = self.__app_settings[(eng, app)].get(constants.ENVIRONMENT_LOCATION_KEY)
             if descriptor_dict is None:
                 raise TankError("The environment %s does not have a valid location "
                                 "key for app %s.%s" % (self._env_path, eng, app))
             # remove location from dict
-            self.__engine_locations[(eng,app)] = self.__app_settings[(eng,app)].pop(constants.ENVIRONMENT_LOCATION_KEY)
+            self.__engine_locations[(eng, app)] = self.__app_settings[(eng, app)].pop(constants.ENVIRONMENT_LOCATION_KEY)
+            # also pop location out of unresolved settings
+            self.__unresolved_app_settings[(eng, app)].pop(constants.ENVIRONMENT_LOCATION_KEY)
 
     def __load_data(self, path):
         """
@@ -329,6 +335,16 @@ class Environment(object):
         """
         key = (engine, app)
         d = self.__app_settings.get(key)
+        if d is None:
+            raise TankError("App '%s.%s' is not part of environment %s" % (engine, app, self._env_path))
+        return d
+
+    def get_unresolved_app_settings(self, engine, app):
+        """
+        Returns the settings for an app
+        """
+        key = (engine, app)
+        d = self.__unresolved_app_settings.get(key)
         if d is None:
             raise TankError("App '%s.%s' is not part of environment %s" % (engine, app, self._env_path))
         return d

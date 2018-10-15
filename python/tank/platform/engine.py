@@ -2944,16 +2944,17 @@ def _start_engine(engine_name, tk, old_context, new_context):
     return engine
 
 
-def find_app_settings(engine_name, app_name, tk, context, engine_instance_name=None):
+def find_app_settings(engine_name, app_name, tk, context, engine_instance_name=None, unresolved_setting=False):
     """
     Utility method to find the settings for an app in an engine in the
     environment determined for the context by pick environment hook.
-    
+
     :param engine_name: system name of the engine to look for, e.g tk-maya
     :param app_name: system name of the app to look for, e.g. tk-multi-publish
     :param tk: :class:`~sgtk.Sgtk` instance
     :param context: :class:`~sgtk.Context` object to use when picking environment
     :param engine_instance_name: The instance name of the engine to look for.
+    :param unresolved_setting: Return the values without resolving {env_name} or {engine_name}.
     
     :returns: list of dictionaries containing the engine name, 
               application name and settings for any matching
@@ -2988,7 +2989,10 @@ def find_app_settings(engine_name, app_name, tk, context, engine_instance_name=N
             # we want to ignore them if they're not valid
             try:
                 schema = app_desc.configuration_schema
-                settings = env.get_app_settings(eng, app)
+                if unresolved_setting:
+                    settings = env.get_unresolved_app_settings(eng, app)
+                else:
+                    settings = env.get_app_settings(eng, app)
                 
                 # check that the context contains all the info that the app needs
                 validation.validate_context(app_desc, context)

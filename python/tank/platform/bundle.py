@@ -1262,9 +1262,7 @@ class TankBundle(object):
         # An old use case exists whereby the key does not exist in the
         # config schema so we need to account for that.
         schema = self.__descriptor.configuration_schema.get(key, None)
-        return resolve_setting_value(
-            self.__tk, self._get_engine_name(), schema, settings, key, default, self
-        )
+        return resolve_setting_value(self.__tk, self._get_engine_name(), schema, settings, key, default, self)
 
     def _get_engine_name(self):
         """
@@ -1305,9 +1303,10 @@ class TankBundle(object):
         return engine_name
 
 
-def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate):
+def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate, unresolved_setting=False):
     """
     Recursive post-processing of settings values
+
 
     :param tk: Toolkit API instance
     :param key: setting name
@@ -1319,6 +1318,7 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
         If no bundle is given and this situation arises, then the
         current bundle, as reported by sgtk.platform.current_bundle,
         will be used.
+    :param unresolved_setting: Return the value without resolving {env_name} or {engine_name}.
 
     :returns: Processed value for key setting
     """
@@ -1351,7 +1351,8 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
 
     if isinstance(value, basestring):
         # Expand any internal variables (i.e. engine_name, env_name)
-        if bundle:
+        # if the user is asking for resolved value
+        if bundle and not unresolved_setting:
             value = bundle.resolve_setting_expression(value)
 
         # Expand any environment variables
@@ -1373,15 +1374,8 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
         for i, x in enumerate(value):
             try:
                 processed_val.append(
-                    _post_process_settings_r(
-                        tk=tk,
-                        key=key,
-                        value=x,
-                        schema=value_schema,
-                        engine_name=engine_name,
-                        bundle=bundle,
-                        validate=validate
-                    )
+                    _post_process_settings_r(tk=tk, key=key, value=x, schema=value_schema, engine_name=engine_name,
+                                             bundle=bundle, validate=validate, unresolved_setting=unresolved_setting)
                 )
             except Exception as e:
                 e.args = (e.args[0], "[%d]"%i) + e.args[1:]
@@ -1417,15 +1411,10 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
 
                 try:
                     # Recursively process each of the sub items
-                    processed_val[sub_key] = _post_process_settings_r(
-                        tk=tk,
-                        key=sub_key,
-                        value=sub_value,
-                        schema=value_schema,
-                        engine_name=engine_name,
-                        bundle=bundle,
-                        validate=validate
-                    )
+                    processed_val[sub_key] = _post_process_settings_r(tk=tk, key=sub_key, value=sub_value,
+                                                                      schema=value_schema, engine_name=engine_name,
+                                                                      bundle=bundle, validate=validate,
+                                                                      unresolved_setting=unresolved_setting)
                 except Exception as e:
                     e.args += (sub_key,)
                     raise
@@ -1435,15 +1424,10 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
             value_schema = schema.get("values", {})
             for sub_key, sub_value in value.iteritems():
                 try:
-                    processed_val[sub_key] = _post_process_settings_r(
-                        tk=tk,
-                        key=sub_key,
-                        value=sub_value,
-                        schema=value_schema,
-                        engine_name=engine_name,
-                        bundle=bundle,
-                        validate=validate
-                    )
+                    processed_val[sub_key] = _post_process_settings_r(tk=tk, key=sub_key, value=sub_value,
+                                                                      schema=value_schema, engine_name=engine_name,
+                                                                      bundle=bundle, validate=validate,
+                                                                      unresolved_setting=unresolved_setting)
                 except Exception as e:
                     e.args += (sub_key,)
                     raise
@@ -1460,10 +1444,12 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
     return processed_val
 
 
-def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundle=None, validate=False):
+def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundle=None, validate=False,
+                          unresolved_setting=False):
     """
     Resolve a setting value.  Exposed to allow values to be resolved for
     settings derived outside of the app.
+
 
     :param tk: :class:`~sgtk.Sgtk` Toolkit API instance
     :param str engine_name: Name of Toolkit engine instance.
@@ -1477,6 +1463,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
         a setting's value must be resolved via calling a hook. If None, the
         current bundle, as provided by sgtk.platform.current_bundle, will
         be used.
+    :param unresolved_setting: Return the value without resolving {env_name} or {engine_name}.
 
     :returns: Resolved value of input setting key
     """
@@ -1506,7 +1493,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     # We have a value of some kind and a schema. Allow the post
     # processing code to further resolve the value.
     try:
-        value = _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate)
+        value = _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate, unresolved_setting)
     except Exception as e:
         key_name = ".".join((instance_name, key,) + e.args[1:])
         err_msg = "Could not determine settings value for key: '%s' - %s" % (key_name, e.args[0])
