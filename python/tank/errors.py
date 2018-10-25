@@ -42,10 +42,15 @@ class TankNoDefaultValueError(TankError):
     Exception that can be raised when a default value is required but none is found.
     """
 
+class TankMissingSettingError(TankError):
+    """
+    Exception that can be raised when a setting is required but none is found.
+    """
+
 
 class TankMissingTemplateError(TankError):
     """
-    Exception that can be raised when a default value is required but none is found.
+    Exception that can be raised when a template is required but none is found.
     """
 
 
