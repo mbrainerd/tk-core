@@ -22,7 +22,6 @@ from .util import shotgun, yaml_cache
 from .errors import TankError, TankMultipleMatchingTemplatesError
 from .path_cache import PathCache
 from .template import read_templates
-from .platform import current_engine
 from . import constants
 from . import pipelineconfig
 from . import pipelineconfig_utils
@@ -58,7 +57,7 @@ class Sgtk(object):
             self.__pipeline_config = pipelineconfig_factory.from_path(project_path)
 
         try:
-            self.__templates, self.__template_keys = read_templates(self.__pipeline_config)
+            self.templates, self.template_keys = read_templates(self.__pipeline_config)
         except TankError as e:
             err_msg = "Could not read templates configuration: %s" % e
             raise type(e), type(e)(err_msg), sys.exc_info()[2]
@@ -163,32 +162,6 @@ class Sgtk(object):
 
     ################################################################################################
     # properties
-
-    @property
-    def templates(self):
-        """
-        Dictionary of templates, including engine-specific if there is a current engine
-        
-        :returns: dictionary with keys being template name and values being template objects
-        """
-        engine = current_engine()
-        if engine:
-            return engine.templates
-
-        return self.__templates
-
-    @property
-    def template_keys(self):
-        """
-        Dictionary of template keys, including engine-specific if there is a current engine
-
-        :returns: dictionary with keys being key name and values being key objects
-        """
-        engine = current_engine()
-        if engine:
-            return engine.template_keys
-
-        return self.__template_keys
 
     @property
     def configuration_descriptor(self):
@@ -324,12 +297,8 @@ class Sgtk(object):
 
         :raises: :class:`TankError`
         """
-        engine = current_engine()
-        if engine:
-            engine.reload_templates()
-
         try:
-            self.__templates, self.__template_keys = read_templates(self.__pipeline_config)
+            self.templates, self.template_keys = read_templates(self.__pipeline_config)
         except TankError as e:
             err_msg = "Templates could not be reloaded: %s" % e
             raise type(e), type(e)(err_msg), sys.exc_info()[2]

@@ -101,6 +101,7 @@ TANK_SCHEMA_DEFAULT_VALUE_KEY = "default_value"
 
 # if the engine name is included in a hook definition, include this in the manifest.
 TANK_HOOK_ENGINE_REFERENCE_TOKEN = "{engine_name}"
+TANK_HOOK_ENV_REFERENCE_TOKEN = "{env_name}"
 
 # hook to choose the environment file given a context
 PICK_ENVIRONMENT_CORE_HOOK_NAME = "pick_environment"

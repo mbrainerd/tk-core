@@ -10,7 +10,7 @@
 
 
 # Engine management
-from .engine import start_engine, current_engine, get_engine_path, find_app_settings
+from .engine import start_engine, current_engine, get_engine_path, find_app_settings, get_environment_from_context
 from .errors import (
     TankEngineInitError,
     TankContextChangeNotSupportedError,

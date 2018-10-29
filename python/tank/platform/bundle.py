@@ -35,7 +35,7 @@ class TankBundle(object):
     Abstract Base class for any engine, framework app etc in tank
     """
 
-    def __init__(self, tk, context, settings, instance_name, descriptor, env, log):
+    def __init__(self, tk, instance_name, descriptor, context, env, settings, logger):
         """
         Constructor.
 
@@ -48,20 +48,42 @@ class TankBundle(object):
         :param log: A python logger to associate with this bundle
         """
         self.__tk = tk
-        self.__sg = None
         self.__instance_name = instance_name
+        self.__frameworks = {}
+        self.__logger = logger
+
         self.__cache_location = {}
         self.__module_uid = None
-        self.__frameworks = {}
-        self.__env = env
-        self.__log = log
 
-        # Set the internal properties
-        self.descriptor = descriptor
-        self.context = context
-        self.settings = settings
+        self._env = env
+        self._descriptor = descriptor
+        self._context = context
+        self._settings = settings
 
-        # emit an engine started event
+        # avoid cyclic imports
+        from . import validation
+
+        # make sure the current operating system platform is supported
+        validation.validate_platform(descriptor)
+
+        # validate that the context contains all the info that the app needs
+        if self._get_engine_name() != constants.SHOTGUN_ENGINE_NAME: 
+            # special case! The shotgun engine is special and does not have a 
+            # context until you actually run a command, so disable the validation.
+            validation.validate_context(descriptor, context)
+
+        # Validate the settings for the bundle
+        validation.validate_settings(
+            self.__instance_name,
+            self.__tk,
+            self._context,
+            self._descriptor.configuration_schema,
+            self._settings,
+            True,
+            self
+        )
+
+        # emit a bundle started event
         tk.execute_core_hook(constants.TANK_BUNDLE_INIT_HOOK_NAME, bundle=self)
 
     ##########################################################################################
@@ -103,22 +125,7 @@ class TankBundle(object):
         We leave no guarantees that it will remain unchanged over time, so 
         do not use in any app code. 
         """
-        return self.__descriptor
-
-    @descriptor.setter
-    def descriptor(self, descriptor):
-        """
-        Sets the current descriptor associated with this item.
-
-        :param descriptor: The new descriptor to associate with the bundle.
-        """
-        # try to avoid cyclical imports
-        from . import validation
-
-        # make sure the current operating system platform is supported
-        validation.validate_platform(descriptor)
-
-        self.__descriptor = descriptor
+        return self._descriptor
 
     @property
     def settings(self):
@@ -128,29 +135,7 @@ class TankBundle(object):
         We leave no guarantees that it will remain unchanged over time, so 
         do not use in any app code. 
         """
-        return self.__settings
-
-    @settings.setter
-    def settings(self, settings):
-        """
-        Sets the bundle's internal settings dictionary.
-
-        :param settings:    The new settings dict to store.
-        """
-        # try to avoid cyclical imports
-        from . import validation
-
-        # Get the settings for the engine and then validate them
-        validation.validate_settings(
-            self.__instance_name,
-            self.__tk,
-            self.__context,
-            self.__descriptor.configuration_schema,
-            settings,
-            True,
-            self
-        )
-        self.__settings = settings
+        return self._settings
     
     ##########################################################################################
     # methods used by internal classes, not part of the public interface
@@ -191,7 +176,7 @@ class TankBundle(object):
         
         :returns: name as string
         """
-        return self.__descriptor.system_name
+        return self._descriptor.system_name
     
     @property
     def display_name(self):
@@ -200,7 +185,7 @@ class TankBundle(object):
         
         :returns: display name as string
         """
-        return self.__descriptor.display_name
+        return self._descriptor.display_name
 
     @property
     def description(self):
@@ -209,7 +194,7 @@ class TankBundle(object):
         
         :returns: string
         """
-        return self.__descriptor.description
+        return self._descriptor.description
 
     @property
     def version(self):
@@ -218,14 +203,14 @@ class TankBundle(object):
         
         :returns: string representing the version
         """
-        return self.__descriptor.version
+        return self._descriptor.version
 
     @property
     def icon_256(self):
         """
         Path to a 256x256 pixel png file which describes the item
         """
-        return self.__descriptor.icon_256
+        return self._descriptor.icon_256
 
     @property
     def style_constants(self):
@@ -260,7 +245,7 @@ class TankBundle(object):
         
         :returns: url string, None if no documentation was found
         """
-        return self.__descriptor.documentation_url
+        return self._descriptor.documentation_url
 
     @property
     def support_url(self):
@@ -269,7 +254,7 @@ class TankBundle(object):
         
         :returns: url string, None if no documentation was found
         """
-        return self.__descriptor.support_url
+        return self._descriptor.support_url
 
     @property
     def disk_location(self):
@@ -350,22 +335,7 @@ class TankBundle(object):
         
         :returns: :class:`~sgtk.Context`
         """
-        return self.__context
-
-    @context.setter
-    def context(self, context):
-        """
-        Sets the current context associated with this item.
-
-        :param context: The new context to associate with the bundle.
-        """
-        # try to avoid cyclical imports
-        from . import validation
-
-        # check that the context contains all the info that the app needs
-        validation.validate_context(self.__descriptor, context)
-
-        self.__context = context
+        return self._context
 
     @property
     def context_change_allowed(self):
@@ -385,16 +355,7 @@ class TankBundle(object):
 
         :returns: :class:`~sgtk.platform.Environment`
         """
-        return self.__env
-
-    @env.setter
-    def env(self, env):
-        """
-        Sets the current environment associated with this item.
-
-        :param env: The new environment to associate with the bundle.
-        """
-        self.__env = env
+        return self._env
 
     @property
     def tank(self):
@@ -407,7 +368,7 @@ class TankBundle(object):
     
     # new name compatibility 
     sgtk = tank
-    
+
     @property
     def frameworks(self):
         """
@@ -443,7 +404,7 @@ class TankBundle(object):
                   app, engine or framework to be written to a log file or
                   to a logging console, you can attach a std log handler here.
         """
-        return self.__log
+        return self.__logger
 
     ##########################################################################################
     # public methods
@@ -459,7 +420,7 @@ class TankBundle(object):
         :type context: :class:`~sgtk.Context`
         """
         if not self.context_change_allowed:
-            self.log_debug("Bundle %r does not allow context changes." % self)
+            self.log_debug("%s %r does not allow context changes." % (type(self), self))
             raise TankContextChangeNotSupportedError()
 
     def pre_context_change(self, old_context, new_context):
@@ -585,8 +546,22 @@ class TankBundle(object):
         :param default: default value to return
         :returns: Value from the environment configuration
         """
-        return self.__resolve_setting_value(self.__settings, key, default)
-            
+        return self.__resolve_setting_value(self._settings, key, default)
+
+    def get_setting_for_env(key, env, default=None):
+        """
+        Get a value from the item's settings given the specified environment::
+
+            >>> app.get_setting_for_env('entity_types', env_obj)
+            ['Sequence', 'Shot', 'Asset', 'Task']
+
+        :param key: config name
+        :param env: The :class:`~Environment` object
+        :param default: default value to return
+        :returns: Value from the specified environment configuration
+        """
+        raise NotImplementedError
+
     def get_template(self, key):
         """
         Returns a template object for a particular template setting in the Framework configuration.
@@ -598,7 +573,22 @@ class TankBundle(object):
         :param key: Setting to retrieve template for
         :returns: :class:`~Template` object
         """
-        template_name = self.get_setting(key)        
+        template_name = self.get_setting(key)
+        return self.get_template_by_name(template_name)
+
+    def get_template_for_env(self, key, env):
+        """
+        Returns a template object for a particular template setting in the Framework configuration.
+        This method will look at the app configuration, determine which template is being referred to 
+        in the setting, go into the main platform Template API and fetch that particular template object.
+    
+        This is a convenience method. Shorthand for ``self.sgtk.templates[ self.get_setting(key) ]``.
+
+        :param key: Setting to retrieve template for
+        :param env: The :class:`~Environment` object
+        :returns: :class:`~Template` object
+        """
+        template_name = self.get_setting_for_env(key, env)
         return self.get_template_by_name(template_name)
     
     def get_template_by_name(self, template_name):
@@ -617,7 +607,7 @@ class TankBundle(object):
         :param template_name
         :returns: :class:`~Template` object
         """
-        return self._get_engine().templates.get(template_name)
+        return self.tank.templates.get(template_name)
                         
     def execute_hook(self, key, base_class=None, **kwargs):
         """
@@ -872,27 +862,14 @@ class TankBundle(object):
             raise TankError("%s config setting %s: Configuration value cannot be None!" % (self, settings_name))
         
         path = None
-
-        # make sure to replace the `{engine_name}` token if it exists.
-        if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in hook_expression:
-            engine_name = self._get_engine_instance_name()
-            if not engine_name:
-                raise TankError(
-                    "No engine could be determined for hook expression '%s'. "
-                    "The hook could not be resolved." % (hook_expression,))
-            else:
-                hook_expression = hook_expression.replace(
-                    constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN,
-                    engine_name,
-                )
         
         # first the legacy, old-style hooks case
         if hook_expression == constants.TANK_BUNDLE_DEFAULT_HOOK_SETTING:
             # hook settings points to the default one.
             # find the name of the hook from the manifest
 
-            manifest = self.__descriptor.configuration_schema
-            engine_name = self._get_engine_instance_name()
+            manifest = self._descriptor.configuration_schema
+            engine_name = self._get_engine_name()
 
             # Entries are on the following form
             #            
@@ -902,7 +879,7 @@ class TankBundle(object):
             #    default_value: maya_publish_file
             #
             resolved_hook_name = resolve_default_value(
-                manifest.get(settings_name), engine_name=engine_name, bundle=self)
+                manifest.get(settings_name), engine_name=engine_name)
 
             # get the full path for the resolved hook name:
             if resolved_hook_name.startswith("{self}"):
@@ -986,14 +963,14 @@ class TankBundle(object):
             # have some implicit rules for handling ambiguity since
             # there can be multiple items (engines, apps etc) potentially
             # having the same instance name.
-            fw_instances = self.env.get_frameworks()
+            fw_instances = self._env.get_frameworks()
             if instance not in fw_instances:
                 raise TankError("%s config setting %s: This hook is referring to the configuration value '%s', "
                                 "but no framework with instance name '%s' can be found in the currently "
                                 "running environment. The currently loaded frameworks "
                                 "are %s." % (self, settings_name, hook_expression, instance, ", ".join(fw_instances)))
 
-            fw_desc = self.env.get_framework_descriptor(instance)
+            fw_desc = self._env.get_framework_descriptor(instance)
             if not(fw_desc.exists_local()):
                 raise TankError("%s config setting %s: This hook is referring to the configuration value '%s', "
                                 "but the framework with instance name '%s' does not exist on disk. Please run "
@@ -1012,43 +989,6 @@ class TankBundle(object):
 
         return path
 
-    def resolve_setting_expression(self, value):
-        """
-        Resolves any embedded references like {engine_name} or {env_name}.
-        
-        :param value: The value that should be resolved.
-        
-        :returns: An expanded value.
-        """
-        # make sure to replace the `{engine_name}` token if it exists.
-        if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in value:
-            engine_name = self._get_engine_instance_name()
-            if not engine_name:
-                raise TankError(
-                    "No engine could be determined for value '%s'. "
-                    "The setting could not be resolved." % (value,))
-            else:
-                value = value.replace(
-                    constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN,
-                    engine_name,
-                )
-
-        # make sure to replace the `{env_name}` token if it exists.
-        if "{env_name}" in value:
-            env_name = self.env.name
-            if not env_name:
-                raise TankError(
-                    "No environment could be determined for value '%s'. "
-                    "The setting could not be resolved." % (value,))
-            else:
-                value = value.replace(
-                    "{env_name}",
-                    env_name,
-                )
-
-        return value
-
-
     def expand_path(self, path):
         """
         Resolves a "config_path" type setting into an absolute path.
@@ -1057,19 +997,6 @@ class TankBundle(object):
         
         :returns: An expanded absolute path to the specified file.
         """
-
-        # make sure to replace the `{engine_name}` token if it exists.
-        if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in path:
-            engine_name = self._get_engine_instance_name()
-            if not engine_name:
-                raise TankError(
-                    "No engine could be determined for path '%s'. "
-                    "The setting could not be resolved." % (path,))
-            else:
-                path = path.replace(
-                    constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN,
-                    engine_name,
-                )
 
         if path.startswith("{self}"):
             # bundle local reference
@@ -1086,7 +1013,7 @@ class TankBundle(object):
         elif path.startswith("{engine}"):
             # look for the hook in the currently running engine
             try:
-                engine = self.engine
+                engine = self._get_engine()
             except AttributeError:
                 raise TankError(
                     "%s: Could not determine the current "
@@ -1118,14 +1045,14 @@ class TankBundle(object):
             # have some implicit rules for handling ambiguity since
             # there can be multiple items (engines, apps etc) potentially
             # having the same instance name.
-            fw_instances = self.env.get_frameworks()
+            fw_instances = self._env.get_frameworks()
             if instance not in fw_instances:
                 raise TankError("%s: This path is referring to the configuration value '%s', "
                                 "but no framework with instance name '%s' can be found in the currently "
                                 "running environment. The currently loaded frameworks "
                                 "are %s." % (self, path, instance, ", ".join(fw_instances)))
 
-            fw_desc = self.env.get_framework_descriptor(instance)
+            fw_desc = self._env.get_framework_descriptor(instance)
             if not(fw_desc.exists_local()):
                 raise TankError("%s: This path is referring to the configuration value '%s', "
                                 "but the framework with instance name '%s' does not exist on disk. Please run "
@@ -1146,7 +1073,6 @@ class TankBundle(object):
             path = path.replace("/", os.path.sep)
 
         return path
-
 
     def __resolve_hook_expression(self, settings_name, hook_expression):
         """
@@ -1200,15 +1126,14 @@ class TankBundle(object):
         if unresolved_hook_paths[0].startswith("{") and not unresolved_hook_paths[0].startswith("{self}"):
             # this is a new style hook that is not the default hook value.
             # now prepend the default hook first in the list
-            manifest = self.__descriptor.configuration_schema
+            manifest = self._descriptor.configuration_schema
 
             default_value = None
 
             if settings_name:
                 default_value = resolve_default_value(
                     manifest.get(settings_name),
-                    engine_name=self._get_engine_name(),
-                    bundle=self
+                    engine_name=self._get_engine_name()
             )
 
             if default_value:  # possible not to have a default value!
@@ -1261,29 +1186,10 @@ class TankBundle(object):
         """
         # An old use case exists whereby the key does not exist in the
         # config schema so we need to account for that.
-        schema = self.__descriptor.configuration_schema.get(key, None)
+        schema = self._descriptor.configuration_schema.get(key, None)
         return resolve_setting_value(
             self.__tk, self._get_engine_name(), schema, settings, key, default, self
         )
-
-    def _get_engine(self):
-        """
-        Returns the bundle's engine if available. None otherwise.
-        Convenience method to avoid try/except everywhere.
-
-        :return: The engine object or None
-        """
-        # note - this technically violates the generic nature of the bundle
-        # base class implementation because the engine member is not defined
-        # in the bundle base class (only in App and Framework, not Engine) - an
-        # engine trying to define a hook using the {engine_name} construct will
-        # therefore get an error.
-        try:
-            engine = self.engine
-        except:
-            engine = None
-
-        return engine
 
     def _get_engine_name(self):
         """
@@ -1292,11 +1198,17 @@ class TankBundle(object):
 
         :return: The engine name or None
         """
-        engine = self._get_engine()
-        if engine:
-            return engine.name
+        # note - this technically violates the generic nature of the bundle
+        # base class implementation because the engine member is not defined
+        # in the bundle base class (only in App and Framework, not Engine) - an
+        # engine trying to define a hook using the {engine_name} construct will
+        # therefore get an error.
+        try:
+            engine_name = self.engine.name
+        except:
+            engine_name = None
 
-        return None
+        return engine_name
 
     def _get_engine_instance_name(self):
         """
@@ -1305,11 +1217,17 @@ class TankBundle(object):
 
         :return: The engine instance name or None
         """
-        engine = self._get_engine()
-        if engine:
-            return engine.instance_name
+        # note - this technically violates the generic nature of the bundle
+        # base class implementation because the engine member is not defined
+        # in the bundle base class (only in App and Framework, not Engine) - an
+        # engine trying to define a hook using the {engine_name} construct will
+        # therefore get an error.
+        try:
+            engine_name = self.engine.instance_name
+        except:
+            engine_name = None
 
-        return None
+        return engine_name
 
 
 def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate):
@@ -1334,16 +1252,20 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
 
     schema = schema or {}
     settings_type = schema.get("type")
+
+    # first check for procedural overrides where instead of getting a value,
+    # directly from the config, we call a hook to evaluate a config value
+    # at runtime:
     if isinstance(value, basestring) and value.startswith("hook:"):
         # handle the special form where the value is computed in a hook.
         #
         # if the template parameter is on the form
         # a) hook:foo_bar
-        # b) hook:foo_bar:testing:testing
+        # b) hook:foo_bar:testing1:testing2
         #
         # The following hook will be called
-        # a) foo_bar with parameters []
-        # b) foo_bar with parameters [testing, testing]
+        # a) core hook 'foo_bar' with parameters []
+        # b) core hook 'foo_bar' with parameters ['testing1', 'testing2']
         #
         chunks = value.split(":")
         hook_name = chunks[1]
@@ -1357,10 +1279,6 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
         )
 
     if isinstance(value, basestring):
-        # Expand any internal variables (i.e. engine_name, env_name)
-        if bundle:
-            value = bundle.resolve_setting_expression(value)
-
         # Expand any environment variables
         value = os.path.expandvars(os.path.expanduser(value))
 
@@ -1370,8 +1288,7 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
                 schema,
                 default=None,
                 engine_name=engine_name, 
-                raise_if_missing=validate,
-                bundle=bundle
+                raise_if_missing=validate
             )
 
     if settings_type == "list":
@@ -1414,8 +1331,7 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
                             value_schema,
                             default=None,
                             engine_name=engine_name, 
-                            raise_if_missing=validate,
-                            bundle=bundle
+                            raise_if_missing=validate
                         )
                     # No user defined or default value!
                     except Exception as e:
@@ -1473,7 +1389,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     settings derived outside of the app.
 
     :param tk: :class:`~sgtk.Sgtk` Toolkit API instance
-    :param str engine_name: Name of Toolkit engine instance.
+    :param str engine_name: System name of Toolkit engine instance.
     :param dict schema: A schema defining types and defaults for settings.
                         The post processing code requires the schema to
                         introspect the settings' types, defaults, etc.
@@ -1490,9 +1406,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     try:
         from .util import current_bundle
         bundle = bundle or current_bundle()
-        instance_name = bundle.instance_name
     except TankCurrentModuleNotFoundError:
-        instance_name = "bundle"
         pass
 
     # Get the value for the supplied key
@@ -1503,7 +1417,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     elif schema:
         # Resolve a default value from the schema. This checks various
         # legacy default value forms in the schema keys.
-        value = resolve_default_value(schema, default, engine_name, False, bundle)
+        value = resolve_default_value(schema, default, engine_name)
 
     else:
         # Nothing in the settings, no schema, fallback to the supplied
@@ -1515,14 +1429,14 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     try:
         value = _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate)
     except Exception as e:
-        key_name = ".".join((instance_name, key,) + e.args[1:])
+        key_name = ".".join((key,) + e.args[1:])
         err_msg = "Could not determine settings value for key: '%s' - %s" % (key_name, e.args[0])
         raise type(e), type(e)(err_msg), sys.exc_info()[2]
 
     return value
 
 def resolve_default_value(
-        schema, default=None, engine_name=None, raise_if_missing=False, bundle=None
+        schema, default=None, engine_name=None, raise_if_missing=False
     ):
     """
     Extract a default value from the supplied schema.
@@ -1532,26 +1446,12 @@ def resolve_default_value(
 
     :param schema: The schema for the setting default to resolve
     :param default: Optional fallback default value.
-    :param engine_name: Optional name of the current engine if there is one.
+    :param engine_name: Optional system name of the current engine if there is one.
     :param raise_if_missing: If True, raise TankNoDefaultValueError if no
         default value is found.
-    :param bundle: The bundle object. This is only used in situations where
-        a setting's value must be resolved via calling a hook. If None, the
-        current bundle, as provided by sgtk.platform.current_bundle, will
-        be used.
     :return: The resolved default value
     """
-    try:
-        from .util import current_bundle
-        bundle = bundle or current_bundle()
-    except TankCurrentModuleNotFoundError:
-        pass
-
     default_missing = False
-
-    # If bundle but engine name not specified, get the engine name from the bundle
-    if bundle and not engine_name:
-        engine_name = bundle._get_engine_name()
 
     # Engine-specific default value keys are allowed (ex:
     # "default_value_tk-maya"). If an engine name was supplied,
@@ -1614,7 +1514,6 @@ def _resolve_default_hook_value(value, engine_name=None):
     :param value: The unresolved default value for the hook
     :param engine_name: The name of the engine for engine-specific hook values
     :return: The resolved hook default value.
-
     """
 
     if not value:
@@ -1637,4 +1536,3 @@ def _resolve_default_hook_value(value, engine_name=None):
     # the remaining tokens ({self}, {config}, {tk-framework-...}) will be
     # resolved at runtime just before the hook is executed.
     return value
-

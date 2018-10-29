@@ -15,19 +15,18 @@ Defines the base class for all Tank Frameworks.
 
 import os
 
+from ..errors import TankError
 from ..util.loader import load_plugin
 from . import constants
-
-from ..errors import TankError
-from .bundle import TankBundle
 from . import validation
+from .bundle import TankBundle
 
 class Framework(TankBundle):
     """
     Base class for a Toolkit Framework
     """
     
-    def __init__(self, engine, descriptor, settings, instance_name, env):
+    def __init__(self, tk, instance_name, descriptor, context, env, settings, engine):
         """
         Called by the bundle loading framework. The constructor
         is not meant to be overridden by deriving classes.
@@ -45,7 +44,10 @@ class Framework(TankBundle):
         logger = self.__engine.get_child_logger(instance_name)
 
         # init base class
-        TankBundle.__init__(self, engine.tank, engine.context, settings, instance_name, descriptor, env, logger)
+        TankBundle.__init__(self, tk, instance_name, descriptor, context, env, settings, logger)
+
+        # set up any frameworks defined
+        setup_frameworks(engine, self, context, env, descriptor)
 
     def __repr__(self):
         return "<Sgtk Framework 0x%08x: %s, engine: %s>" % (id(self), self.name, self.engine)
@@ -216,7 +218,7 @@ class Framework(TankBundle):
 #
 
 
-def setup_frameworks(engine_obj, parent_obj, env, parent_descriptor):
+def setup_frameworks(engine_obj, parent_obj, context, env, parent_descriptor):
     """
     Checks if any frameworks are needed for the current item
     and in that case loads them - recursively
@@ -238,13 +240,13 @@ def setup_frameworks(engine_obj, parent_obj, env, parent_descriptor):
 
         # load framework
         # this only occurs once per instance name for shared frameworks
-        fw_obj = load_framework(engine_obj, env, fw_inst_name)
+        fw_obj = load_framework(engine_obj, context, env, fw_inst_name)
 
         # note! frameworks are keyed by their code name, not their instance name
         parent_obj.frameworks[fw_name] = fw_obj
 
 
-def load_framework(engine_obj, env, fw_instance_name):
+def load_framework(engine_obj, context, env, instance_name):
     """
     Validates, loads and initializes a framework.  If the framework is available from the list of 
     shared frameworks maintained by the engine then the shared framework is returned, otherwise a 
@@ -252,84 +254,40 @@ def load_framework(engine_obj, env, fw_instance_name):
 
     :param engine_obj:          The engine instance to use when loading the framework
     :param env:                 The environment containing the framework instance to load
-    :param fw_instance_name:    The instance name of the framework (e.g. tk-framework-foo_v0.x.x)
+    :param instance_name:       The instance name of the framework (e.g. tk-framework-foo_v0.x.x)
     :returns:                   An initialized framework object.
     :raises:                    TankError if the framework can't be found, has an invalid
                                 configuration or fails to initialize.
     """
     # see if we have a shared instance of the framework:
-    fw = engine_obj._get_shared_framework(fw_instance_name)
-    if fw:
+    fw_obj = engine_obj._get_shared_framework(instance_name)
+    if fw_obj:
         # win!
-        return fw
+        return fw_obj
 
     # get the framework descriptor
-    descriptor = env.get_framework_descriptor(fw_instance_name)
+    descriptor = env.get_framework_descriptor(instance_name)
     if not descriptor.exists_local():
         raise TankError("Cannot load Framework! %s does not exist on disk." % descriptor)
 
-    # Load the settings for the framework and validate them
-    try:
-        # check that the context contains all the info that the app needs
-        validation.validate_context(descriptor, engine_obj.context)
+    # get the framework settings and validate
+    settings = env.get_framework_settings(instance_name)
 
-        # make sure the current operating system platform is supported
-        validation.validate_platform(descriptor)
-
-        # get the app settings data and validate it.
-        fw_schema = descriptor.configuration_schema
-
-        fw_settings = env.get_framework_settings(fw_instance_name)
-        validation.validate_settings(fw_instance_name, 
-                                     engine_obj.tank, 
-                                     engine_obj.context, 
-                                     fw_schema, 
-                                     fw_settings)
-
-    except TankError as e:
-        # validation error - probably some issue with the settings!
-        raise TankError("Framework configuration Error for %s: %s" % (fw_instance_name, e))
-
-    except Exception as e:
-        # code execution error in the validation. 
-        raise TankError("Could not validate framework %s: %s" % (fw_instance_name, e))
-
-    # load the framework
-#    try:
-    # initialize fw class
-    fw = _create_framework_instance(engine_obj, descriptor, fw_settings, fw_instance_name, env)
-
-    # if it's a shared framework then add it to the engine so we can re-use it
-    # again in the future if needed:
-    if fw.is_shared:
-        # register this framework for reuse by other bundles
-        engine_obj._register_shared_framework(fw_instance_name, fw)
-
-    # load any frameworks required by the framework :)
-    setup_frameworks(engine_obj, fw, env, descriptor)
-
-    # and run the init
-    fw.init_framework()
-
-#    except Exception, e:
-#        raise TankError("Framework %s failed to initialize: %s" % (descriptor, e))
-
-    return fw
-
-
-def _create_framework_instance(engine, descriptor, settings, instance_name, env):
-    """
-    Internal helper method. 
-    Returns an framework object given an engine and fw settings.
-    
-    :param engine: the engine this app should run in
-    :param descriptor: descriptor for the fw
-    :param settings: a settings dict to pass to the fw
-    """
+    # get path to framework code
     fw_folder = descriptor.get_path()
     plugin_file = os.path.join(fw_folder, constants.FRAMEWORK_FILE)
         
     # Instantiate the app
     class_obj = load_plugin(plugin_file, Framework)
-    obj = class_obj(engine, descriptor, settings, instance_name, env)
-    return obj
+    fw_obj = class_obj(engine_obj.sgtk, instance_name, descriptor, context, env, settings, engine_obj)
+
+    # if it's a shared framework then add it to the engine so we can re-use it
+    # again in the future if needed:
+    if fw_obj.is_shared:
+        # register this framework for reuse by other bundles
+        engine_obj._register_shared_framework(instance_name, fw_obj)
+
+    # and run the init
+    fw_obj.init_framework()
+
+    return fw_obj

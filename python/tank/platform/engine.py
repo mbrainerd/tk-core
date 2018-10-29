@@ -40,15 +40,14 @@ from .errors import (
 from ..util.metrics import EventMetric
 from ..util.metrics import MetricsDispatcher
 from ..log import LogManager
-from ..template import read_templates
 
-from . import application
 from . import constants
 from . import validation
 from . import events
 from . import qt
 from . import qt5
 from .bundle import TankBundle
+from .application import load_application
 from .framework import setup_frameworks
 from .engine_logging import ToolkitEngineHandler, ToolkitEngineLegacyHandler
 
@@ -64,7 +63,7 @@ class Engine(TankBundle):
 
     _ASYNC_INVOKER, _SYNC_INVOKER = range(2)
 
-    def __init__(self, tk, context, instance_name, env):
+    def __init__(self, tk, instance_name, descriptor, context, env, settings):
         """
         Engine instances are constructed by the toolkit launch process
         and various factory methods such as :meth:`start_engine`.
@@ -76,7 +75,6 @@ class Engine(TankBundle):
         :param env: An Environment object to associate with this engine.
 
         """
-        self.__instance_name = instance_name
         self.__applications = {}
         self.__application_pool = {}
         self.__shared_frameworks = {}
@@ -103,25 +101,13 @@ class Engine(TankBundle):
         self._invoker = None
         self._async_invoker = None
 
-        # get the engine settings
-        settings = env.get_engine_settings(instance_name)
-        
-        # get the descriptor representing the engine        
-        descriptor = env.get_engine_descriptor(instance_name)
-
-        # get any engine templates
-        try:
-            self.__templates, self.__template_keys = read_templates(tk.pipeline_configuration, instance_name)
-        except TankError as e:
-            err_msg = "Could not read templates configuration: %s" % e
-            raise type(e), type(e)(err_msg), sys.exc_info()[2]
 
         # create logger for this engine.
         # log will be parented in a sgtk.env.environment_name.instance_name hierarchy
         logger = LogManager.get_logger("env.%s.%s" % (env.name, instance_name))
 
         # init base class
-        TankBundle.__init__(self, tk, context, settings, instance_name, descriptor, env, logger)
+        TankBundle.__init__(self, tk, instance_name, descriptor, context, env, settings, logger)
 
         # create a log handler to handle log dispatch from self.log
         # (and the rest of the sgtk logging ) to the user
@@ -137,7 +123,7 @@ class Engine(TankBundle):
             )
         
         # set up any frameworks defined
-        setup_frameworks(self, self, env, descriptor)
+        setup_frameworks(self, self, context, env, descriptor)
         
         # run the engine init
         self.log_debug("Engine init: Instantiating %s" % self)
@@ -154,6 +140,9 @@ class Engine(TankBundle):
                 self.log_debug("Appending to PYTHONPATH: %s" % python_path)
                 sys.path.append(python_path)
 
+    def start(self):
+        """
+        """
         # Note, 'init_engine()' is now deprecated and all derived initialisation should be
         # done in either 'pre_app_init()' or 'post_app_init()'.  'init_engine()' is left
         # in here to provide backwards compatibility with any legacy code. 
@@ -257,7 +246,7 @@ class Engine(TankBundle):
         self.post_app_init()
         
         # emit an engine started event
-        tk.execute_core_hook(constants.TANK_ENGINE_INIT_HOOK_NAME, engine=self)
+        self.sgtk.execute_core_hook(constants.TANK_ENGINE_INIT_HOOK_NAME, engine=self)
 
         # if the engine supports logging metrics, begin dispatching logged metrics
         if self.metrics_dispatch_allowed:
@@ -281,6 +270,44 @@ class Engine(TankBundle):
         Overrides the bundle base class method to return self.
         """
         return self
+
+    def _get_engine_name(self):
+        """
+        Returns the bundle's engine name if available. None otherwise.
+        Convenience method to avoid try/except everywhere.
+
+        :return: The engine name or None
+        """
+        # note - this technically violates the generic nature of the bundle
+        # base class implementation because the engine member is not defined
+        # in the bundle base class (only in App and Framework, not Engine) - an
+        # engine trying to define a hook using the {engine_name} construct will
+        # therefore get an error.
+        try:
+            engine_name = self.name
+        except:
+            engine_name = None
+
+        return engine_name
+
+    def _get_engine_instance_name(self):
+        """
+        Returns the bundle's engine instance name if available. None otherwise.
+        Convenience method to avoid try/except everywhere.
+
+        :return: The engine instance name or None
+        """
+        # note - this technically violates the generic nature of the bundle
+        # base class implementation because the engine member is not defined
+        # in the bundle base class (only in App and Framework, not Engine) - an
+        # engine trying to define a hook using the {engine_name} construct will
+        # therefore get an error.
+        try:
+            engine_name = self.instance_name
+        except:
+            engine_name = None
+
+        return engine_name
 
     def __toggle_debug_logging(self):
         """
@@ -551,24 +578,6 @@ class Engine(TankBundle):
         return self.__applications
 
     @property
-    def templates(self):
-        """
-        Dictionary of templates associated with this engine
-        
-        :returns: dictionary with keys being template name and values being template objects
-        """
-        return self.__templates
-
-    @property
-    def template_keys(self):
-        """
-        Dictionary of template keys associated with this engine
-
-        :returns: dictionary with keys being key name and values being key objects
-        """
-        return self.__template_keys
-    
-    @property
     def commands(self):
         """
         A dictionary representing all the commands that have been registered
@@ -760,10 +769,13 @@ class Engine(TankBundle):
         :param new_context:     The context to change to.
         :type new_context: :class:`~sgtk.Context`
         """
-        # Make sure we're allowed to change context at the engine level.
-        if not self.context_change_allowed:
-            self.log_debug("Engine %r does not allow context changes." % self)
-            raise TankContextChangeNotSupportedError()
+        super(Engine, self).change_context(new_context)
+
+        # Use the current context as the old context
+        old_context = self.context
+
+        if new_context == old_context:
+            return
 
         # Make sure that this engine is configured to run in the new context,
         # and that it's the EXACT same engine. This can be handled by comparing
@@ -772,11 +784,17 @@ class Engine(TankBundle):
         # context change, it's that the target context isn't configured properly.
         # As such, we'll let any exceptions (mostly TankEngineInitError) bubble
         # up since it's a critical error case.
-        (new_env, engine_descriptor) = get_env_and_descriptor_for_engine(
+        try:
+            (new_env, new_descriptor) = get_env_and_descriptor_for_engine(
             engine_name=self.instance_name,
             tk=self.tank,
             context=new_context,
         )
+        except Exception as e:
+            err_msg = "Engine %s cannot change context - %s" % str(e)
+            raise TankContextChangeNotSupportedError(err_msg)
+
+        new_settings = new_env.get_engine_settings(self.instance_name)
 
         # Make sure that the engine in the target context is the same as the current
         # engine. In the case of git or app_store descriptors, the equality check
@@ -784,44 +802,42 @@ class Engine(TankBundle):
         # fact that those descriptor types are singletons. For dev descriptors, the
         # check is going to compare the paths of the descriptors to see if they're
         # referencing the same data on disk, in which case they are equivalent.
-        if engine_descriptor != self.descriptor:
+        if new_descriptor != self.descriptor:
             self.log_debug("Engine %r does not match descriptors between %r and %r." % (
                 self,
-                self.context,
+                old_context,
                 new_context
             ))
-            raise TankContextChangeNotSupportedError()
+            raise TankContextChangeNotSupportedError
 
-        # Run the pre_context_change method to allow for any engine-specific
-        # prep work to happen.
-        self.log_debug(
-            "Executing pre_context_change for %r, changing from %r to %r." % (
-                self,
-                self.context,
-                new_context
-            )
+        # make sure the current operating system platform is supported
+        validation.validate_platform(new_descriptor)
+
+        # validate that the context contains all the info that the app needs
+        if self.name != constants.SHOTGUN_ENGINE_NAME: 
+            # special case! The shotgun engine is special and does not have a 
+            # context until you actually run a command, so disable the validation.
+            validation.validate_context(new_descriptor, new_context)
+
+        # Validate the new settings for the application
+        validation.validate_settings(
+            self.instance_name,
+            self.sgtk,
+            new_context,
+            new_descriptor.configuration_schema,
+            new_settings,
+            True,
+            self
         )
 
-        with _CoreContextChangeHookGuard(self.sgtk, self.context, new_context):
-            self.pre_context_change(self.context, new_context)
-            self.log_debug("Execution of pre_context_change for engine %r is complete." % self)
+        self.log_debug("Changing from %r to %r." % (old_context, new_context))
 
-            # Check to see if all of our apps are capable of accepting
-            # a context change. If one of them is not, then we remove it
-            # from the persistent app pool, which will force it to be
-            # rebuilt when apps are loaded later on.
-            non_compliant_app_paths = []
-            for install_path, app_instances in self.__application_pool.iteritems():
-                for instance_name, app in app_instances.iteritems():
-                    self.log_debug(
-                        "Executing pre_context_change for %r, changing from %r to %r." % (
-                            app,
-                            self.context,
-                            new_context
-                        )
-                    )
-                    app.pre_context_change(self.context, new_context)
-                    self.log_debug("Execution of pre_context_change for app %r is complete." % app)
+        with _CoreContextChangeHookGuard(self.sgtk, old_context, new_context):
+        # Run the pre_context_change method to allow for any engine-specific
+        # prep work to happen.
+            self.log_debug("Executing pre_context_change for engine %r." % self)
+            self.pre_context_change(old_context, new_context)
+            self.log_debug("Execution of pre_context_change for engine %r is complete." % self)
 
             # Now that we're certain we can perform a context change,
             # we can tell the environment what the new context is, update
@@ -829,27 +845,22 @@ class Engine(TankBundle):
             # will repopulate the __applications dict to contain the appropriate
             # apps for the new context, and will pull apps that have already
             # been loaded from the __application_pool, which is persistent.
-            old_context = copy.deepcopy(self.context)
-            new_engine_settings = new_env.get_engine_settings(self.__instance_name)
-            self.env = new_env
-            self.context = new_context
-            self.settings = new_engine_settings
+            self._env = new_env
+            self._descriptor = new_descriptor
+            self._context = new_context
+            self._settings = new_settings
+
+            # Make sure our frameworks are up and running properly for the new context.
+            setup_frameworks(self, self, new_context, new_env, new_descriptor)
+
+            # Reload the apps for this engine
             self.__load_apps(reuse_existing_apps=True, old_context=old_context)
 
             # Call the post_context_change method to allow for any engine
             # specific post-change logic to be run.
-            self.log_debug(
-                "Executing post_context_change for %r, changing from %r to %r." % (
-                    self,
-                    old_context,
-                    new_context
-                )
-            )
-
-            # Emit the core level event.
+            self.log_debug("Executing post_context_change for %r." % self)
             self.post_context_change(old_context, new_context)
-
-        self.log_debug("Execution of post_context_change for engine %r is complete." % self)
+            self.log_debug("Execution of post_context_change for engine %r is complete." % self)
 
         # Last, now that we're otherwise done, we can run the
         # apps' post_engine_init methods.
@@ -857,6 +868,21 @@ class Engine(TankBundle):
 
     ##########################################################################################
     # public methods
+
+    def get_setting_for_env(key, env, default=None):
+        """
+        Get a value from the item's settings given the specified environment::
+
+            >>> eng.get_setting_for_env('entity_types', env_obj)
+            ['Sequence', 'Shot', 'Asset', 'Task']
+
+        :param key: config name
+        :param env: The :class:`~Environment` object
+        :param default: default value to return
+        :returns: Value from the specified environment configuration
+        """
+        eng_settings = env.get_engine_settings(self.instance_name)
+        return self.get_setting_from(eng_settings, key, default)
 
     def show_busy(self, title, details):
         """
@@ -1277,27 +1303,6 @@ class Engine(TankBundle):
                     (command_name, instance_name))
 
         return ret_value
-
-    def reload_templates(self):
-        """
-        Reloads the template definitions from disk. If the reload fails a
-        :class:`TankError` will be raised and the previous template definitions
-        will be preserved.
-
-        .. note:: This method can be helpful if you are tweaking
-                 templates inside of for example Maya and want to reload them. You can
-                 then access this method from the python console via the current engine
-                 handle::
-
-                    sgtk.platform.current_engine().sgtk.reload_templates()
-
-        :raises: :class:`TankError`
-        """
-        try:
-            self.__templates, self.__template_keys = read_templates(self.tk.pipeline_configuration, self.instance_name)
-        except TankError as e:
-            err_msg = "Templates could not be loaded: %s" % e
-            raise type(e), type(e)(err_msg), sys.exc_info()[2]
 
     ##########################################################################################
     # logging interfaces
@@ -2480,99 +2485,33 @@ class Engine(TankBundle):
         self.__commands = dict()
         self.__register_reload_command()
 
-        for app_instance_name in self.env.get_apps(self.__instance_name):
-            # Get a handle to the app bundle.
-            descriptor = self.env.get_app_descriptor(
-                self.__instance_name,
-                app_instance_name,
-            )
+        for app_instance_name in self.env.get_apps(self.instance_name):
 
-            if not descriptor.exists_local():
-                self.log_error("Cannot start app! %s does not exist on disk." % descriptor)
-                continue
+            app_descriptor = self.env.get_app_descriptor(self.instance_name, app_instance_name)
+            app_path = app_descriptor.get_path()
 
-            # Load settings for app - skip over the ones that don't validate
-            try:
-                # get the app settings data and validate it.
-                app_schema = descriptor.configuration_schema
-                app_settings = self.env.get_app_settings(
-                    self.__instance_name,
-                    app_instance_name,
-                )
-
-                # check that the context contains all the info that the app needs
-                if self.name != constants.SHOTGUN_ENGINE_NAME: 
-                    # special case! The shotgun engine is special and does not have a 
-                    # context until you actually run a command, so disable the validation.
-                    validation.validate_context(descriptor, self.context)
-                
-                # make sure the current operating system platform is supported
-                validation.validate_platform(descriptor)
-                                
-                # for multi engine apps, make sure our engine is supported
-                supported_engines = descriptor.supported_engines
-                if supported_engines and self.name not in supported_engines:
-                    raise TankError("The app could not be loaded since it only supports "
-                                    "the following engines: %s. Your current engine has been "
-                                    "identified as '%s'" % (supported_engines, self.name))
-
-            except TankError as e:
-                # validation error - probably some issue with the settings!
-                # report this as an error message.
-                self.log_error("App configuration Error for %s (configured in environment '%s'). "
-                               "It will not be loaded: %s" % (app_instance_name, self.env.disk_location, e))
-                continue
-            
-            except Exception:
-                # code execution error in the validation. Report this as an error 
-                # with the engire call stack!
-                self.log_exception("A general exception was caught while trying to "
-                                   "validate the configuration loaded from '%s' for app %s. "
-                                   "The app will not be loaded." % (self.env.disk_location, app_instance_name))
-                continue
-
-            # If we're told to reuse existing app instances, check for it and
-            # continue if it's already there. This is most likely a context
-            # change that's in progress, which means we only want to load apps
-            # that aren't already up and running.
-            install_path = descriptor.get_path()
-            app_pool = self.__application_pool
-
-            if reuse_existing_apps and install_path in app_pool:
+            # First check if we are reusing an existing app instance...
+            if reuse_existing_apps and app_path in self.__application_pool:
                 # If we were given an "old" context that's being switched away
                 # from, we can run the post change method and do a bit of
                 # reinitialization of certain portions of the app.
-                if old_context is not None and app_instance_name in app_pool[install_path]:
-                    app = self.__application_pool[install_path][app_instance_name]
+                if old_context and app_instance_name in self.__application_pool[app_path]:
+                    app_obj = self.__application_pool[app_path][app_instance_name]
 
                     try:
-                        # Update the app's internal context pointer.
-                        app.context = self.context
-
-                        # Update app's env to the current env.
-                        app.env = self.env
-
-                        # Update the app settings.
-                        app.settings = app_settings
-
-                        # Make sure our frameworks are up and running properly for
-                        # the new context.
-                        setup_frameworks(self, app, self.env, descriptor)
+                        app_obj.change_context(self.context)
 
                         # Repopulate the app's commands into the engine.
                         for command_name, command in self.__command_pool.iteritems():
-                            if app is command.get("properties", dict()).get("app"):
+                            if app_obj is command.get("properties", dict()).get("app"):
                                 self.__commands[command_name] = command
 
-                        # Run the post method in case there's custom logic implemented
-                        # for the app.
-                        app.post_context_change(old_context, self.context)
                     except Exception:
                         # If any of the reinitialization failed we will warn and
                         # continue on to a restart of the app via the normal means.
                         self.log_warning(
                             "App %r failed to change context and will be restarted: %s" % (
-                                app,
+                                app_obj,
                                 traceback.format_exc()
                             )
                         )
@@ -2584,41 +2523,46 @@ class Engine(TankBundle):
                             app_instance_name,
                             str(self.context)
                         ))
-                        self.__applications[app_instance_name] = app
+                        self.__applications[app_instance_name] = app_obj
                         continue
 
-            # load the app
+            # Load a new application instance
             try:
-                # now get the app location and resolve it into a version object
-                app_dir = descriptor.get_path()
+                app_obj = load_application(self, self.context, self.env, app_instance_name)
 
-                # create the object, run the constructor
-                app = application.get_application(self, 
-                                                  app_dir, 
-                                                  descriptor, 
-                                                  app_settings, 
-                                                  app_instance_name, 
-                                                  self.env)
+            except TankError as e:
+                # validation error - probably some issue with the settings!
+                # report this as an error message.
+                self.log_error("App configuration Error for %s (configured in environment '%s'). "
+                               "It will not be loaded: %s" % (app_instance_name, self.env.disk_location, e))
+                continue
                 
-                # load any frameworks required
-                setup_frameworks(self, app, self.env, descriptor)
+            except Exception:
+                # code execution error in the validation. Report this as an error
+                # with the engire call stack!
+                self.log_exception("A general exception was caught while trying to "
+                                   "load the application %s located at '%s'. "
+                                   "The app will not be loaded." % (app_instance_name, self.env.disk_location))
+                continue
                 
+            # initialize the app
+            try:
                 # track the init of the app
-                self.__currently_initializing_app = app
+                self.__currently_initializing_app = app_obj
                 try:
-                    app.init_app()
+                    app_obj.init_app()
                 finally:
                     self.__currently_initializing_app = None
             
             except TankError as e:
-                self.log_error("App %s failed to initialize. It will not be loaded: %s" % (app_dir, e))
+                self.log_error("App %s failed to initialize. It will not be loaded: %s" % (app_path, e))
                 
             except Exception:
-                self.log_exception("App %s failed to initialize. It will not be loaded." % app_dir)
+                self.log_exception("App %s failed to initialize. It will not be loaded." % app_path)
             else:
                 # note! Apps are keyed by their instance name, meaning that we 
                 # could theoretically have multiple instances of the same app.
-                self.__applications[app_instance_name] = app
+                self.__applications[app_instance_name] = app_obj
 
             # For the sake of potetial context changes, apps and commands are cached
             # into a persistent pool such that they can be reused at some later time.
@@ -2773,12 +2717,12 @@ def get_engine_path(engine_name, tk, context):
     """
     # get environment and engine location
     try:
-        (env, engine_descriptor) = get_env_and_descriptor_for_engine(engine_name, tk, context)
-    except TankEngineInitError:
+        (env, descriptor) = get_env_and_descriptor_for_engine(engine_name, tk, context)
+    except Exception:
         return None
 
     # return path to engine code
-    engine_path = engine_descriptor.get_path()
+    engine_path = descriptor.get_path()
     return engine_path
 
 
@@ -2938,21 +2882,32 @@ def _start_engine(engine_name, tk, old_context, new_context):
         LogManager().initialize_base_file_handler(engine_name)
 
     # get environment and engine location
-    (env, engine_descriptor) = get_env_and_descriptor_for_engine(engine_name, tk, new_context)
+    try:
+        (env, descriptor) = get_env_and_descriptor_for_engine(engine_name, tk, new_context)
+    except Exception as e:
+        err_msg = "Engine %s cannot initialize - %s" % (engine_name, traceback.format_exc())
+        raise TankEngineInitError(err_msg)
 
     # make sure it exists locally
-    if not engine_descriptor.exists_local():
-        raise TankEngineInitError("Cannot start engine! %s does not exist on disk" % engine_descriptor)
+    if not descriptor.exists_local():
+        raise TankEngineInitError("Cannot start engine! %s does not exist on disk" % descriptor)
+
+    # get the engine settings and validate
+    settings = env.get_engine_settings(engine_name)
 
     # get path to engine code
-    engine_path = engine_descriptor.get_path()
+    engine_path = descriptor.get_path()
     plugin_file = os.path.join(engine_path, constants.ENGINE_FILE)
     class_obj = load_plugin(plugin_file, Engine)
 
     # Notify the context change and start the engine.
     with _CoreContextChangeHookGuard(tk, old_context, new_context):
         # Instantiate the engine
-        engine = class_obj(tk, new_context, engine_name, env)
+        engine = class_obj(tk, engine_name, descriptor, new_context, env, settings)
+
+        # start the engine
+        engine.start()
+
         # register this engine as the current engine
         set_current_engine(engine)
 
@@ -2978,8 +2933,7 @@ def find_app_settings(engine_name, app_name, tk, context, engine_instance_name=N
     app_settings = []
     
     # get the environment via the pick_environment hook
-    env_name = __pick_environment(engine_name, tk, context)
-    env = tk.pipeline_configuration.get_environment(env_name, context)
+    env = get_environment_from_context(tk, context)
     
     # now find all engines whose names match the engine_name:
     for eng in env.get_engines():
@@ -3025,7 +2979,7 @@ def find_app_settings(engine_name, app_name, tk, context, engine_instance_name=N
             app_settings.append({"env_instance": env, "engine_instance": eng, "app_instance": app, "settings": settings})
                     
     return app_settings
-    
+
 
 def start_shotgun_engine(tk, entity_type, context):
     """
@@ -3055,29 +3009,39 @@ def start_shotgun_engine(tk, entity_type, context):
     if constants.SHOTGUN_ENGINE_NAME not in env.get_engines():
         raise TankMissingEngineError("Cannot find a shotgun engine in %s. Please contact support." % env)
     
-    engine_descriptor = env.get_engine_descriptor(constants.SHOTGUN_ENGINE_NAME)
+    descriptor = env.get_engine_descriptor(constants.SHOTGUN_ENGINE_NAME)
 
     # make sure it exists locally
-    if not engine_descriptor.exists_local():
-        raise TankEngineInitError("Cannot start engine! %s does not exist on disk" % engine_descriptor)
+    if not descriptor.exists_local():
+        raise TankEngineInitError("Cannot start engine! %s does not exist on disk" % descriptor)
+
+    # get the engine settings and validate
+    settings = env.get_engine_settings(constants.SHOTGUN_ENGINE_NAME)
 
     # get path to engine code
-    engine_path = engine_descriptor.get_path()
+    engine_path = descriptor.get_path()
     plugin_file = os.path.join(engine_path, constants.ENGINE_FILE)
 
     # Instantiate the engine
     class_obj = load_plugin(plugin_file, Engine)
-    obj = class_obj(tk, context, constants.SHOTGUN_ENGINE_NAME, env)
+    engine = class_obj(tk, constants.SHOTGUN_ENGINE_NAME, descriptor, context, env, settings)
+
+    # start the engine
+    engine.start()
 
     # register this engine as the current engine
-    set_current_engine(obj)
+    set_current_engine(engine)
 
-    return obj
+    return engine
 
 def get_environment_from_context(tk, context):
     """
-    Returns an environment object given a context. 
-    Returns None if no environment was found. 
+    Calls out to the pick_environment core hook to determine which environment we should load
+    based on the current context.
+
+    :param tk: :class:`~sgtk.Sgtk` instance
+    :param context: :class:`~sgtk.Context` object to use when picking environment
+    :returns: An :class:`~sgtk.Environment` object
     """
     try:
         env_name = tk.execute_core_hook(constants.PICK_ENVIRONMENT_CORE_HOOK_NAME, context=context)
@@ -3086,7 +3050,13 @@ def get_environment_from_context(tk, context):
                         "environment hook reported the following error: %s" % (context, e))
     
     if env_name is None:
-        return None
+        # the pick_environment hook could not determine an environment
+        # this may be because an incomplete Context was passed.
+        # without an environment, engine creation cannot succeed.
+        # raise an exception with a message
+        raise TankError("The pick environment hook was not able to return an environment to use, "
+                        "given the context %s. Usually this is because the context contains "
+                        "insufficient information for an environment to be determined." % context)
     
     return tk.pipeline_configuration.get_environment(env_name, context)
 
@@ -3129,49 +3099,17 @@ def get_env_and_descriptor_for_engine(engine_name, tk, context):
     :raises: :class:`TankEngineInitError` if the engine name cannot be found.
     """
     # get the environment via the pick_environment hook
-    env_name = __pick_environment(engine_name, tk, context)
-
-    # get the env object based on the name in the pick env hook
-    env = tk.pipeline_configuration.get_environment(env_name, context)
+    env = get_environment_from_context(tk, context)
 
     # make sure that the environment has an engine instance with that name
     if engine_name not in env.get_engines():
         raise TankMissingEngineError("Cannot find an engine instance %s in %s." % (engine_name, env))
 
     # get the location for our engine
-    engine_descriptor = env.get_engine_descriptor(engine_name)
+    descriptor = env.get_engine_descriptor(engine_name)
 
-    return (env, engine_descriptor)
+    return (env, descriptor)
 
-
-def __pick_environment(engine_name, tk, context):
-    """
-    Call out to the pick_environment core hook to determine which environment we should load
-    based on the current context. The Shotgun engine provides its own implementation.
-
-    :param engine_name: system name of the engine to look for, e.g tk-maya
-    :param tk: :class:`~sgtk.Sgtk` instance
-    :param context: :class:`~sgtk.Context` object to use when picking environment
-    :returns: name of environment.
-    """
-
-    try:
-        env_name = tk.execute_core_hook(constants.PICK_ENVIRONMENT_CORE_HOOK_NAME, context=context)
-    except Exception as e:
-        raise TankEngineInitError("Engine %s cannot initialize - the pick environment hook "
-                                 "reported the following error: %s" % (engine_name, e))
-
-    if env_name is None:
-        # the pick_environment hook could not determine an environment
-        # this may be because an incomplete Context was passed.
-        # without an environment, engine creation cannot succeed.
-        # raise an exception with a message
-        raise TankEngineInitError("Engine %s cannot initialize - the pick environment hook was not "
-                                  "able to return an environment to use, given the context %s. "
-                                  "Usually this is because the context contains insufficient information "
-                                  "for an environment to be determined." % (engine_name, context))
-
-    return env_name
 
 def _get_command_prefix(properties):
     """

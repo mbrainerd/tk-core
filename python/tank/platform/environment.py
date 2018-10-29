@@ -50,12 +50,13 @@ class Environment(object):
                         skipped.
         """
         self._env_path = env_path
+        self._context = context
+
         self._env_data = None
-        
+
         self.__engine_locations = {}
         self.__app_locations = {}
         self.__framework_locations = {}
-        self.__context = context
 
         # validate and populate config
         self._refresh()
@@ -67,12 +68,25 @@ class Environment(object):
     def __str__(self):
         return "Environment %s" % os.path.basename(self._env_path)
 
+    def __eq__(self, other):
+        """
+        Test if this Environment instance is equal to the other instance
+
+        :param other:   The other Environment instance to compare with
+        :returns:       True if self represents the same environment as other,
+                        otherwise False
+        """
+        return self._env_path == other._env_path and self._context == other._context
+
+    def __ne__(self, other):
+        return not (self == other)
+
     def _refresh(self):
         """Refreshes the environment data from disk
         """
         data = self.__load_environment_data()
 
-        self._env_data = environment_includes.process_includes(self._env_path, data, self.__context)
+        self._env_data = environment_includes.process_includes(self._env_path, data, self._context)
         
         if not self._env_data:
             raise TankError('No data in env file: %s' % (self._env_path))
@@ -125,17 +139,17 @@ class Environment(object):
 
         return False
 
-    def __process_settings(self, settings):
+    def __process_settings(self, settings, engine_name=""):
         """
         Process settings values before returning to dict
         """
         processed_settings = {}
         for name, setting in settings.iteritems():
-            processed_settings[name] = self.__process_setting_r(setting)
+            processed_settings[name] = self.__process_setting_r(setting, engine_name)
 
         return processed_settings
 
-    def __process_setting_r(self, setting):
+    def __process_setting_r(self, setting, engine_name=""):
         """
         Scans data for @refs and attempts to replace based on lookup data
         """
@@ -145,16 +159,28 @@ class Environment(object):
         if isinstance(setting, list):
             processed_val = []
             for x in setting:
-                processed_val.append(self.__process_setting_r(x))
+                processed_val.append(self.__process_setting_r(x, engine_name))
 
         elif isinstance(setting, dict):
             processed_val = {}
             for (k,v) in setting.iteritems():
-                processed_val[k] = self.__process_setting_r(v)
+                processed_val[k] = self.__process_setting_r(v, engine_name)
 
         elif isinstance(setting, basestring):
-            # replace the `{env_name}` token if it exists.
-            processed_val = setting.replace("{env_name}", self.name)
+            # Replace the `{engine_name}` token if it exists.
+            processed_val = processed_val.replace(
+                                    constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN,
+                                    engine_name
+                            )
+
+            # Replace the `{env_name}` token if it exists.
+            processed_val = processed_val.replace(
+                                    constants.TANK_HOOK_ENV_REFERENCE_TOKEN,
+                                    self.name
+                            )
+
+            # Expand any environment variables
+            processed_val = os.path.expandvars(os.path.expanduser(processed_val))
 
         return processed_val
 
@@ -167,7 +193,7 @@ class Environment(object):
         # iterate over the apps dict
         for app, app_settings in data.items():
             if not self.__is_item_disabled(app_settings):
-                self.__app_settings[(engine, app)] = self.__process_settings(app_settings)
+                self.__app_settings[(engine, app)] = self.__process_settings(app_settings, engine)
 
     def __process_engines(self, engines):
         """
@@ -181,7 +207,7 @@ class Environment(object):
             if not self.__is_item_disabled(engine_settings):
                 engine_apps = engine_settings.pop('apps')
                 self.__process_apps(engine, engine_apps)
-                self.__engine_settings[engine] = self.__process_settings(engine_settings)
+                self.__engine_settings[engine] = self.__process_settings(engine_settings, engine)
 
     def __process_frameworks(self, frameworks):
         """
@@ -451,7 +477,7 @@ class Environment(object):
 
         :returns: True if the framework is available from the starting point, False otherwise.
         """
-        fw_location = environment_includes.find_framework_location(starting_point, framework_name, self.__context)
+        fw_location = environment_includes.find_framework_location(starting_point, framework_name, self._context)
         return True if fw_location else False
 
     def find_location_for_framework(self, framework_name):
@@ -494,7 +520,7 @@ class Environment(object):
         fw_location = environment_includes.find_framework_location(
             self._env_path,
             framework_name,
-            self.__context,
+            self._context,
         )
 
         if not fw_location:
@@ -654,7 +680,7 @@ class Environment(object):
             bundle_section_token = bundle_section[1:]
             bundle_yml_file, bundle_section_token = environment_includes.find_reference(
                 bundle_yml_file,
-                self.__context,
+                self._context,
                 bundle_section_token,
                 absolute_location,
             )
@@ -676,7 +702,7 @@ class Environment(object):
             bundle_token = bundle_data[1:]
             bundle_yml_file, bundle_token = environment_includes.find_reference(
                 bundle_yml_file,
-                self.__context,
+                self._context,
                 bundle_token,
                 absolute_location,
             )
@@ -689,7 +715,7 @@ class Environment(object):
             if is_included(location):
                 bundle_yml_file, bundle_token = environment_includes.find_reference(
                     bundle_yml_file,
-                    self.__context,
+                    self._context,
                     location[1:], # Trim the @ at the head.
                     absolute_location,
                 )

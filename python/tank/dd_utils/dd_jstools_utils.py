@@ -238,3 +238,18 @@ def symlink_with_jstools(target, path):
     else:
         # Finally, use os.symlink to create the non template links
         _do_symlink_with_os_symlink(target, path)
+
+def sealf_with_jstools(path):
+    """
+    Seal the given file/folder recursively
+    i.e. prevent changing ownership and permissions.
+    Use jstools to make sure we do this in a clean env.
+    """
+    sealf_cmd = ["sealf", "-v", "-R", path]
+    result = jstools.execute(sealf_cmd)
+    # result.hasFailed doesn't seem to be reliably accurate
+    if result.stderr:
+        logger.warning("Unable to seal file: {}\n"
+                       "jstools.execute() returned code: {}".format(path, result.returnCode))
+        logger.warning("stdout: {}".format(result.stdout))
+        logger.warning("stderr: {}".format(result.stderr))
