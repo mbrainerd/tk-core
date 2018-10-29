@@ -1449,23 +1449,9 @@ def resolve_default_value(
     :param engine_name: Optional system name of the current engine if there is one.
     :param raise_if_missing: If True, raise TankNoDefaultValueError if no
         default value is found.
-    :param bundle: The bundle object. This is only used in situations where
-        a setting's value must be resolved via calling a hook. If None, the
-        current bundle, as provided by sgtk.platform.current_bundle, will
-        be used.
     :return: The resolved default value
     """
-    try:
-        from .util import current_bundle
-        bundle = bundle or current_bundle()
-    except TankCurrentModuleNotFoundError:
-        pass
-
     default_missing = False
-
-    # If bundle but engine name not specified, get the engine name from the bundle
-    if bundle and not engine_name:
-        engine_name = bundle._get_engine_name()
 
     # Engine-specific default value keys are allowed (ex:
     # "default_value_tk-maya"). If an engine name was supplied,
@@ -1528,7 +1514,6 @@ def _resolve_default_hook_value(value, engine_name=None):
     :param value: The unresolved default value for the hook
     :param engine_name: The name of the engine for engine-specific hook values
     :return: The resolved hook default value.
-
     """
 
     if not value:
