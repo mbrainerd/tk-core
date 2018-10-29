@@ -19,6 +19,7 @@ import stat
 import shutil
 import datetime
 import functools
+import traceback
 from contextlib import contextmanager
 
 from .. import LogManager
@@ -158,7 +159,7 @@ def ensure_folder_exists(path, permissions=0o775, create_placeholder_file=False)
 
 
 @with_cleared_umask
-def copy_file(src, dst, permissions=0o666):
+def copy_file(src, dst, permissions=0o666, seal=False):
     """
     Copy file and sets its permissions.
 
@@ -169,12 +170,19 @@ def copy_file(src, dst, permissions=0o666):
     """
     shutil.copy(src, dst)
     os.chmod(dst, permissions)
+    if seal:
+        try:
+            seal_file(dst)
+        except Exception as e:
+            # primary function is to copy. Do not raise exception if sealing fails.
+            log.warning("File '%s' could not be sealed, skipping: %s" % (dst, e))
+            log.warning(traceback.format_exc())
 
 
 @with_cleared_umask
 def symlink_file(src, dst):
     """
-    Symlinks a src file to its' dst file.
+    Symlinks a src file to its dst file.
 
     :param src: Source file.
     :param dst: Symlink file location.
@@ -398,6 +406,10 @@ def freeze_permissions(path, permission=0o444):
     :raises: OSError - if there was a problem setting the file permissions
     """
     os.chmod(path, permission)
+
+
+def seal_file(path):
+    dd_jstools_utils.sealf_with_jstools(path)
 
 
 def safe_delete_folder(path):
