@@ -869,7 +869,7 @@ class Engine(TankBundle):
     ##########################################################################################
     # public methods
 
-    def get_setting_for_env(key, env, default=None):
+    def get_setting_for_env(self, key, env, default=None):
         """
         Get a value from the item's settings given the specified environment::
 

@@ -548,7 +548,7 @@ class TankBundle(object):
         """
         return self.__resolve_setting_value(self._settings, key, default)
 
-    def get_setting_for_env(key, env, default=None):
+    def get_setting_for_env(self, key, env, default=None):
         """
         Get a value from the item's settings given the specified environment::
 
@@ -862,6 +862,9 @@ class TankBundle(object):
             raise TankError("%s config setting %s: Configuration value cannot be None!" % (self, settings_name))
         
         path = None
+
+        # make sure to replace `{engine_name}`/`{env_name}` tokens if they exist.
+        hook_expression = self.resolve_setting_expression(hook_expression)
         
         # first the legacy, old-style hooks case
         if hook_expression == constants.TANK_BUNDLE_DEFAULT_HOOK_SETTING:
@@ -989,6 +992,43 @@ class TankBundle(object):
 
         return path
 
+    def resolve_setting_expression(self, value):
+        """
+        Resolves any embedded references like {engine_name} or {env_name}.
+        
+        :param value: The value that should be resolved.
+        
+        :returns: An expanded value.
+        """
+        # make sure to replace the `{engine_name}` token if it exists.
+        if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in value:
+            engine_name = self._get_engine_instance_name()
+            if not engine_name:
+                raise TankError(
+                    "No engine could be determined for value '%s'. "
+                    "The setting could not be resolved." % (value,))
+            else:
+                value = value.replace(
+                    constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN,
+                    engine_name,
+                )
+
+        # make sure to replace the `{env_name}` token if it exists.
+        if constants.TANK_HOOK_ENV_REFERENCE_TOKEN in value:
+            env_name = self.env.name
+            if not env_name:
+                raise TankError(
+                    "No environment could be determined for value '%s'. "
+                    "The setting could not be resolved." % (value,))
+            else:
+                value = value.replace(
+                    constants.TANK_HOOK_ENV_REFERENCE_TOKEN,
+                    env_name,
+                )
+
+        return value
+
+
     def expand_path(self, path):
         """
         Resolves a "config_path" type setting into an absolute path.
@@ -997,6 +1037,9 @@ class TankBundle(object):
         
         :returns: An expanded absolute path to the specified file.
         """
+
+        # make sure to replace `{engine_name}`/`{env_name}` tokens if they exist.
+        path = self.resolve_setting_expression(path)
 
         if path.startswith("{self}"):
             # bundle local reference
@@ -1279,6 +1322,10 @@ def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, valida
         )
 
     if isinstance(value, basestring):
+        # Expand any internal variables (i.e. engine_name, env_name)
+        if bundle:
+            value = bundle.resolve_setting_expression(value)
+
         # Expand any environment variables
         value = os.path.expandvars(os.path.expanduser(value))
 
