@@ -16,11 +16,11 @@ Methods for handling of the tank command
 import logging
 
 from .action_base import Action
+from .interaction import RawInputCommandInteraction, YesToEverythingInteraction
 from . import folders
 from . import misc
 from . import move_pc
 from . import pc_overview
-from . import migrate_entities
 from . import path_cache
 from . import update
 from . import push_pc
@@ -42,6 +42,7 @@ from . import cache_yaml
 from . import get_entity_commands
 from . import constants
 
+
 from .. import constants as constants_global
 from .. import LogManager
 from ..platform.engine import start_engine, get_environment_from_context
@@ -60,6 +61,8 @@ BUILT_IN_ACTIONS = [
                     folders.PreviewFoldersAction,
                     get_entity_commands.GetEntityCommandsAction,
                     misc.ClearCacheAction,
+                    switch.SwitchAppAction,
+                    app_info.AppInfoAction,
                     misc.InteractiveShellAction,
                     path_cache.SynchronizePathCache,
                     pc_overview.PCBreakdownAction,
@@ -131,6 +134,7 @@ def get_shell_engine_actions(engine_obj):
 # - The SgtkSystemCommand class wraps around a command implementation and
 #   forms the actual interface which we expose via the interface.   
 
+
 def list_commands(tk=None):
     """
     Lists the system commands registered with the system.
@@ -176,6 +180,7 @@ def list_commands(tk=None):
             action_names.append(a.name)
                 
     return action_names
+
 
 def get_command(command_name, tk=None):
     """
@@ -327,7 +332,7 @@ class SgtkSystemCommand(object):
         """
         self.__log = log
 
-    def execute(self, params):
+    def execute(self, params, interaction_interface=None):
         """
         Execute this command.
         
@@ -335,11 +340,24 @@ class SgtkSystemCommand(object):
                        the dictionary key is the name of the parameter and the value
                        is the value you want to pass. You can query which parameters
                        can be passed in via the parameters property.
+        :param interaction_interface: Optional interaction interface. This will be used
+            whenever the command needs to interact with the user. Should be an
+            instance deriving from :class:`CommandInteraction`.
         :returns: Whatever the command returns. Data type and description for the return
                   value can be introspected via the :meth:`parameters` property.
         """
+        interaction_interface = interaction_interface or YesToEverythingInteraction()
+        self.__internal_action_obj.set_interaction_interface(interaction_interface)
 
         return self.__internal_action_obj.run_noninteractive(self.__log, params)
+
+    def terminate(self):
+        """
+        Instructs the command to attempt to terminate its execution.
+        Not all commands are able to terminate and execution normally
+        does not terminate straight away.
+        """
+        self.__internal_action_obj.terminate()
 
 ###############################################################################################
 # Main entry points for accessing tank commands from the tank command / shell engine
@@ -371,7 +389,7 @@ def get_actions(log, tk, ctx):
     # get all actions regardless of current scope first
     all_actions = _get_built_in_actions()
     if engine:
-        all_actions.extend( get_shell_engine_actions(engine) )
+        all_actions.extend(get_shell_engine_actions(engine))
     
     # now only pick the ones that are working with our current state
     for a in all_actions:
@@ -489,5 +507,7 @@ def run_action(log, tk, ctx, command, args):
         log.info("Command: %s" % found_action.name.replace("_", " ").capitalize())
         log.info("-" * 70)
         log.info("")
+
+        found_action.set_interaction_interface(RawInputCommandInteraction())
 
         return found_action.run_interactive(log, args)
