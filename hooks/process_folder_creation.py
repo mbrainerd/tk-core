@@ -1,4 +1,4 @@
-# Copyright (c) 2013 Shotgun Software Inc.
+# Copyright (c) 2018 Shotgun Software Inc.
 #
 # CONFIDENTIAL AND PROPRIETARY
 #
@@ -9,8 +9,8 @@
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
 """
-I/O Hook which creates folders on disk.
-
+This hook is invoked during folder creation when :meth:`sgtk.Sgtk.create_filesystem_structure` is
+called.
 """
 
 from tank import Hook
@@ -26,80 +26,88 @@ class ProcessFolderCreation(Hook):
 
     def execute(self, items, preview_mode, **kwargs):
         """
-        The default implementation creates folders recursively using open permissions.
-        This hook should return a list of created items.
-        Items is a list of dictionaries. Each dictionary can be of the following type:
+        Creates a list of files and folders.
 
-        Standard Folder
-        ---------------
+        The default implementation creates files and folders recursively using
+        open permissions.
+
+        :param list(dict): List of actions that needs to take place.
+
+        Six different types of actions are supported.
+
+        **Standard Folder**
+
         This represents a standard folder in the file system which is not associated
         with anything in Shotgun. It contains the following keys:
 
-        * "action": "folder"
-        * "metadata": The configuration yaml data for this item
-        * "path": path on disk to the item
+        - **action** (:class:`str`) - ``folder``
+        - **metadata** (:class:`dict`) - The configuration yaml data for this item
+        - **path** (:class:`str`) - path on disk to the item
 
-        Entity Folder
-        -------------
+        **Entity Folder**
+
         This represents a folder in the file system which is associated with a
-        shotgun entity. It contains the following keys:
+        Shotgun entity. It contains the following keys:
 
-        * "action": "entity_folder"
-        * "metadata": The configuration yaml data for this item
-        * "path": path on disk to the item
-        * "entity": Shotgun entity link dict with keys type, id and name.
+        - **action** (:class:`str`) - ``entity_folder``
+        - **metadata** (:class:`dict`) - The configuration yaml data for this item
+        - **path** (:class:`str`) - path on disk to the item
+        - **entity** (:class:`dict`) - Shotgun entity link with keys ``type``, ``id`` and ``name``.
 
-        Remote Entity Folder
-        --------------------
+        **Remote Entity Folder**
+
         This is the same as an entity folder, except that it was originally
         created in another location. A remote folder request means that your
         local toolkit instance has detected that folders have been created by
         a different file system setup. It contains the following keys:
 
-        * "action": "remote_entity_folder"
-        * "metadata": The configuration yaml data for this item
-        * "path": path on disk to the item
-        * "entity": Shotgun entity link dict with keys type, id and name.
+        - **action** (:class:`str`) - ``remote_entity_folder``
+        - **metadata** (:class:`dict`) - The configuration yaml data for this item
+        - **path** (:class:`str`) - path on disk to the item
+        - **entity** (:class:`dict`) - Shotgun entity link with keys ``type``, ``id`` and ``name``.
 
-        File Copy
-        ---------
+        **File Copy**
+
         This represents a file copy operation which should be carried out.
         It contains the following keys:
 
-        * "action": "copy"
-        * "metadata": The configuration yaml data associated with the directory level
-                      on which this object exists.
-        * "source_path": location of the file that should be copied
-        * "target_path": target location to where the file should be copied.
+        - **action** (:class:`str`) - ``copy``
+        - **metadata** (:class:`dict`) - The configuration yaml data associated with the directory level
+          on which this object exists.
+        - **source_path** (:class:`str`) - location of the file that should be copied
+        - **target_path** (:class:`str`) - target location to where the file should be copied.
 
-        File Creation
-        -------------
+        **File Creation**
+
         This is similar to the file copy, but instead of a source path, a chunk
         of data is specified. It contains the following keys:
 
-        * "action": "create_file"
-        * "metadata": The configuration yaml data associated with the directory level
-                      on which this object exists.
-        * "content": file content
-        * "target_path": target location to where the file should be copied.
+        - **action** (:class:`str`) - ``create_file``
+        - **metadata** (:class:`dict`) - The configuration yaml data associated with the directory level
+          on which this object exists.
+        - **content** (:class:`str`) -- file content
+        - **target_path** (:class:`str`) -- target location to where the file should be copied.
 
-        Symbolic Links
-        -------------
+        **Symbolic Links**
+
         This represents a request that a symbolic link is created. Note that symbolic links are not
         supported in the same way on all operating systems. The default hook therefore does not
         implement symbolic link support on Windows systems. If you want to add symbolic link support
         on windows, simply copy this hook to your project configuration and make the necessary
         modifications.
 
-        * "action": "symlink"
-        * "metadata": The raw configuration yaml data associated with symlink yml config file.
-        * "path": the path to the symbolic link
-        * "target": the target to which the symbolic link should point
+        - **action** (:class:`str`) - ``symlink``
+        - **metadata** (:class:`dict`) - The raw configuration yaml data associated with symlink yml config file.
+        - **path** (:class:`str`) - the path to the symbolic link
+        - **target** (:class:`str`) - the target to which the symbolic link should point
+
+        :returns: List of files and folders that have been created.
+        :rtype: list(str)
         """
 
         # set the umask so that we get true permissions
         old_umask = os.umask(0)
-        folders = []
+        locations = []
         try:
 
             # loop through our list of items
@@ -116,7 +124,7 @@ class ProcessFolderCreation(Hook):
                             # os.makedirs(path, 0777)
                             # Use JSTOOLS instead.
                             dd_jstools_utils.makedir_with_jstools(path)
-                        folders.append(path)
+                        locations.append(path)
 
                 elif action == "remote_entity_folder":
                     # Remote folder creation
@@ -141,7 +149,7 @@ class ProcessFolderCreation(Hook):
                     #     if not preview_mode:
                     #         # create the folder using open permissions
                     #         os.makedirs(path, 0777)
-                    #     folders.append(path)
+                    #     locations.append(path)
                     pass
 
                 elif action == "symlink":
@@ -158,7 +166,7 @@ class ProcessFolderCreation(Hook):
                             # os.symlink(target, path)
                             # Use JSTOOLS instead.
                             dd_jstools_utils.symlink_with_jstools(target, path)
-                        folders.append(path)
+                        locations.append(path)
 
                 elif action == "copy":
                     # a file copy
@@ -170,7 +178,7 @@ class ProcessFolderCreation(Hook):
                             shutil.copy(source_path, target_path)
                             # set permissions to open
                             os.chmod(target_path, 0666)
-                        folders.append(target_path)
+                        locations.append(target_path)
 
                 elif action == "create_file":
                     # create a new file based on content
@@ -190,10 +198,9 @@ class ProcessFolderCreation(Hook):
                             fp.close()
                             # and set permissions to open
                             os.chmod(path, 0666)
-                        folders.append(path)
-
+                        locations.append(path)
         finally:
             # reset umask
             os.umask(old_umask)
 
-        return folders
+        return locations
