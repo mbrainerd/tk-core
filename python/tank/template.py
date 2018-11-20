@@ -243,7 +243,7 @@ class Template(object):
 
         return missing_key_names
 
-    def apply_fields(self, fields, platform=None):
+    def apply_fields(self, fields, ignore_types=None, platform=None):
         """
         Creates path using fields. Certain fields may be processed in special ways, for
         example :class:`SequenceKey` fields, which can take a `FORMAT` string which will intelligently
@@ -288,7 +288,7 @@ class Template(object):
 
         :returns: Full path, matching the template with the given fields inserted.
         """
-        return self._apply_fields(fields, platform=platform)
+        return self._apply_fields(fields, ignore_types, platform)
 
     def _apply_fields(self, fields, ignore_types=None, platform=None):
         """
