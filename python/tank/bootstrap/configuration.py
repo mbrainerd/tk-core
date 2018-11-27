@@ -25,7 +25,10 @@ class Configuration(object):
     An abstraction representation around a toolkit configuration.
     """
 
-    (LOCAL_CFG_UP_TO_DATE, LOCAL_CFG_MISSING, LOCAL_CFG_DIFFERENT, LOCAL_CFG_INVALID) = range(4)
+    LOCAL_CFG_UP_TO_DATE = "LOCAL_CFG_UP_TO_DATE"
+    LOCAL_CFG_MISSING = "LOCAL_CFG_MISSING"
+    LOCAL_CFG_DIFFERENT = "LOCAL_CFG_DIFFERENT"
+    LOCAL_CFG_INVALID = "LOCAL_CFG_INVALID"
 
     def __init__(self, path, descriptor):
         """
@@ -131,6 +134,15 @@ class Configuration(object):
             sg_user.start_claims_renewal()
 
         return self._tank_from_path(path), sg_user
+
+    def cache_bundles(self, pipeline_configuration, engine_constraint, progress_cb):
+        """
+        Caches bundles for the configuration.
+
+        Default implementation is valid for a configuration which has an already pre-populated
+        local bundle cache.
+        """
+        log.debug("Configuration has local bundle cache, skipping bundle caching.")
 
     def _tank_from_path(self, path):
         """

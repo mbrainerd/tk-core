@@ -259,7 +259,7 @@ class Engine(TankBundle):
 
     def __repr__(self):
         return "<Sgtk Engine 0x%08x: %s, env: %s>" % (id(self),  
-                                                      self.name, 
+                                                      self.instance_name, 
                                                       self.env.name)
 
     ##########################################################################################
@@ -869,7 +869,7 @@ class Engine(TankBundle):
     ##########################################################################################
     # public methods
 
-    def get_setting_for_env(key, env, default=None):
+    def get_setting_for_env(self, key, env, default=None):
         """
         Get a value from the item's settings given the specified environment::
 
@@ -2189,6 +2189,16 @@ class Engine(TankBundle):
             QtGui.QPalette.Text,
             palette.color(QtGui.QPalette.Disabled, QtGui.QPalette.Base).lighter(250)
         )
+        palette.setBrush(
+            QtGui.QPalette.Disabled,
+            QtGui.QPalette.Link,
+            palette.color(QtGui.QPalette.Disabled, QtGui.QPalette.Base).lighter(250)
+        )
+        palette.setBrush(
+            QtGui.QPalette.Disabled,
+            QtGui.QPalette.LinkVisited,
+            palette.color(QtGui.QPalette.Disabled, QtGui.QPalette.Base).lighter(110)
+        )
 
         palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.WindowText, QtGui.QColor(200, 200, 200))
         palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Button, QtGui.QColor(75, 75, 75))
@@ -2198,6 +2208,8 @@ class Engine(TankBundle):
         palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Dark, QtGui.QColor(37, 37, 37))
         palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Mid, QtGui.QColor(45, 45, 45))
         palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Text, QtGui.QColor(200, 200, 200))
+        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Link, QtGui.QColor(200, 200, 200))
+        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.LinkVisited, QtGui.QColor(97, 97, 97))
         palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.BrightText, QtGui.QColor(37, 37, 37))
         palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Base, QtGui.QColor(42, 42, 42))
         palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Window, QtGui.QColor(68, 68, 68))
@@ -2216,6 +2228,8 @@ class Engine(TankBundle):
         palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Dark, QtGui.QColor(37, 37, 37))
         palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Mid, QtGui.QColor(45, 45, 45))
         palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Text, QtGui.QColor(200, 200, 200))
+        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Link, QtGui.QColor(200, 200, 200))
+        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.LinkVisited, QtGui.QColor(97, 97, 97))
         palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.BrightText, QtGui.QColor(37, 37, 37))
         palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Base, QtGui.QColor(42, 42, 42))
         palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Window, QtGui.QColor(68, 68, 68))
@@ -2319,25 +2333,23 @@ class Engine(TankBundle):
         THIS METHOD HAS BEEN DEPRECATED AND SHOULD NOT BE USED!
         Instead, call _initialize_standard_look_and_feel()
         **********************************************************************
-        
+
         For environments which do not have a well defined QT style sheet,
         Toolkit maintains a "standard style" which is similar to the look and
-        feel that Maya and Nuke has. 
-        
+        feel that Maya and Nuke has.
+
         This is intended to be used in conjunction with QTs cleanlooks mode.
         The init code inside an engine would typically look something like this:
-        
+
             QtGui.QApplication.setStyle("cleanlooks")
             qt_application = QtGui.QApplication([])
-            qt_application.setStyleSheet( self._get_standard_qt_stylesheet() )         
-        
+            qt_application.setStyleSheet( self._get_standard_qt_stylesheet() )
+
         :returns: The style sheet data, as a string.
         """
         css_file = self.__get_platform_resource_path("toolkit_std_dark.css")
-        f = open(css_file)
-        css_data = f.read()
-        f.close()
-        return css_data
+        with open(css_file) as f:
+            return f.read()
 
     def _register_shared_framework(self, instance_name, fw_obj):
         """

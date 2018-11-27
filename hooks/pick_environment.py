@@ -1,4 +1,4 @@
-# Copyright (c) 2013 Shotgun Software Inc.
+# Copyright (c) 2018 Shotgun Software Inc.
 #
 # CONFIDENTIAL AND PROPRIETARY
 #
@@ -10,21 +10,29 @@
 
 """
 Hook which chooses an environment file to use based on the current context.
-This file is almost always overridden by a standard config.
-
+This file is almost always overridden by a configuration.
 """
 
 from tank import Hook
+
 
 class PickEnvironment(Hook):
 
     def execute(self, context, **kwargs):
         """
-        The default implementation assumes there are two environments, called shot 
-        and asset, and switches to these based on entity type.
-        """
+        Executed when Toolkit needs to pick an environment file.
 
-        # must have an entity
+        The default implementation will return ``shot`` or ``asset`` based
+        on the type of the entity in :attr:`sgtk.Context.entity`. If the type
+        does not match ``Shot`` or ``Asset``, ``None`` will be returned.
+
+        :params context: The context for which an environment will be picked.
+        :type context: :class:`~sgtk.Context`
+
+        :returns: Name of the environment to use or ``None`` is there was no match.
+        :rtype: str
+        """
+        # Must have an entity
         if context.entity is None:
             return None
 

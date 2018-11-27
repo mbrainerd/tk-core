@@ -65,7 +65,7 @@ class Application(TankBundle):
                 sys.path.append(python_path)
 
     def __repr__(self):
-        return "<Sgtk App 0x%08x: %s, engine: %s>" % (id(self), self.name, self.engine)
+        return "<Sgtk App 0x%08x: %s, engine: %s>" % (id(self), self.instance_name, self.engine)
 
     def _destroy_frameworks(self):
         """
@@ -190,8 +190,8 @@ class Application(TankBundle):
         # our own context property.
         from .engine import get_environment_from_context
         new_env = get_environment_from_context(self.sgtk, new_context)
-        new_descriptor = new_env.get_app_descriptor(self.engine.name, self.instance_name)
-        new_settings = new_env.get_app_settings(self.engine.name, self.instance_name)
+        new_descriptor = new_env.get_app_descriptor(self.engine.instance_name, self.instance_name)
+        new_settings = new_env.get_app_settings(self.engine.instance_name, self.instance_name)
 
         # Make sure that the engine in the target context is the same as the current
         # engine. In the case of git or app_store descriptors, the equality check
@@ -254,7 +254,7 @@ class Application(TankBundle):
     ##########################################################################################
     # public methods
 
-    def get_setting_for_env(key, env, default=None):
+    def get_setting_for_env(self, key, env, default=None):
         """
         Get a value from the item's settings given the specified environment::
 
