@@ -259,7 +259,7 @@ class Engine(TankBundle):
 
     def __repr__(self):
         return "<Sgtk Engine 0x%08x: %s, env: %s>" % (id(self),  
-                                                      self.name, 
+                                                      self.instance_name, 
                                                       self.env.name)
 
     ##########################################################################################
