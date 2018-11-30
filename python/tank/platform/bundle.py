@@ -28,7 +28,13 @@ from .errors import TankContextChangeNotSupportedError, TankCurrentModuleNotFoun
 from . import constants
 from . import validation
 from .import_stack import ImportStack
-from .settings import *
+from .settings import (
+    Setting,
+    create_setting,
+    create_settings,
+    expand_config_path,
+    resolve_setting_expression
+)
 
 core_logger = LogManager.get_logger(__name__)
 
