@@ -26,7 +26,9 @@ from ..log import LogManager
 from ..errors import TankError, TankNoDefaultValueError
 from .errors import TankContextChangeNotSupportedError, TankCurrentModuleNotFoundError
 from . import constants
+from . import validation
 from .import_stack import ImportStack
+from .settings import *
 
 core_logger = LogManager.get_logger(__name__)
 
@@ -58,10 +60,6 @@ class TankBundle(object):
         self._env = env
         self._descriptor = descriptor
         self._context = context
-        self._settings = settings
-
-        # avoid cyclic imports
-        from . import validation
 
         # make sure the current operating system platform is supported
         validation.validate_platform(descriptor)
@@ -72,16 +70,13 @@ class TankBundle(object):
             # context until you actually run a command, so disable the validation.
             validation.validate_context(descriptor, context)
 
-        # Validate the settings for the bundle
-        validation.validate_settings(
-            self.__instance_name,
-            self.__tk,
-            self._context,
-            self._descriptor.configuration_schema,
-            self._settings,
-            True,
-            self
-        )
+        # Create and validate the settings for the bundle
+        self._settings = create_settings(
+                            settings,
+                            self._descriptor.configuration_schema,
+                            self,
+                            True
+                        )
 
         # emit a bundle started event
         tk.execute_core_hook(constants.TANK_BUNDLE_INIT_HOOK_NAME, bundle=self)
@@ -548,20 +543,6 @@ class TankBundle(object):
         """
         return self.__resolve_setting_value(self._settings, key, default)
 
-    def get_setting_for_env(self, key, env, default=None):
-        """
-        Get a value from the item's settings given the specified environment::
-
-            >>> app.get_setting_for_env('entity_types', env_obj)
-            ['Sequence', 'Shot', 'Asset', 'Task']
-
-        :param key: config name
-        :param env: The :class:`~Environment` object
-        :param default: default value to return
-        :returns: Value from the specified environment configuration
-        """
-        raise NotImplementedError
-
     def get_template(self, key):
         """
         Returns a template object for a particular template setting in the Framework configuration.
@@ -574,21 +555,6 @@ class TankBundle(object):
         :returns: :class:`~Template` object
         """
         template_name = self.get_setting(key)
-        return self.get_template_by_name(template_name)
-
-    def get_template_for_env(self, key, env):
-        """
-        Returns a template object for a particular template setting in the Framework configuration.
-        This method will look at the app configuration, determine which template is being referred to 
-        in the setting, go into the main platform Template API and fetch that particular template object.
-    
-        This is a convenience method. Shorthand for ``self.sgtk.templates[ self.get_setting(key) ]``.
-
-        :param key: Setting to retrieve template for
-        :param env: The :class:`~Environment` object
-        :returns: :class:`~Template` object
-        """
-        template_name = self.get_setting_for_env(key, env)
         return self.get_template_by_name(template_name)
     
     def get_template_by_name(self, template_name):
@@ -1000,34 +966,7 @@ class TankBundle(object):
         
         :returns: An expanded value.
         """
-        # make sure to replace the `{engine_name}` token if it exists.
-        if constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in value:
-            engine_name = self._get_engine_instance_name()
-            if not engine_name:
-                raise TankError(
-                    "No engine could be determined for value '%s'. "
-                    "The setting could not be resolved." % (value,))
-            else:
-                value = value.replace(
-                    constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN,
-                    engine_name,
-                )
-
-        # make sure to replace the `{env_name}` token if it exists.
-        if constants.TANK_HOOK_ENV_REFERENCE_TOKEN in value:
-            env_name = self.env.name
-            if not env_name:
-                raise TankError(
-                    "No environment could be determined for value '%s'. "
-                    "The setting could not be resolved." % (value,))
-            else:
-                value = value.replace(
-                    constants.TANK_HOOK_ENV_REFERENCE_TOKEN,
-                    env_name,
-                )
-
-        return value
-
+        return resolve_setting_expression(value, self._get_engine_instance_name(), self.env.name)
 
     def expand_path(self, path):
         """
@@ -1037,85 +976,7 @@ class TankBundle(object):
         
         :returns: An expanded absolute path to the specified file.
         """
-
-        # make sure to replace `{engine_name}`/`{env_name}` tokens if they exist.
-        path = self.resolve_setting_expression(path)
-
-        if path.startswith("{self}"):
-            # bundle local reference
-            parent_folder = self.disk_location
-            path = path.replace("{self}", parent_folder)
-            path = path.replace("/", os.path.sep)
-
-        elif path.startswith("{config}"):
-            # config dir reference
-            parent_folder = self.tank.pipeline_configuration.get_config_location()
-            path = path.replace("{config}", parent_folder)
-            path = path.replace("/", os.path.sep)
-
-        elif path.startswith("{engine}"):
-            # look for the hook in the currently running engine
-            try:
-                engine = self._get_engine()
-            except AttributeError:
-                raise TankError(
-                    "%s: Could not determine the current "
-                    "engine. Unable to resolve path for: '%s'" %
-                    (self, path)
-                )
-            parent_folder = engine.disk_location
-            path = path.replace("{engine}", parent_folder)
-            path = path.replace("/", os.path.sep)
-        
-        elif path.startswith("{$") and "}" in path:
-            # environment variable: {$HOOK_PATH}/path/to/foo.py
-            env_var = re.match("^\{\$([^\}]+)\}", path).group(1)
-            if env_var not in os.environ:
-                raise TankError("%s: This path is referring to the configuration value '%s', "
-                                "but no environment variable named '%s' can be "
-                                "found!" % (self, path, env_var))
-            env_var_value = os.environ[env_var]
-            path = path.replace("{$%s}" % env_var, env_var_value)
-            path = path.replace("/", os.path.sep)        
-        
-        elif path.startswith("{") and "}" in path:
-            # bundle instance (e.g. '{tk-framework-perforce_v1.x.x}/foo/bar.py' )
-            # first find the bundle instance
-            instance = re.match("^\{([^\}]+)\}", path).group(1)
-            # for now, only look at framework instance names. Later on,
-            # if the request ever comes up, we could consider extending
-            # to supporting app instances etc. However we would need to
-            # have some implicit rules for handling ambiguity since
-            # there can be multiple items (engines, apps etc) potentially
-            # having the same instance name.
-            fw_instances = self._env.get_frameworks()
-            if instance not in fw_instances:
-                raise TankError("%s: This path is referring to the configuration value '%s', "
-                                "but no framework with instance name '%s' can be found in the currently "
-                                "running environment. The currently loaded frameworks "
-                                "are %s." % (self, path, instance, ", ".join(fw_instances)))
-
-            fw_desc = self._env.get_framework_descriptor(instance)
-            if not(fw_desc.exists_local()):
-                raise TankError("%s: This path is referring to the configuration value '%s', "
-                                "but the framework with instance name '%s' does not exist on disk. Please run "
-                                "the tank cache_apps command." % (self, path, instance))
-            
-            # get path to framework on disk
-            parent_folder = fw_desc.get_path()
-            # create the path to the file
-            path = path.replace("{%s}" % instance, parent_folder)
-            path = path.replace("/", os.path.sep)
-
-        else:
-            # this is a config path. Stored on the form
-            # foo/bar/baz.png, we should translate that into
-            # PROJECT_PATH/tank/config/foo/bar/baz.png
-            parent_folder = self.tank.pipeline_configuration.get_config_location()
-            path = os.path.join(parent_folder, path)
-            path = path.replace("/", os.path.sep)
-
-        return path
+        return expand_config_path(self.sgtk, path, self)
 
     def __resolve_hook_expression(self, settings_name, hook_expression):
         """
@@ -1230,9 +1091,9 @@ class TankBundle(object):
         # An old use case exists whereby the key does not exist in the
         # config schema so we need to account for that.
         schema = self._descriptor.configuration_schema.get(key, None)
-        return resolve_setting_value(
-            self.__tk, self._get_engine_name(), schema, settings, key, default, self
-        )
+        setting = settings.get(key, create_setting(key, default, schema, self))
+
+        return setting.value
 
     def _get_engine_name(self):
         """
@@ -1273,163 +1134,6 @@ class TankBundle(object):
         return engine_name
 
 
-def _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate):
-    """
-    Recursive post-processing of settings values
-
-    :param tk: Toolkit API instance
-    :param key: setting name
-    :param value: Input value to resolve using specified schema
-    :param schema: A schema defining types and defaults for settings.
-    :param bundle: The bundle object. This is only used in the case
-        the value argument is a string starting with "hook:", which
-        then requires the use of a core hook to resolve the setting.
-        If no bundle is given and this situation arises, then the
-        current bundle, as reported by sgtk.platform.current_bundle,
-        will be used.
-
-    :returns: Processed value for key setting
-    """
-    if not value:
-        return value
-
-    schema = schema or {}
-    settings_type = schema.get("type")
-
-    # first check for procedural overrides where instead of getting a value,
-    # directly from the config, we call a hook to evaluate a config value
-    # at runtime:
-    if isinstance(value, basestring) and value.startswith("hook:"):
-        # handle the special form where the value is computed in a hook.
-        #
-        # if the template parameter is on the form
-        # a) hook:foo_bar
-        # b) hook:foo_bar:testing1:testing2
-        #
-        # The following hook will be called
-        # a) core hook 'foo_bar' with parameters []
-        # b) core hook 'foo_bar' with parameters ['testing1', 'testing2']
-        #
-        chunks = value.split(":")
-        hook_name = chunks[1]
-        params = chunks[2:]
-        value = tk.execute_core_hook(
-            hook_name,
-            setting=key,
-            settings_type=settings_type,
-            bundle_obj=bundle,
-            extra_params=params
-        )
-
-    if isinstance(value, basestring):
-        # Expand any internal variables (i.e. engine_name, env_name)
-        if bundle:
-            value = bundle.resolve_setting_expression(value)
-
-        # Expand any environment variables
-        value = os.path.expandvars(os.path.expanduser(value))
-
-        # Check if user-defined "default" and resolve
-        if value == constants.TANK_BUNDLE_DEFAULT_HOOK_SETTING:
-            value = resolve_default_value(
-                schema,
-                default=None,
-                engine_name=engine_name, 
-                raise_if_missing=validate
-            )
-
-    if settings_type == "list":
-        processed_val = []
-        value_schema = schema.get("values", {})
-        for i, x in enumerate(value):
-            try:
-                processed_val.append(
-                    _post_process_settings_r(
-                        tk=tk,
-                        key=key,
-                        value=x,
-                        schema=value_schema,
-                        engine_name=engine_name,
-                        bundle=bundle,
-                        validate=validate
-                    )
-                )
-            except Exception as e:
-                e.args = (e.args[0], "[%d]"%i) + e.args[1:]
-                raise
-
-    elif settings_type == "dict":
-        processed_val = dict()
-        sub_items = dict()
-
-        # If there is an item list, then we are dealing with a strict definition
-        items = schema.get("items")
-        if items:        
-            for sub_key, value_schema in items.iteritems():
-
-                # First check if the user has defined a value for this key
-                if sub_key in value:
-                    sub_value = value[sub_key]
-
-                # Otherwise attempt to get the default value
-                else:
-                    try:
-                        sub_value = resolve_default_value(
-                            value_schema,
-                            default=None,
-                            engine_name=engine_name, 
-                            raise_if_missing=validate
-                        )
-                    # No user defined or default value!
-                    except Exception as e:
-                        e.args += (sub_key,)
-                        raise
-
-                try:
-                    # Recursively process each of the sub items
-                    processed_val[sub_key] = _post_process_settings_r(
-                        tk=tk,
-                        key=sub_key,
-                        value=sub_value,
-                        schema=value_schema,
-                        engine_name=engine_name,
-                        bundle=bundle,
-                        validate=validate
-                    )
-                except Exception as e:
-                    e.args += (sub_key,)
-                    raise
-
-        # No item list defined, so just process user-defined items
-        else:
-            value_schema = schema.get("values", {})
-            for sub_key, sub_value in value.iteritems():
-                try:
-                    processed_val[sub_key] = _post_process_settings_r(
-                        tk=tk,
-                        key=sub_key,
-                        value=sub_value,
-                        schema=value_schema,
-                        engine_name=engine_name,
-                        bundle=bundle,
-                        validate=validate
-                    )
-                except Exception as e:
-                    e.args += (sub_key,)
-                    raise
-
-    elif settings_type == "config_path":
-        # Expand any "config_path" values
-        if bundle:
-            processed_val = bundle.expand_path(value)
-
-    else:
-        # pass-through
-        processed_val = value
-
-    return processed_val
-
-
 def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundle=None, validate=False):
     """
     Resolve a setting value.  Exposed to allow values to be resolved for
@@ -1450,37 +1154,19 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
 
     :returns: Resolved value of input setting key
     """
-    try:
-        from .util import current_bundle
-        bundle = bundle or current_bundle()
-    except TankCurrentModuleNotFoundError:
-        pass
+    setting_value = settings.get(key)
+    if isinstance(setting_value, Setting):
+        setting_value = setting_value.value
 
-    # Get the value for the supplied key
-    if key in settings:
-        # Value provided by the settings
-        value = settings[key]
+    if setting_value is None:
+        setting_value = default
 
-    elif schema:
-        # Resolve a default value from the schema. This checks various
-        # legacy default value forms in the schema keys.
-        value = resolve_default_value(schema, default, engine_name)
+    setting = create_setting(key, setting_value, schema, bundle, tk, engine_name)
 
-    else:
-        # Nothing in the settings, no schema, fallback to the supplied
-        # default value
-        value = default
+    if validate:
+        setting.validate()
 
-    # We have a value of some kind and a schema. Allow the post
-    # processing code to further resolve the value.
-    try:
-        value = _post_process_settings_r(tk, key, value, schema, engine_name, bundle, validate)
-    except Exception as e:
-        key_name = ".".join((key,) + e.args[1:])
-        err_msg = "Could not determine settings value for key: '%s' - %s" % (key_name, e.args[0])
-        raise type(e), type(e)(err_msg), sys.exc_info()[2]
-
-    return value
+    return setting.value
 
 def resolve_default_value(
         schema, default=None, engine_name=None, raise_if_missing=False
@@ -1498,88 +1184,12 @@ def resolve_default_value(
         default value is found.
     :return: The resolved default value
     """
-    default_missing = False
+    setting = create_setting(None, default, schema, engine_name=engine_name)
 
-    # Engine-specific default value keys are allowed (ex:
-    # "default_value_tk-maya"). If an engine name was supplied,
-    # build the corresponding engine-specific default value key.
-    engine_default_key = None
-    if engine_name:
-        engine_default_key = "%s_%s" % (
-            constants.TANK_SCHEMA_DEFAULT_VALUE_KEY,
-            engine_name
-        )
-
-    # Now look for a default value to use.
-    if engine_default_key and engine_default_key in schema:
-        # An engine specific key exists, use it.
-        value = schema[engine_default_key]
-    elif constants.TANK_SCHEMA_DEFAULT_VALUE_KEY in schema:
-        # The standard default value key
-        value = schema[constants.TANK_SCHEMA_DEFAULT_VALUE_KEY]
-    else:
-        # No default value found, fall back on the supplied default.
-        default_missing = True
-        value = default
-
-    # ---- type specific checks
-
-    setting_type = schema.get("type")
-
-    # special case handling for list params - check if
-    # allows_empty is True, in that case set default value to []
-    if setting_type == "list" and value is None and schema.get("allows_empty"):
-        value = []
-
-    # special case handling for dict params - check if
-    # allows_empty is True, in that case set default value to {}
-    if setting_type == "dict" and value is None and schema.get("allows_empty"):
-        value = {}
-
-    # special case for template params. if allows_empty is True, then we allow
-    # a value of None. make sure we don't raise in the "raise_if_missing" case.
-    if setting_type == "template" and value is None and schema.get("allows_empty"):
-        value = None
-        default_missing = False
-
-    if setting_type == "hook":
-        value = _resolve_default_hook_value(value, engine_name)
-
-    if value is None and default_missing and raise_if_missing:
+    if setting.value is None and setting.type != "template" and raise_if_missing:
         # calling code requested an exception if no default value exists.
         # the value may have been overridden by one of the special cases above,
         # so only raise if the value is None.
         raise TankNoDefaultValueError("No default value found.")
 
-    return value
-
-
-def _resolve_default_hook_value(value, engine_name=None):
-    """
-    Given a hook value, evaluate any special keys or legacy values.
-
-    :param value: The unresolved default value for the hook
-    :param engine_name: The name of the engine for engine-specific hook values
-    :return: The resolved hook default value.
-    """
-
-    if not value:
-        return value
-
-    # Replace the engine reference token if it exists and there is an engine.
-    # In some instances, such as during engine startup, as apps are being
-    # validated, the engine instance name may not be available. This might be ok
-    # since hooks are actually evaluated just before they are executed. We'll
-    # simply return the value with the engine name token intact.
-    if engine_name and constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN in value:
-        value = value.replace(
-            constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN, engine_name)
-
-    if not value.startswith("{"):
-        # This is an old-style hook. In order to maintain backward
-        #  compatibility, return the value in the new style.
-        value = "{self}/%s.py" % (value,)
-
-    # the remaining tokens ({self}, {config}, {tk-framework-...}) will be
-    # resolved at runtime just before the hook is executed.
-    return value
+    return setting.value

@@ -42,6 +42,7 @@ from ..util.metrics import MetricsDispatcher
 from ..log import LogManager
 
 from . import constants
+from . import settings
 from . import validation
 from . import events
 from . import qt
@@ -794,7 +795,7 @@ class Engine(TankBundle):
             err_msg = "Engine %s cannot change context - %s" % str(e)
             raise TankContextChangeNotSupportedError(err_msg)
 
-        new_settings = new_env.get_engine_settings(self.instance_name)
+        new_raw_settings = new_env.get_engine_settings(self.instance_name)
 
         # Make sure that the engine in the target context is the same as the current
         # engine. In the case of git or app_store descriptors, the equality check
@@ -819,16 +820,13 @@ class Engine(TankBundle):
             # context until you actually run a command, so disable the validation.
             validation.validate_context(new_descriptor, new_context)
 
-        # Validate the new settings for the application
-        validation.validate_settings(
-            self.instance_name,
-            self.sgtk,
-            new_context,
-            new_descriptor.configuration_schema,
-            new_settings,
-            True,
-            self
-        )
+        # Create and validate the settings for the engine
+        new_settings = settings.create_settings(
+                            new_raw_settings,
+                            new_descriptor.configuration_schema,
+                            self,
+                            True
+                        )
 
         self.log_debug("Changing from %r to %r." % (old_context, new_context))
 
@@ -868,21 +866,6 @@ class Engine(TankBundle):
 
     ##########################################################################################
     # public methods
-
-    def get_setting_for_env(self, key, env, default=None):
-        """
-        Get a value from the item's settings given the specified environment::
-
-            >>> eng.get_setting_for_env('entity_types', env_obj)
-            ['Sequence', 'Shot', 'Asset', 'Task']
-
-        :param key: config name
-        :param env: The :class:`~Environment` object
-        :param default: default value to return
-        :returns: Value from the specified environment configuration
-        """
-        eng_settings = env.get_engine_settings(self.instance_name)
-        return self.get_setting_from(eng_settings, key, default)
 
     def show_busy(self, title, details):
         """
@@ -2941,12 +2924,12 @@ def find_app_settings(engine_name, app_name, tk, context, engine_instance_name=N
               application name and settings for any matching
               applications that are found and that have valid
               settings
-    """ 
+    """     
     app_settings = []
     
     # get the environment via the pick_environment hook
     env = get_environment_from_context(tk, context)
-    
+
     # now find all engines whose names match the engine_name:
     for eng in env.get_engines():
         eng_desc = env.get_engine_descriptor(eng)
@@ -2982,7 +2965,7 @@ def find_app_settings(engine_name, app_name, tk, context, engine_instance_name=N
                 if supported_engines and engine_name not in supported_engines:
                     raise TankError("The app could not be loaded since it only supports "
                                     "the following engines: %s" % supported_engines)
-
+                
             except TankError:
                 # ignore any Tank exceptions to skip invalid apps
                 continue

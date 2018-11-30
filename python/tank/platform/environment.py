@@ -139,51 +139,6 @@ class Environment(object):
 
         return False
 
-    def __process_settings(self, settings, engine_name=""):
-        """
-        Process settings values before returning to dict
-        """
-        processed_settings = {}
-        for name, setting in settings.iteritems():
-            processed_settings[name] = self.__process_setting_r(setting, engine_name)
-
-        return processed_settings
-
-    def __process_setting_r(self, setting, engine_name=""):
-        """
-        Scans data for @refs and attempts to replace based on lookup data
-        """
-        # default is no processing
-        processed_val = setting
-
-        if isinstance(setting, list):
-            processed_val = []
-            for x in setting:
-                processed_val.append(self.__process_setting_r(x, engine_name))
-
-        elif isinstance(setting, dict):
-            processed_val = {}
-            for (k,v) in setting.iteritems():
-                processed_val[k] = self.__process_setting_r(v, engine_name)
-
-        elif isinstance(setting, basestring):
-            # Replace the `{engine_name}` token if it exists.
-            processed_val = processed_val.replace(
-                                    constants.TANK_HOOK_ENGINE_REFERENCE_TOKEN,
-                                    engine_name
-                            )
-
-            # Replace the `{env_name}` token if it exists.
-            processed_val = processed_val.replace(
-                                    constants.TANK_HOOK_ENV_REFERENCE_TOKEN,
-                                    self.name
-                            )
-
-            # Expand any environment variables
-            processed_val = os.path.expandvars(os.path.expanduser(processed_val))
-
-        return processed_val
-
     def __process_apps(self, engine, data):
         """
         Populates the __app_settings dict
@@ -193,7 +148,7 @@ class Environment(object):
         # iterate over the apps dict
         for app, app_settings in data.items():
             if not self.__is_item_disabled(app_settings):
-                self.__app_settings[(engine, app)] = self.__process_settings(app_settings, engine)
+                self.__app_settings[(engine, app)] = app_settings
 
     def __process_engines(self, engines):
         """
@@ -207,7 +162,7 @@ class Environment(object):
             if not self.__is_item_disabled(engine_settings):
                 engine_apps = engine_settings.pop('apps')
                 self.__process_apps(engine, engine_apps)
-                self.__engine_settings[engine] = self.__process_settings(engine_settings, engine)
+                self.__engine_settings[engine] = engine_settings
 
     def __process_frameworks(self, frameworks):
         """
@@ -219,7 +174,7 @@ class Environment(object):
         for fw, fw_settings in frameworks.items():
             # Check for framework disabled
             if not self.__is_item_disabled(fw_settings):
-                self.__framework_settings[fw] = self.__process_settings(fw_settings)
+                self.__framework_settings[fw] = fw_settings
 
     def __extract_locations(self):
         """
