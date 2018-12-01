@@ -112,18 +112,15 @@ class Setting(object):
         Allow Setting objects to be deepcopied - Note that the class
         members are _never_ copied
         """
-        name_copy = copy.deepcopy(self._name, memo)
         value_copy = copy.deepcopy(self._value, memo)
         schema_copy = copy.deepcopy(self._schema, memo)
-        engine_name_copy = copy.deepcopy(self._engine_name, memo)
-
         return self.__class__(
-            name_copy,
+            self._name,
             value_copy,
             schema_copy,
             self._bundle,
             self._tk,
-            engine_name_copy
+            self._engine_name
         )
 
     def _process_value(self, value, default=None):
