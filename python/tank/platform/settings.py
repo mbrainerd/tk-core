@@ -90,6 +90,42 @@ class Setting(object):
         self._default_value = self._process_default_value()
         self._value, self._children = self._process_value(value, self._default_value)
 
+    def __repr__(self):
+        return "<%s %s: %s>" % (self.__class__.__name__, self._name, self.value)
+
+    def __str__(self):
+        return str(self.value)
+
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.value == other.value
+        return self.value == other
+
+    def __ne__(self, other):
+        return not (self == other)
+
+    def __contains__(self, key):
+        return key in self.value
+
+    def __deepcopy__(self, memo):
+        """
+        Allow Setting objects to be deepcopied - Note that the class
+        members are _never_ copied
+        """
+        name_copy = copy.deepcopy(self._name, memo)
+        value_copy = copy.deepcopy(self._value, memo)
+        schema_copy = copy.deepcopy(self._schema, memo)
+        engine_name_copy = copy.deepcopy(self._engine_name, memo)
+
+        return self.__class__(
+            name_copy,
+            value_copy,
+            schema_copy,
+            self._bundle,
+            self._tk,
+            engine_name_copy
+        )
+
     def _process_value(self, value, default=None):
         """
         """
@@ -272,23 +308,6 @@ class Setting(object):
             processed_val = value
 
         return processed_val
-
-    def __repr__(self):
-        return "<%s %s: %s>" % (self.__class__.__name__, self._name, self.value)
-
-    def __str__(self):
-        return str(self.value)
-
-    def __eq__(self, other):
-        if isinstance(other, self.__class__):
-            return self.value == other.value
-        return self.value == other
-
-    def __ne__(self, other):
-        return not (self == other)
-
-    def __contains__(self, key):
-        return key in self.value
 
     @property
     def default_value(self):
