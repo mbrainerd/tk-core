@@ -280,13 +280,12 @@ class Setting(object):
         return str(self.value)
 
     def __eq__(self, other):
-        if other is self:
-            return True
-        if other is None:
-            return False
-        if isinstance(other, Setting):
+        if isinstance(other, self.__class__):
             return self.value == other.value
         return self.value == other
+
+    def __ne__(self, other):
+        return not (self == other)
 
     def __contains__(self, key):
         return key in self.value
