@@ -5,6 +5,9 @@ import collections
 from . import constants
 from . import validation
 from .errors import TankCurrentModuleNotFoundError
+from ..log import LogManager
+
+core_logger = LogManager.get_logger(__name__)
 
 def create_settings(settings, schema, bundle=None, validate=False):
     """
@@ -82,7 +85,7 @@ class Setting(object):
         self._bundle = bundle
         self._engine_name = engine_name
         self._name = name
-        self._schema = schema
+        self._schema = schema or {}
         self._tk = tk
         self._type = self._schema.get("type")
         self._description = self._schema.get("description")
@@ -169,14 +172,14 @@ class Setting(object):
                 extra_params=params
             )
 
-        if self._type == "list":
+        if isinstance(value, list):
             processed_val = []
             children = []
     
             value_schema = self._schema.get("values")
             for i, sub_value in enumerate(value):
                 value_name = "%s[%s]" % (self._name, str(i))
-                setting = create_setting(
+                setting = ListSetting(
                     value_name,
                     sub_value,
                     value_schema,
@@ -185,10 +188,10 @@ class Setting(object):
                     self._engine_name
                 )
 
-                processed_val.append(setting.value)
+                processed_val.append(setting.raw_value)
                 children.append(setting)
 
-        elif self._type == "dict":
+        elif isinstance(value, dict):
             processed_val = {}
             children = {}
 
@@ -198,7 +201,7 @@ class Setting(object):
                 for sub_key, value_schema in items.iteritems():
                     value_name = "%s[\"%s\"]" % (self._name, sub_key)
                     sub_value = value.get(sub_key)
-                    setting = create_setting(
+                    setting = DictSetting(
                         value_name,
                         sub_value,
                         value_schema,
@@ -207,7 +210,7 @@ class Setting(object):
                         self._engine_name
                     )
 
-                    processed_val[sub_key] = setting.value
+                    processed_val[sub_key] = setting.raw_value
                     children[sub_key] = setting
 
             # Else just process the user-defined items
@@ -215,7 +218,7 @@ class Setting(object):
                 value_schema = self._schema.get("values")
                 for sub_key, sub_value in value.iteritems():
                     value_name = "%s.%s" % (self._name, sub_key)
-                    setting = create_setting(
+                    setting = DictSetting(
                         value_name,
                         sub_value,
                         value_schema,
@@ -224,17 +227,19 @@ class Setting(object):
                         self._engine_name
                     )
 
-                    processed_val[sub_key] = setting.value
+                    processed_val[sub_key] = setting.raw_value
                     children[sub_key] = setting
 
-        elif self._type == "config_path":
-            # Expand any "config_path" values
-            processed_val = expand_config_path(self._tk, value, self._bundle)
+        elif isinstance(value, basestring):
+            processed_val = value
+            if self._type == "config_path":
+                # Expand any "config_path" values
+                processed_val = expand_config_path(self._tk, processed_val, self._bundle)
 
-        elif self._type == "hook" and not value.startswith("{"):
-            # This is an old-style hook. In order to maintain backwards
-            # compatibility, return the value in the new style.
-            processed_val = "{self}/%s.py" % (value,)
+            elif self._type == "hook" and not processed_val.startswith("{"):
+                # This is an old-style hook. In order to maintain backwards
+                # compatibility, return the value in the new style.
+                processed_val = "{self}/%s.py" % (processed_val,)
 
         else:
             #pass-through

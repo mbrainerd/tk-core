@@ -1162,7 +1162,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     """
     setting_value = settings.get(key)
     if isinstance(setting_value, Setting):
-        setting_value = setting_value.value
+        setting_value = setting_value.raw_value
 
     if setting_value is None:
         setting_value = default
@@ -1191,11 +1191,15 @@ def resolve_default_value(
     :return: The resolved default value
     """
     setting = create_setting(None, default, schema, engine_name=engine_name)
+    default_value = setting.default_value
+    if default_value is None:
+        # If no default value found in the schema, use the passed-in value
+        default_value = setting.value
 
-    if setting.value is None and setting.type != "template" and raise_if_missing:
+    if default_value is None and setting.type != "template" and raise_if_missing:
         # calling code requested an exception if no default value exists.
         # the value may have been overridden by one of the special cases above,
         # so only raise if the value is None.
         raise TankNoDefaultValueError("No default value found.")
 
-    return setting.value
+    return default_value
