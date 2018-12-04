@@ -2900,11 +2900,11 @@ def _start_engine(engine_name, tk, old_context, new_context):
         # Instantiate the engine
         engine = class_obj(tk, engine_name, descriptor, new_context, env, settings)
 
-        # start the engine
-        engine.start()
-
         # register this engine as the current engine
         set_current_engine(engine)
+
+        # start the engine
+        engine.start()
 
     return engine
 
@@ -3021,11 +3021,11 @@ def start_shotgun_engine(tk, entity_type, context):
     class_obj = load_plugin(plugin_file, Engine)
     engine = class_obj(tk, constants.SHOTGUN_ENGINE_NAME, descriptor, context, env, settings)
 
-    # start the engine
-    engine.start()
-
     # register this engine as the current engine
     set_current_engine(engine)
+
+    # start the engine
+    engine.start()
 
     return engine
 

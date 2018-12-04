@@ -53,6 +53,10 @@ class TankMissingTemplateError(TankError):
     Exception that can be raised when a template is required but none is found.
     """
 
+class TankMissingSchemaError(TankError):
+    """
+    Exception that can be raised when a schema is required but none is found.
+    """
 
 class TankHookMethodDoesNotExistError(TankError):
     """

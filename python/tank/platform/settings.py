@@ -13,10 +13,14 @@ def create_settings(settings, schema, bundle=None, validate=False):
     """
     """
     settings_objs = {}
-    for setting_name, setting_schema in schema.iteritems():
-        setting_value = settings.get(setting_name)
+
+    # Allow for non-schema'd setting values
+    setting_keys = set(settings.keys() + schema.keys())
+    for setting_key in setting_keys:
+        setting_value = settings.get(setting_key)
+        setting_schema = schema.get(setting_key)
         setting = create_setting(
-            setting_name,
+            setting_key,
             setting_value,
             setting_schema,
             bundle
@@ -24,7 +28,7 @@ def create_settings(settings, schema, bundle=None, validate=False):
         if validate:
             setting.validate()
 
-        settings_objs[setting_name] = setting
+        settings_objs[setting_key] = setting
 
     return settings_objs
 
@@ -33,9 +37,9 @@ def create_setting(name, value, schema, bundle=None, tk=None, engine_name=None):
     """
     schema = schema or {}
     setting_type = schema.get("type")
-    if setting_type == "list":
+    if isinstance(value, list) or setting_type == "list":
         return ListSetting(name, value, schema, bundle, tk, engine_name)
-    elif setting_type == "dict":
+    elif isinstance(value, dict) or setting_type == "dict":
         return DictSetting(name, value, schema, bundle, tk, engine_name)
     else:
         return Setting(name, value, schema, bundle, tk, engine_name)
@@ -179,7 +183,7 @@ class Setting(object):
             value_schema = self._schema.get("values")
             for i, sub_value in enumerate(value):
                 value_name = "%s[%s]" % (self._name, str(i))
-                setting = ListSetting(
+                setting = create_setting(
                     value_name,
                     sub_value,
                     value_schema,
@@ -201,7 +205,7 @@ class Setting(object):
                 for sub_key, value_schema in items.iteritems():
                     value_name = "%s[\"%s\"]" % (self._name, sub_key)
                     sub_value = value.get(sub_key)
-                    setting = DictSetting(
+                    setting = create_setting(
                         value_name,
                         sub_value,
                         value_schema,
@@ -218,7 +222,7 @@ class Setting(object):
                 value_schema = self._schema.get("values")
                 for sub_key, sub_value in value.iteritems():
                     value_name = "%s.%s" % (self._name, sub_key)
-                    setting = DictSetting(
+                    setting = create_setting(
                         value_name,
                         sub_value,
                         value_schema,
