@@ -854,7 +854,7 @@ class TankBundle(object):
             #    default_value: maya_publish_file
             #
             resolved_hook_name = resolve_default_value(
-                manifest.get(settings_name), engine_name=engine_name)
+                manifest.get(settings_name), None, engine_name, self)
 
             # get the full path for the resolved hook name:
             if resolved_hook_name.startswith("{self}"):
@@ -1043,7 +1043,8 @@ class TankBundle(object):
             if settings_name:
                 default_value = resolve_default_value(
                     manifest.get(settings_name),
-                    engine_name=self._get_engine_name()
+                    engine_name=self._get_engine_name(),
+                    bundle=self
             )
 
             if default_value:  # possible not to have a default value!
@@ -1175,7 +1176,7 @@ def resolve_setting_value(tk, engine_name, schema, settings, key, default, bundl
     return setting.value
 
 def resolve_default_value(
-        schema, default=None, engine_name=None, raise_if_missing=False
+        schema, default=None, engine_name=None, bundle=None, raise_if_missing=False
     ):
     """
     Extract a default value from the supplied schema.
@@ -1190,7 +1191,7 @@ def resolve_default_value(
         default value is found.
     :return: The resolved default value
     """
-    setting = create_setting(None, default, schema, engine_name=engine_name)
+    setting = create_setting(None, default, schema, bundle, engine_name=engine_name)
     default_value = setting.default_value
     if default_value is None:
         # If no default value found in the schema, use the passed-in value

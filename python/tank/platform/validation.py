@@ -16,7 +16,13 @@ import os
 import sys
 
 from . import constants
-from ..errors import TankError, TankNoDefaultValueError, TankMissingTemplateError
+from ..errors import (
+    TankError,
+    TankNoDefaultValueError,
+    TankMissingSettingError,
+    TankMissingTemplateError,
+    TankMissingSchemaError
+)
 from ..template import TemplateString
 from ..util.version import is_version_older, is_version_number
 from ..log import LogManager
@@ -318,7 +324,7 @@ class _SchemaValidator:
 
     def __init__(self, display_name, schema):
         self._display_name = display_name
-        self._schema = schema
+        self._schema = schema or {}
     
     def validate(self):
         for settings_key in self._schema:
@@ -330,13 +336,18 @@ class _SchemaValidator:
             
     def __validate_schema_type(self, settings_key, data_type):
         if not data_type:
-            raise TankError("Missing type in schema '%s' for '%s'!" % (settings_key, self._display_name))
+            params = (settings_key, self._display_name)
+            raise TankError("Missing type in schema '%s' for '%s'!" % params)
 
         if not data_type in constants.TANK_SCHEMA_VALID_TYPES:
             params = (data_type, settings_key, self._display_name)
             raise TankError("Invalid type '%s' in schema '%s' for '%s'!" % params)
 
     def __validate_schema_value(self, settings_key, schema):
+        if not schema:
+            params = (settings_key, self._display_name)
+            raise TankMissingSchemaError("Missing schema definition '%s' for '%s'!" % params)
+
         data_type = schema.get("type")
         self.__validate_schema_type(settings_key, data_type)
 
@@ -439,7 +450,7 @@ class _SettingsValidator:
         self._display_name = display_name
         self._tank_api = tank_api
         self._context = context
-        self._schema = schema
+        self._schema = schema or {}
         
     def validate(self, settings, skip_missing_templates=False):
         # first sanity check that the schema is correct
@@ -463,7 +474,12 @@ class _SettingsValidator:
     
     def validate_setting(self, setting_name, setting_value, skip_missing_templates=False):
         # first sanity check that the schema is correct
-        validate_setting_schema(self._display_name, self._schema, setting_name)
+        try:
+            validate_setting_schema(self._display_name, self._schema, setting_name)
+        except TankMissingSchemaError as e:
+            # Just warn if schema is missing
+            core_logger.warning(str(e))
+            return
 
         # Skip if this setting has been marked to skip_validation
         # This is sometimes valuable when a setting is evaluated in
@@ -529,7 +545,7 @@ class _SettingsValidator:
 
         if not allows_empty and not value:
             err_msg = "The list in setting '%s' for '%s' can not be empty!" % (settings_key, self._display_name)
-            raise TankError(err_msg)
+            raise TankMissingSettingError(err_msg)
 
         # Validate each list item against the schema in "values"
         for v in value:
@@ -541,7 +557,7 @@ class _SettingsValidator:
             # Check for required keys
             if not key in value:
                 params = (key, settings_key, self._display_name)
-                raise TankError("Missing required key '%s' in setting '%s' for '%s'" % params)
+                raise TankMissingSettingError("Missing required key '%s' in setting '%s' for '%s'" % params)
 
             # Validate the values
             self.__validate_settings_value(settings_key, value_schema, value[key], skip_missing_templates)

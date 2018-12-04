@@ -34,7 +34,7 @@ class ConfigItem(QtGui.QWidget):
         if current_engine():
             engine_name = current_engine().name
 
-        default_val = resolve_default_value(params, engine_name=engine_name)
+        default_val = resolve_default_value(params, None, engine_name, bundle)
         param_type = params.get("type")
 
         self.ui.name.setText("Setting %s" % setting)
