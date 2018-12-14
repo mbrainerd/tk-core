@@ -19,6 +19,7 @@ import copy
 
 from ..util.loader import load_plugin
 from . import constants
+from . import settings
 from . import validation
 from .framework import setup_frameworks
 from .bundle import TankBundle
@@ -191,7 +192,7 @@ class Application(TankBundle):
         from .engine import get_environment_from_context
         new_env = get_environment_from_context(self.sgtk, new_context)
         new_descriptor = new_env.get_app_descriptor(self.engine.instance_name, self.instance_name)
-        new_settings = new_env.get_app_settings(self.engine.instance_name, self.instance_name)
+        new_raw_settings = new_env.get_app_settings(self.engine.instance_name, self.instance_name)
 
         # Make sure that the engine in the target context is the same as the current
         # engine. In the case of git or app_store descriptors, the equality check
@@ -216,16 +217,13 @@ class Application(TankBundle):
             # context until you actually run a command, so disable the validation.
             validation.validate_context(new_descriptor, new_context)
 
-        # Validate the new settings for the application
-        validation.validate_settings(
-            self.instance_name,
-            self.sgtk,
-            new_context,
-            new_descriptor.configuration_schema,
-            new_settings,
-            True,
-            self
-        )
+        # Create and validate the settings for the application
+        new_settings = settings.create_settings(
+                            new_raw_settings,
+                            new_descriptor.configuration_schema,
+                            self,
+                            True
+                        )
 
         self.log_debug("Changing from %r to %r." % (old_context, new_context))
 
@@ -250,25 +248,6 @@ class Application(TankBundle):
             self.log_debug("Executing post_context_change for %r." % self)
             self.post_context_change(old_context, new_context)
             self.log_debug("Execution of post_context_change for app %r is complete." % self)
-
-    ##########################################################################################
-    # public methods
-
-    def get_setting_for_env(self, key, env, default=None):
-        """
-        Get a value from the item's settings given the specified environment::
-
-            >>> app.get_setting_for_env('entity_types', env_obj)
-            ['Sequence', 'Shot', 'Asset', 'Task']
-
-        :param key: config name
-        :param env: The :class:`~Environment` object
-        :param default: default value to return
-        :returns: Value from the specified environment configuration
-        """
-        app_settings = env.get_app_settings(self.engine.instance_name, self.instance_name)
-        return self.get_setting_from(app_settings, key, default)
-
 
     ##########################################################################################
     # event handling

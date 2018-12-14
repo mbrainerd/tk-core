@@ -22,6 +22,12 @@ from .software_launcher import create_engine_launcher
 # base classes to derive from
 from .application import Application
 from .engine import Engine
+from .settings import (
+    create_setting,
+    create_settings,
+    expand_config_path,
+    resolve_setting_expression
+)
 from .software_launcher import SoftwareLauncher, SoftwareVersion, LaunchInformation
 from .framework import Framework
 from .util import (
