@@ -824,9 +824,10 @@ class Engine(TankBundle):
         new_settings = settings.create_settings(
                             new_raw_settings,
                             new_descriptor.configuration_schema,
-                            self,
-                            True
+                            self
                         )
+        for setting in new_settings:
+            setting.validate(new_context)
 
         self.log_debug("Changing from %r to %r." % (old_context, new_context))
 

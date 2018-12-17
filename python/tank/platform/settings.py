@@ -364,14 +364,21 @@ class Setting(object):
         """
         return self.__resolve_value(self._value)
 
-    def validate(self):
+    @value.setter
+    def value(self, value):
+        """
+        Set the raw value of the setting
+        """
+        self._value, self._children = self._process_value(value, self._default_value)
+
+    def validate(self, context=None):
         """
         Validate the setting
         """
         validation.validate_setting(
             self._bundle.instance_name,
             self._bundle.sgtk,
-            self._bundle.context,
+            context or self._bundle.context,
             self._schema,
             self._name,
             self.value,
