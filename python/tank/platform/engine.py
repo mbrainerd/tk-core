@@ -795,7 +795,7 @@ class Engine(TankBundle):
             err_msg = "Engine %s cannot change context - %s" % str(e)
             raise TankContextChangeNotSupportedError(err_msg)
 
-        new_raw_settings = new_env.get_engine_settings(self.instance_name)
+        new_settings = new_env.get_engine_settings(self.instance_name)
 
         # Make sure that the engine in the target context is the same as the current
         # engine. In the case of git or app_store descriptors, the equality check
@@ -820,15 +820,6 @@ class Engine(TankBundle):
             # context until you actually run a command, so disable the validation.
             validation.validate_context(new_descriptor, new_context)
 
-        # Create and validate the settings for the engine
-        new_settings = settings.create_settings(
-                            new_raw_settings,
-                            new_descriptor.configuration_schema,
-                            self
-                        )
-        for setting in new_settings:
-            setting.validate(new_context)
-
         self.log_debug("Changing from %r to %r." % (old_context, new_context))
 
         with _CoreContextChangeHookGuard(self.sgtk, old_context, new_context):
@@ -847,7 +838,14 @@ class Engine(TankBundle):
             self._env = new_env
             self._descriptor = new_descriptor
             self._context = new_context
-            self._settings = new_settings
+
+            # Create and validate the settings for the engine
+            self._settings = settings.create_settings(
+                new_settings,
+                new_descriptor.configuration_schema,
+                self,
+                True
+            )
 
             # Make sure our frameworks are up and running properly for the new context.
             setup_frameworks(self, self, new_context, new_env, new_descriptor)

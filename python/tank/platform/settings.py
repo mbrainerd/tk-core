@@ -371,14 +371,14 @@ class Setting(object):
         """
         self._value, self._children = self._process_value(value, self._default_value)
 
-    def validate(self, context=None):
+    def validate(self):
         """
         Validate the setting
         """
         validation.validate_setting(
             self._bundle.instance_name,
             self._bundle.sgtk,
-            context or self._bundle.context,
+            self._bundle.context,
             self._schema,
             self._name,
             self.value,

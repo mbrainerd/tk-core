@@ -192,7 +192,7 @@ class Application(TankBundle):
         from .engine import get_environment_from_context
         new_env = get_environment_from_context(self.sgtk, new_context)
         new_descriptor = new_env.get_app_descriptor(self.engine.instance_name, self.instance_name)
-        new_raw_settings = new_env.get_app_settings(self.engine.instance_name, self.instance_name)
+        new_settings = new_env.get_app_settings(self.engine.instance_name, self.instance_name)
 
         # Make sure that the engine in the target context is the same as the current
         # engine. In the case of git or app_store descriptors, the equality check
@@ -217,15 +217,6 @@ class Application(TankBundle):
             # context until you actually run a command, so disable the validation.
             validation.validate_context(new_descriptor, new_context)
 
-        # Create and validate the settings for the application
-        new_settings = settings.create_settings(
-                            new_raw_settings,
-                            new_descriptor.configuration_schema,
-                            self
-                        )
-        for setting in new_settings:
-            setting.validate(new_context)
-
         self.log_debug("Changing from %r to %r." % (old_context, new_context))
 
         from .engine import _CoreContextChangeHookGuard
@@ -239,7 +230,14 @@ class Application(TankBundle):
             self._env = new_env
             self._descriptor = new_descriptor
             self._context = new_context
-            self._settings = new_settings
+
+            # Create and validate the settings for the application
+            self._settings = settings.create_settings(
+                new_settings,
+                new_descriptor.configuration_schema,
+                self,
+                True
+            )
 
             # Make sure our frameworks are up and running properly for the new context.
             setup_frameworks(self.engine, self, new_context, new_env, new_descriptor)
