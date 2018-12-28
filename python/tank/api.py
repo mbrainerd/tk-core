@@ -579,12 +579,6 @@ class Sgtk(object):
                 skip_keys.append(key)
             local_fields[key] = "*"
 
-        # replace any abstract key names with a wildcard as well...
-        abstract_key_names = [k.name for k in template.keys.values() if k.is_abstract]
-        for key in local_fields.keys():
-            if key in abstract_key_names:
-                local_fields[key] = "*"
-
         # iterate for each set of keys in the template:
         found_files = set()
         globs_searched = set()
@@ -592,6 +586,13 @@ class Sgtk(object):
             # create fields and skip keys with those that
             # are relevant for this key set:
             current_local_fields = local_fields.copy()
+
+            # replace any abstract key names in the current key set with a wildcard
+            abstract_key_names = [k.name for k in keys.values() if k.is_abstract]
+            for key in current_local_fields.keys():
+                if key in abstract_key_names:
+                    current_local_fields[key] = "*"
+
             current_ignore_types = copy.deepcopy(abstract_key_names)
             for key in skip_keys:
                 if key in keys:
