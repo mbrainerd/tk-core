@@ -722,6 +722,14 @@ class Sgtk(object):
 
             cur_fields = template.get_fields(found_file)
 
+            # find largest key mapping without missing values
+            definition = None
+            for cur_definition in template.definitions:
+                missing_keys = cur_definition.missing_keys(cur_fields, False)
+                if not missing_keys:
+                    definition = cur_definition
+                    break
+
             # pass 1 - go through the fields for this file and
             # zero out the abstract fields - this way, apply
             # fields will pick up defaults for those fields
@@ -731,7 +739,8 @@ class Sgtk(object):
             # as the template is applied.
             #
             for abstract_key_name in abstract_key_names:
-                del cur_fields[abstract_key_name]
+                if abstract_key_name in cur_fields:
+                    del cur_fields[abstract_key_name]
 
             # pass 2 - if we ignored the leaf level, add those fields back
             # note that there is no risk that we add abstract fields at this point
@@ -743,7 +752,7 @@ class Sgtk(object):
                     cur_fields[f] = req_fields[f]
 
             # now we have all the fields we need to compose the full template
-            abstract_path = template.apply_fields(cur_fields)
+            abstract_path = definition.apply_fields(cur_fields)
             abstract_paths.add(abstract_path)
 
         return list(abstract_paths)

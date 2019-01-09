@@ -85,7 +85,7 @@ class TemplateVariant(object):
         """
         return self._definition
 
-    def missing_keys(self, fields, skip_defaults):
+    def missing_keys(self, fields, skip_defaults=False):
         """
         Compares two dictionaries to determine keys in second missing in first.
 
@@ -108,8 +108,10 @@ class TemplateVariant(object):
                 if fields[found_key_name] is None:
                     missing_key_names.append(key.name)
             else:
-                # Only add if there isn't a default and skip_defaults isn't True
-                if not (key.default and skip_defaults):
+                if skip_defaults:
+                    if key.default is None:
+                        missing_key_names.append(key.name)
+                else:
                     missing_key_names.append(key.name)
 
         return missing_key_names
@@ -135,7 +137,7 @@ class TemplateVariant(object):
         processed_fields = {}
         for key in self.keys.values():
             found_key_name = None
-            found_value = None
+            found_value = key.default
             for key_name in key.names:
                 value = fields.get(key_name)
                 if value:
@@ -143,8 +145,9 @@ class TemplateVariant(object):
                     found_value = value
                     break
 
-            ignore_type = found_key_name in ignore_types
-            processed_fields[key.name] = key.str_from_value(found_value, ignore_type=ignore_type)
+            if found_value:
+                ignore_type = found_key_name in ignore_types
+                processed_fields[key.name] = key.str_from_value(found_value, ignore_type=ignore_type)
 
         relative_path = self._cleaned_definition % processed_fields
 
