@@ -33,6 +33,15 @@ class TemplateVariant(object):
     """
     def __init__(self, definition, keys, parent):
         """
+        This class is not designed to be used directly but
+        should be instantiated by any Template implementations.
+
+        :param definition: TemplateVariant definition.
+        :type definition: String
+        :param keys: Mapping of key names to keys
+        :type keys: Dictionary
+        :param parent: Parent Template object.
+        :type name: :class:`Template`
         """
         self._parent = parent
 
@@ -58,30 +67,45 @@ class TemplateVariant(object):
     @property
     def clean_value(self):
         """
+        The cleaned definition ready for string substitution.
+
+        :returns: a string
         """
         return self._cleaned_definition
 
     @property
     def keys(self):
         """
+        The keys that this template variant is using. For a template
+        ``shots/{Shot}/{Step}/pub/{name}.v{version}.ma``, the keys are ``{Shot}``,
+        ``{Step}`` and ``{name}``.
+
+        :returns: a dictionary of class:`TemplateKey` objects, keyed by token name.
         """
         return self._keys
 
     @property
     def ordered_keys(self):
         """
+        A list of keys ordered by their location in the definition.
+
+        :returns: a list of :class:`TemplateKey` objects.
         """
         return self._ordered_keys
 
     @property
     def static_tokens(self):
         """
+        A list of static tokens for the definition
+
+        :returns: a list of strings
         """
         return self._static_tokens
 
     @property
     def value(self):
         """
+        The template variant as a string, e.g ``shots/{Shot}/{Step}/pub/{name}.v{version}.ma``
         """
         return self._definition
 
@@ -360,6 +384,9 @@ class TemplateVariant(object):
 
     @classmethod
     def _clean_definition(cls, definition):
+        """
+        Creates definition with key names as strings with no format, enum or default values
+        """
         # Create definition with key names as strings with no format, enum or default values
         regex = r"{(%s)}" % constants.TEMPLATE_KEY_NAME_REGEX
         cleaned_definition = re.sub(regex, "%(\g<1>)s", definition)
