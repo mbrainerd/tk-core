@@ -399,7 +399,7 @@ class Sgtk(object):
         :returns: list of :class:`TemplatePath` or [] if no match could be found.
         """
         matched_templates = set()
-        for key, template in self.templates.items():
+        for template in self.templates.values():
             if template.validate(path):
                 matched_templates.add(template)
         return list(matched_templates)
@@ -427,7 +427,7 @@ class Sgtk(object):
             # First check to see how many static tokens match
             templates_by_token_num = {}
             for template in matched_templates:
-                num_tokens = len(template.static_tokens)
+                num_tokens = len([y for x in template.static_tokens for y in x.split(template.token) if y])
                 if num_tokens in templates_by_token_num:
                     templates_by_token_num[num_tokens].append(template)
                 else:
@@ -478,7 +478,8 @@ class Sgtk(object):
             # First check to see how many static tokens match
             folders_by_token_num = {}
             for folder_obj in matched_folders:
-                num_tokens = len(folder_obj.template_path.static_tokens)
+                num_tokens = len([y for x in folder_obj.template_path.static_tokens \
+                                        for y in x.split(folder_obj.template_path.token) if y])
                 if num_tokens in folders_by_token_num:
                     folders_by_token_num[num_tokens].append(folder_obj)
                 else:
@@ -556,64 +557,63 @@ class Sgtk(object):
         if isinstance(skip_keys, basestring):
             skip_keys = [skip_keys]
 
-        # construct a fields dictionary that doesn't include any skip keys
-        # or keys that don't exist in the template:
-        req_fields = {}
-        for k, v in fields.iteritems():
-            if k in skip_keys:
-                continue
-            found_key = False
-            for key in template.keys.values():
-                for key_name in key.names:
-                    if k == key_name:
-                        found_key = True
-                        break
-            if found_key:
-                req_fields[k] = v
-
-        # we always want to automatically skip 'required' keys that weren't
-        # specified so add wildcards for them to the local fields
-        local_fields = copy.deepcopy(req_fields)
-        for key in template.missing_keys(local_fields):
-            if key not in skip_keys:
-                skip_keys.append(key)
-            local_fields[key] = "*"
+        # construct a cleaned fields dictionary that doesn't include any skip keys:
+        local_fields = {}
+        local_skip_keys = []
+        for key in template.keys.values():
+            for key_name in key.names:
+                if key_name in skip_keys:
+                    local_skip_keys.append(key.name)
+                    break
+                if key_name in fields:
+                    local_fields[key.name] = fields[key_name]
+                    break
 
         # iterate for each set of keys in the template:
         found_files = set()
         globs_searched = set()
-        for keys in template._keys:
-            # create fields and skip keys with those that
-            # are relevant for this key set:
-            current_local_fields = local_fields.copy()
+        for definition in template.definitions:
 
-            # replace any abstract key names in the current key set with a wildcard
-            abstract_key_names = [k.name for k in keys.values() if k.is_abstract]
-            for key in current_local_fields.keys():
-                if key in abstract_key_names:
-                    current_local_fields[key] = "*"
+            # Create local_fields dict and skip_keys list specific to this set of keys
+            current_local_fields = {}
+            ignore_types = set()
+            for key in definition.keys.values():
+                if key.name in local_skip_keys:
+                    ignore_types.add(key.name)
 
-            current_ignore_types = copy.deepcopy(abstract_key_names)
-            for key in skip_keys:
-                if key in keys:
-                    current_ignore_types.append(key)
-                    current_local_fields[key] = "*"
+                # If the field has been provided by the user...
+                if key.name in local_fields:
+                    current_local_fields[key.name] = local_fields[key.name]
+
+                    # Add to skip_keys if the key is abstract
+                    if key.is_abstract:
+                        ignore_types.add(key.name)
+
+                # For keys that are not defined by the user, add to skip_keys...
+                else:
+                    # If the key is optional...
+                    if template.is_optional(key.name):
+                        # ...and user specified skip_missiong_optional_keys
+                        if skip_missing_optional_keys:
+                            ignore_types.add(key.name)
+
+                    # If the key is required
+                    else:
+                        ignore_types.add(key.name)
+
+                # For any key in the skip_keys list, set to a wildcard
+                if key.name in ignore_types:
+                    current_local_fields[key.name] = "*"
 
             # find remaining missing keys - these will all be optional keys:
-            missing_optional_keys = template._missing_keys(current_local_fields, keys, False)
-            if missing_optional_keys:
-                if skip_missing_optional_keys:
-                    # Add wildcard for each optional key missing from the input fields
-                    for missing_key in missing_optional_keys:
-                        current_local_fields[missing_key] = "*"
-                        current_ignore_types.append(missing_key)
-                else:
-                    # if there are missing fields then we won't be able to
-                    # form a valid path from them so skip this key set
-                    continue
+            missing_keys = definition.missing_keys(current_local_fields, False)
+            if missing_keys:
+                # if there are missing fields then we won't be able to
+                # form a valid path from them so skip this key set
+                continue
 
             # Apply the fields to build the glob string to search with:
-            glob_str = template._apply_fields(current_local_fields, ignore_types=current_ignore_types)
+            glob_str = definition.apply_fields(current_local_fields, ignore_types)
             if glob_str in globs_searched:
                 # it's possible that multiple key sets return the same search
                 # string depending on the fields and skip-keys passed in
@@ -622,7 +622,7 @@ class Sgtk(object):
 
             # Find all files which are valid for this key set, ignoring abstract and skip keys
             for found_file in glob.iglob(glob_str):
-                if template.validate(found_file, req_fields, current_ignore_types):
+                if definition.validate(found_file, local_fields, local_skip_keys):
                     found_files.add(found_file)
 
         return list(found_files)
