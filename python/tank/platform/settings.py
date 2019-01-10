@@ -119,13 +119,7 @@ class Setting(object):
         Allow setting to be deepcopied - Note that the class
         members are _never_ copied
         """
-        setting_dict = self.to_dict()
-
-        # Overwrite the value and schema keys with deepcopies
-        setting_dict["value"] = copy.deepcopy(self._value, memo)
-        setting_dict["schema"] = copy.deepcopy(self._schema, memo)
-
-        return self.__class__(**setting_dict)
+        return self.__class__(**self.to_dict())
 
     def to_dict(self):
         """
@@ -136,8 +130,8 @@ class Setting(object):
         """
         return {
             "name": self._name,
-            "value": self._value,
-            "schema": self._schema,
+            "value": copy.deepcopy(self._value),
+            "schema": copy.deepcopy(self._schema),
             "bundle": self._bundle,
             "tk": self._tk,
             "engine_name": self._engine_name
