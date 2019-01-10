@@ -116,18 +116,49 @@ class Setting(object):
 
     def __deepcopy__(self, memo):
         """
-        Allow Setting objects to be deepcopied - Note that the class
+        Allow setting to be deepcopied - Note that the class
         members are _never_ copied
         """
-        value_copy = copy.deepcopy(self._value, memo)
-        schema_copy = copy.deepcopy(self._schema, memo)
-        return self.__class__(
-            self._name,
-            value_copy,
-            schema_copy,
-            self._bundle,
-            self._tk,
-            self._engine_name
+        setting_dict = self.to_dict()
+
+        # Overwrite the value and schema keys with deepcopies
+        setting_dict["value"] = copy.deepcopy(self._value, memo)
+        setting_dict["schema"] = copy.deepcopy(self._schema, memo)
+
+        return self.__class__(**setting_dict)
+
+    def to_dict(self):
+        """
+        Converts the setting into a dictionary that can be used to instantiate a
+        new :class:`Setting` object.
+
+        :returns: A dictionary representing the setting.
+        """
+        return {
+            "name": self._name,
+            "value": self._value,
+            "schema": self._schema,
+            "bundle": self._bundle,
+            "tk": self._tk,
+            "engine_name": self._engine_name
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        """
+        Creates a Setting object based on the arguments found in a dictionary.
+
+        :param dict data: Data for the setting.
+
+        :returns: :class:`Setting`
+        """
+        return create_setting(
+            name=data.get("name"),
+            value=data.get("value"),
+            schema=data.get("schema"),
+            bundle=data.get("bundle"),
+            tk=data.get("tk"),
+            engine_name=data.get("engine_name")
         )
 
     def _process_value(self, value, default=None):
@@ -348,7 +379,7 @@ class Setting(object):
         """
         The configured schema for the setting
         """
-        return self._value
+        return self._schema
 
     @property
     def type(self):
