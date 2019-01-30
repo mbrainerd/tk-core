@@ -341,6 +341,13 @@ class Setting(object):
         return processed_val
 
     @property
+    def bundle(self):
+        """
+        The :class:`TankBundle` object for the setting.
+        """
+        return self._bundle
+
+    @property
     def default_value(self):
         """
         The default value of the setting.
@@ -353,6 +360,13 @@ class Setting(object):
         The description of the setting
         """
         return self._description
+
+    @property
+    def engine_name(self):
+        """
+        The engine_name of the setting
+        """
+        return self._engine_name
 
     @property
     def name(self):
@@ -374,6 +388,13 @@ class Setting(object):
         The configured schema for the setting
         """
         return self._schema
+
+    @property
+    def tk(self):
+        """
+        The :class:`Sgtk` object for this setting
+        """
+        return self._tk
 
     @property
     def type(self):
