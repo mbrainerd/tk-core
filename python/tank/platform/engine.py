@@ -2493,11 +2493,24 @@ class Engine(TankBundle):
                     app_obj = self.__application_pool[app_path][app_instance_name]
 
                     try:
+                        # Signal the app to change its context
                         app_obj.change_context(self.context)
 
                         # Repopulate the app's commands into the engine.
+                        # TODO: should we really be doing this?? Feels like it should be
+                        # the responsibility of the app to reinint its commands on context change
                         for command_name, command in self.__command_pool.iteritems():
                             if app_obj is command.get("properties", dict()).get("app"):
+
+                                # Skip if the app has already reregistered it
+                                if command_name in self.__commands:
+                                    continue
+
+                                # If set, update the command's context property
+                                if "context" in command.get("properties", dict()):
+                                    command["properties"]["context"] = self.context
+
+                                # Store the command
                                 self.__commands[command_name] = command
 
                     except Exception:
