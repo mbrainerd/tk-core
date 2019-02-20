@@ -792,7 +792,7 @@ class Engine(TankBundle):
             context=new_context,
         )
         except Exception as e:
-            err_msg = "Engine %s cannot change context - %s" % str(e)
+            err_msg = "Engine %s cannot change context - %s" % (self, str(e))
             raise TankContextChangeNotSupportedError(err_msg)
 
         new_settings = new_env.get_engine_settings(self.instance_name)
