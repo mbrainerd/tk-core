@@ -449,7 +449,7 @@ class Hook(object):
             raise TankError("Cannot load framework %s for %r - it does not have a "
                             "valid engine property!" % (framework_instance_name, self.__parent))
 
-        return framework.load_framework(engine, engine.env, framework_instance_name)
+        return framework.load_framework(engine, engine.context, engine.env, framework_instance_name)
 
     def execute(self):
         """
