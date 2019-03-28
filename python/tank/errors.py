@@ -42,6 +42,7 @@ class TankNoDefaultValueError(TankError):
     Exception that can be raised when a default value is required but none is found.
     """
 
+
 class TankMissingSettingError(TankError):
     """
     Exception that can be raised when a setting is required but none is found.
@@ -53,10 +54,18 @@ class TankMissingTemplateError(TankError):
     Exception that can be raised when a template is required but none is found.
     """
 
+
+class TankMissingTemplateKeysError(TankError):
+    """
+    Exception that can be raised when a template has missing keys after parsing a path.
+    """
+
+
 class TankMissingSchemaError(TankError):
     """
     Exception that can be raised when a schema is required but none is found.
     """
+
 
 class TankHookMethodDoesNotExistError(TankError):
     """
