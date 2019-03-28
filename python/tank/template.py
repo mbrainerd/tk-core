@@ -164,12 +164,12 @@ class TemplateVariant(object):
             found_value = key.default
             for key_name in key.names:
                 value = fields.get(key_name)
-                if value:
+                if value is not None:
                     found_key_name = key_name
                     found_value = value
                     break
 
-            if found_value:
+            if found_value is not None:
                 ignore_type = found_key_name in ignore_types
                 processed_fields[key.name] = key.str_from_value(found_value, ignore_type=ignore_type)
 
