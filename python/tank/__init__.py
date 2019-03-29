@@ -82,7 +82,9 @@ from .errors import (
     TankUnreadableFileError,
     TankInvalidInterpreterLocationError,
     TankInvalidCoreLocationError,
-    TankNotPipelineConfigurationError
+    TankNotPipelineConfigurationError,
+    TankMissingTemplateError,
+    TankMissingTemplateKeysError
 )
 
 # note: TankEngineInitError used to reside in .errors but was moved into platform.errors
