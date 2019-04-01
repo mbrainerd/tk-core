@@ -400,9 +400,10 @@ class TemplateVariant(object):
         # expand the definition to include the prefix unless the definition is empty in which
         # case we just want to parse the prefix.  For example, in the case of a path template,
         # having an empty definition would result in expanding to the project/storage root
-        expanded_definition = os.path.join(prefix, definition) if definition else prefix
+        if prefix:
+            definition = os.path.join(prefix, definition) if definition else prefix
         regex = r"{%s}" % constants.TEMPLATE_KEY_NAME_REGEX
-        tokens = re.split(regex, expanded_definition.lower())
+        tokens = re.split(regex, definition.lower())
 
         # Remove empty strings
         return [x for x in tokens if x]
@@ -435,8 +436,8 @@ class Template(object):
         self._entity_fields_cache = {}
 
         # string which will be prefixed to definition
-        self._prefix = self._prefix or ""
-        self._token = self._token or ""
+        self._prefix = getattr(self, "_prefix", "")
+        self._token = getattr(self, "_token", "")
 
         # version for __repr__
         self._repr_def = TemplateVariant._fix_key_names(definition, keys)
@@ -803,17 +804,18 @@ class Template(object):
         :returns: Values found in the path based on keys in template
         :rtype: Dictionary
         """
-        path_parser = None
         fields = None
 
+        last_error = TankError("Template %s: No definitions found!", str(self))
         for definition in self._definitions:
-            path_parser = TemplatePathParser(definition.ordered_keys, definition.static_tokens)
-            fields = path_parser.parse_path(input_path, skip_keys)
-            if fields != None:
-                break
+            try:
+                fields = definition.get_fields(input_path, skip_keys=skip_keys)
+            except Exception as e:
+                last_error = e
+                continue
 
         if fields is None:
-            raise TankError("Template %s: %s" % (str(self), path_parser.last_error))
+            raise last_error
 
         return fields
 
@@ -1182,7 +1184,6 @@ class TemplateString(Template):
         :param validate_with: Optional :class:`Template` to use for validation
         """
         self.validate_with = validate_with
-        self._prefix = "@"
         self._token = "_"
 
         super(TemplateString, self).__init__(definition, keys, pipeline_configuration, name=name)
@@ -1193,28 +1194,6 @@ class TemplateString(Template):
         Strings don't have a concept of parent so this always returns ``None``.
         """
         return None
-
-    def get_fields(self, input_path, skip_keys=None):
-        """
-        Extracts key name, value pairs from a string. Example::
-
-            >>> input = 'filename.v003.ma'
-            >>> template_string.get_fields(input)
-
-            {'name': 'henry',
-             'version': 3}
-
-        :param input_path: Source path for values
-        :type input_path: String
-        :param skip_keys: Optional keys to skip
-        :type skip_keys: List
-
-        :returns: Values found in the path based on keys in template
-        :rtype: Dictionary
-        """
-        # add path prefix as original design was to require project root
-        adj_path = os.path.join(self._prefix, input_path)
-        return super(TemplateString, self).get_fields(adj_path, skip_keys=skip_keys)
 
 
 def split_path(input_path):
