@@ -1769,7 +1769,7 @@ def _build_entity_dict_from_path(tk, path, required_fields=None, additional_type
 def _get_valid_context_entity_dict(tk, entity_dict):
     """
     """
-    # Since we are modifying in place, make a copy
+    # Since we are modifying in place, make a copy first
     entity_dict = copy.deepcopy(entity_dict)
 
     # Ensure we have a type and id
