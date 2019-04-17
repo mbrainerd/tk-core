@@ -16,6 +16,7 @@
 
 #  STANDARD
 import os
+import errno
 import stat
 import shutil
 
@@ -202,6 +203,13 @@ def _do_symlink_with_os_symlink(target, path):
         os.symlink(target, path)
     except IOError, e:
         raise IOError("Failed to create symlink with os.symlink: %s %s" % (path, str(e)))
+    except OSError, e:
+        if e.errno == errno.EEXIST:
+            logger.info("Re-creating the symlink to point at: %s", target)
+            os.remove(path)
+            os.symlink(target, path)
+        else:
+            raise OSError("Failed to create symlink with os.symlink: %s %s" % (path, str(e)))
 
 
 def symlink_with_jstools(target, path):
