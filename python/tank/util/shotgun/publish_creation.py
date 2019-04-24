@@ -606,7 +606,8 @@ def _translate_abstract_fields(tk, path):
                 # we want to use the default values for abstract keys
                 cur_fields = template.get_fields(path)
                 for abstract_key_name in abstract_key_names:
-                    del(cur_fields[abstract_key_name])
+                    if abstract_key_name in cur_fields:
+                        del(cur_fields[abstract_key_name])
                 path = template.apply_fields(cur_fields)
         else:
             log.debug(
