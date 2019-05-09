@@ -608,6 +608,8 @@ def _translate_abstract_fields(tk, path):
                 for abstract_key_name in abstract_key_names:
                     if abstract_key_name in cur_fields:
                         del(cur_fields[abstract_key_name])
+                    else:
+                        cur_fields[abstract_key_name] = None
                 path = template.apply_fields(cur_fields)
         else:
             log.debug(
