@@ -204,7 +204,8 @@ class PreferencesCacheItem(object):
             role = self.context.step["name"]
 
         # Populate the item's data before adding it to the cache.
-        self._data = dict(preferences.Preferences(path, role, package="sgtk_config").items())
+        self._data = dict(preferences.Preferences(path, role, package="sgtk_config",
+                                                  mergeStrategy=preferences.DeepMergeStrategy()).items())
 
 class YamlCache(object):
     """
