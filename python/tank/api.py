@@ -625,7 +625,7 @@ class Sgtk(object):
 
             # Find all files which are valid for this key set
             for found_file in glob.iglob(glob_str):
-                if definition.validate(found_file, local_fields, local_skip_keys):
+                if definition.validate(found_file, local_fields):
                     found_files.add(found_file)
 
         return list(found_files)
