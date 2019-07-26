@@ -94,6 +94,8 @@ class Setting(object):
         self._type = self._schema.get("type")
         self._description = self._schema.get("description")
 
+        self._cache = dict()
+
         self._default_value = self._process_default_value()
         self._value, self._children = self._process_value(value, self._default_value)
 
@@ -402,6 +404,13 @@ class Setting(object):
         The data type of the setting.
         """
         return self._type
+
+    @property
+    def cache(self):
+        """
+        Cache to store random things.
+        """
+        return self._cache
 
     @property
     def value(self):
