@@ -115,12 +115,23 @@ class Setting(object):
     def __contains__(self, key):
         return key in self.value
 
+    def __copy__(self):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        result.__dict__.update(self.__dict__)
+        return result
+
     def __deepcopy__(self, memo):
-        """
-        Allow setting to be deepcopied - Note that the class
-        members are _never_ copied
-        """
-        return self.__class__(**self.to_dict())
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            # Don't copy the tk or bundle objects...
+            if k in ("_tk", "_bundle"):
+                setattr(result, k, v)
+            else:
+                setattr(result, k, copy.deepcopy(v, memo))
+        return result
 
     def to_dict(self):
         """
@@ -135,7 +146,8 @@ class Setting(object):
             "schema": copy.deepcopy(self._schema),
             "bundle": self._bundle,
             "tk": self._tk,
-            "engine_name": self._engine_name
+            "engine_name": self._engine_name,
+            "extra": self._extra
         }
 
     @classmethod
@@ -147,7 +159,7 @@ class Setting(object):
 
         :returns: :class:`Setting`
         """
-        return create_setting(
+        _copy = cls(
             name=data.get("name"),
             value=data.get("value"),
             schema=data.get("schema"),
@@ -155,6 +167,8 @@ class Setting(object):
             tk=data.get("tk"),
             engine_name=data.get("engine_name")
         )
+        _copy._extra = data.get("extra", {})
+        return copy
 
     def _process_value(self, value, default=None):
         """
