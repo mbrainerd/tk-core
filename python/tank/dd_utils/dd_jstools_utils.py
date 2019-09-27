@@ -19,6 +19,7 @@ import os
 import errno
 import stat
 import shutil
+import subprocess
 
 #  DD
 from dd.runtime import api
@@ -247,6 +248,7 @@ def symlink_with_jstools(target, path):
         # Finally, use os.symlink to create the non template links
         _do_symlink_with_os_symlink(target, path)
 
+
 def sealf_with_jstools(path):
     """
     Seal the given file/folder recursively
@@ -261,3 +263,28 @@ def sealf_with_jstools(path):
                        "jstools.execute() returned code: {}".format(path, result.returnCode))
         logger.warning("stdout: {}".format(result.stdout))
         logger.warning("stderr: {}".format(result.stderr))
+
+
+def run_in_clean_env(cmd_list, context):
+    """
+    Form a clean environment based on the given context and
+    run the given command in that environment.
+
+    :param cmd_list:    Command to be run, in list form (passed to subprocess.Popen)
+    :param context:     sgtk context based on which environment is formed
+    :return:            Process exit code and stderr
+    """
+    # get sanitized values from context
+    fields = context.as_template_fields()
+
+    sequence = fields.get("Sequence") or os.getenv("DD_SEQ")
+    shot = fields.get("Shot") or os.getenv("DD_SHOT")
+    role = fields.get("Step") or os.getenv("DD_ROLE")
+
+    clean_env = jstools.buildEnvironment(show=context.project["name"], sequence= sequence, shot=shot,
+                                         workarea=os.getenv("DD_WORKAREA"),
+                                         role=role)
+    process = subprocess.Popen(cmd_list, stderr=subprocess.PIPE, env=clean_env)
+    output, error = process.communicate()
+
+    return process.returncode, error
