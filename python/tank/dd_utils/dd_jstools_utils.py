@@ -185,6 +185,7 @@ def delete_with_jstools(path):
         _do_delete_with_shutil_rmtree(path)
 
 
+# TODO: remove? jsln was deprecated and removed as of jstools-2.9.0
 def _do_symlink_with_jstools(target, path):
     """
     Helper function

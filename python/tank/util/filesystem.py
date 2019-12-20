@@ -181,15 +181,34 @@ def copy_file(src, dst, permissions=0o666, seal=False):
 
 
 @with_cleared_umask
-def symlink_file(src, dst):
+def symlink_file(target, link):
     """
     Symlinks a src file to its dst file.
 
-    :param src: Source file.
-    :param dst: Symlink file location.
+    :param target: Source file.
+    :param link: Symlink file location.
     """
 
-    dd_jstools_utils.symlink_with_jstools(src, dst)
+    dd_jstools_utils.symlink_with_jstools(target, link)
+
+
+@with_cleared_umask
+def hardlink_file(target, link):
+    """
+    Hard link a src file to its dst file.
+
+    :param target: Source file.
+    :param link: Link location.
+    """
+    try:
+        os.link(target, link)
+    except OSError, e:
+        if e.errno == errno.EEXIST:
+            log.info("Re-creating the hard link to point at: %s", target)
+            os.remove(link)
+            os.link(target, link)
+        else:
+            raise OSError("Failed to create hard link %s to path %s with os.link: %s" % (link, target, str(e)))
 
 
 def safe_delete_file(path):
