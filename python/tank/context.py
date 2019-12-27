@@ -1418,7 +1418,7 @@ def _from_entity_dictionary(tk, entity_dict, previous_context=None):
         context_dict = {
             "tk":                   tk,
             "project":              _build_clean_entity(tk, entity_dict.get("project")),
-            "entity":               _build_clean_entity(tk, entity_dict.get("entity")),
+            "entity":               _build_clean_entity(tk, entity_dict.get("entity") or entity_dict.get("project")),
             "step":                 _build_clean_entity(tk, entity_dict.get("step")),
             "user":                 _build_clean_entity(tk, entity_dict.get("user")),
             "task":                 _build_clean_entity(tk, entity_dict.get("task")),
