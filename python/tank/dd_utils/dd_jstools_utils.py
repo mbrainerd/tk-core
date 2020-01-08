@@ -275,6 +275,17 @@ def run_in_clean_env(cmd_list, context):
     :param context:     sgtk context based on which environment is formed
     :return:            Process exit code and stderr
     """
+    clean_env = build_clean_env(context)
+    process = subprocess.Popen(cmd_list, stderr=subprocess.PIPE, env=clean_env)
+    output, error = process.communicate()
+
+    return process.returncode, error
+
+
+def build_clean_env(context):
+    """
+    Form a clean environment based on the given context
+    """
     # get sanitized values from context
     fields = context.as_template_fields()
 
@@ -282,10 +293,7 @@ def run_in_clean_env(cmd_list, context):
     shot = fields.get("Shot") or os.getenv("DD_SHOT")
     role = fields.get("Step") or os.getenv("DD_ROLE")
 
-    clean_env = jstools.buildEnvironment(show=context.project["name"], sequence= sequence, shot=shot,
+    clean_env = jstools.buildEnvironment(show=context.project["name"], sequence=sequence, shot=shot,
                                          workarea=os.getenv("DD_WORKAREA"),
                                          role=role)
-    process = subprocess.Popen(cmd_list, stderr=subprocess.PIPE, env=clean_env)
-    output, error = process.communicate()
-
-    return process.returncode, error
+    return clean_env
