@@ -803,7 +803,7 @@ class Context(object):
         return pickle.dumps(data)
 
     @classmethod
-    def deserialize(cls, context_str):
+    def deserialize(cls, context_str, tank=None):
         """
         The inverse of :meth:`Context.serialize`.
 
@@ -841,7 +841,10 @@ class Context(object):
             set_authenticated_user(user)
 
         # create a Sgtk API instance.
-        tk = Tank(pipeline_config_path)
+        if not tank:
+            tk = Tank(pipeline_config_path)
+        else:
+            tk = tank
         data["tk"] = tk
 
         # add it to the constructor instance
@@ -1456,14 +1459,14 @@ def serialize(context):
     return context.serialize()
 
 
-def deserialize(context_str):
+def deserialize(context_str, tank=None):
     """
     The inverse of :meth:`serialize`.
 
     .. deprecated:: v0.18.12
        Use :meth:`Context.deserialize`
     """
-    return Context.deserialize(context_str)
+    return Context.deserialize(context_str, tank=tank)
 
 
 ################################################################################################
