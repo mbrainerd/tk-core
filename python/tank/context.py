@@ -927,18 +927,23 @@ class Context(object):
         additional_entities lists match, and only if the current context's task
         and step, respectively, are not already set.
         """
-        if self.__entity and other.entity and \
-           self.__entity == other.entity and \
-           self.__additional_entities == other.additional_entities:
+        if not other.entity:
+            return
 
-            # cool, everything is matching down to the step/task level.
-            # if context is missing a step and a task, we try to auto populate it.
-            # (note: weird edge that a context can have a task but no step)
+        # Compare with this context's entity if defined or the project if not
+        if other.entity in (self.__entity, self.__project) and \
+           other.additional_entities == self.__additional_entities:
+
+            # Handle the case where the project is the task's parent entity
+            if not self.__entity:
+                self.__entity = other.entity
+
+            # Handle edge case where the context has a task but no step
             if not self.__step:
                 self.__step = other.step
 
+            # Assign the previous task if the step matches
             if not self.__task and self.__step == other.step:
-                # now try to assign the previous task but only if the step matches!
                 self.__task = other.task
 
 
