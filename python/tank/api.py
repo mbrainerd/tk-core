@@ -554,6 +554,60 @@ class Sgtk(object):
         :returns: Matching file paths
         :rtype: List of strings.
         """
+
+        paths_and_fields = self.paths_and_fields_from_template(template, fields, skip_keys, skip_missing_optional_keys)
+
+        return [path for path, fields in paths_and_fields]
+
+    def paths_and_fields_from_template(self, template, fields, skip_keys=None, skip_missing_optional_keys=False):
+        """
+        Finds paths that match a template using field values passed.
+
+        This is useful if you want to get a list of files matching a particular
+        template and set of fields. One common pattern is when you are dealing
+        with versions, and you want to retrieve all the different versions for a
+        file. In that case just resolve all the fields for the file you want to operate
+        on, then pass those in to the paths_from_template() method. By passing version to
+        the ``skip_keys`` parameter, the method will return all the versions associated
+        with your original file.
+
+        Any keys that are required by the template but aren't included in the fields
+        dictionary are always skipped. Any optional keys that aren't included are only
+        skipped if the ``skip_missing_optional_keys`` parameter is set to True.
+
+        If an optional key is to be skipped, all matching paths that contain a value for
+        that key as well as those that don't will be included in the result.
+
+        .. note:: The result is not ordered in any particular way.
+
+        Imagine you have a template ``maya_work: sequences/{Sequence}/{Shot}/work/{name}.v{version}.ma``::
+
+            >>> import sgtk
+            >>> tk = sgtk.sgtk_from_path("/studio/my_proj")
+            >>> maya_work = tk.templates["maya_work"]
+
+        All fields that you don't specify will be searched for. So if we want to search for all
+        names and versions for a particular sequence and shot, we can do::
+
+            >>> tk.paths_from_template(maya_work, {"Sequence": "AAA", "Shot": "001"})
+            /studio/my_proj/sequences/AAA/001/work/background.v001.ma
+            /studio/my_proj/sequences/AAA/001/work/background.v002.ma
+            /studio/my_proj/sequences/AAA/001/work/background.v003.ma
+            /studio/my_proj/sequences/AAA/001/work/mainscene.v001.ma
+            /studio/my_proj/sequences/AAA/001/work/mainscene.v002.ma
+            /studio/my_proj/sequences/AAA/001/work/mainscene.v003.ma
+
+        :param template: Template against whom to match.
+        :type  template: :class:`TemplatePath`
+        :param fields: Fields and values to use.
+        :type  fields: Dictionary
+        :param skip_keys: Keys whose values should be ignored from the fields parameter.
+        :type  skip_keys: List of key names
+        :param skip_missing_optional_keys: Specify if optional keys should be skipped if they
+                                        aren't found in the fields collection
+        :returns: Matching file paths
+        :rtype: List of strings.
+        """
         skip_keys = skip_keys or []
         if isinstance(skip_keys, basestring):
             skip_keys = [skip_keys]
@@ -625,8 +679,9 @@ class Sgtk(object):
 
             # Find all files which are valid for this key set
             for found_file in glob.iglob(glob_str):
-                if definition.validate(found_file, local_fields):
-                    found_files.add(found_file)
+                file_fields = definition.validate_and_get_fields(found_file, local_fields)
+                if file_fields:
+                    found_files.add((found_file, frozenset(file_fields.items())))
 
         return list(found_files)
 
@@ -710,16 +765,16 @@ class Sgtk(object):
                     break
 
         # now carry out a regular search based on the template
-        found_files = self.paths_from_template(template, local_fields, skip_keys, skip_missing_optional_keys)
+        found_files = self.paths_and_fields_from_template(template, local_fields, skip_keys, skip_missing_optional_keys)
 
         abstract_key_names = [k.name for k in template.keys.values() if k.is_abstract]
 
         # now collapse down the search matches for any abstract fields,
         # and add the leaf level if necessary
         abstract_paths = set()
-        for found_file in found_files:
+        for found_file, fields in found_files:
 
-            cur_fields = template.get_fields(found_file)
+            cur_fields = dict(fields)
 
             # find definition with largest key mapping without missing values
             definition = None
