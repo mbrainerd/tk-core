@@ -132,7 +132,7 @@ def _resolve_refs_r(lookup_dict, data):
     """
     # default is no processing
     processed_val = data
-    
+
     if isinstance(data, list):
         processed_val = []
         for x in data:
@@ -142,6 +142,16 @@ def _resolve_refs_r(lookup_dict, data):
         processed_val = {}
         for (k, v) in data.items():
             processed_val[k] = _resolve_refs_r(lookup_dict, v)
+            # to keep yaml anchoring happy we need to give a dictionary post-merge too
+            # settings.tk-multi-publish2.ingest.publish_bla.item_type_settings:
+            #   <<: *item_type_settings
+            #   '#merge': '@settings.tk-multi-publish2.ingest.publish.item_type_settings'
+            if k.startswith("#"):
+                merge_data = processed_val[k]
+                if isinstance(merge_data, dict):
+                    dict_merge(processed_val, merge_data)
+                    # pop the merge key out after a successful merge
+                    processed_val.pop(k)
         
     elif isinstance(data, basestring):
         # split to find separate @ include parts:
